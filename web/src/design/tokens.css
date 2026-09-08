@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* The palette is defined once, here, and referenced everywhere else.
+   A colour written inline in a component is a colour that will not
+   follow the theme, so the lint rule and review both look for them. */
+@theme {
+  --color-ground: #0b0d10;
+  --color-surface: #14171c;
+  --color-surface-raised: #1b1f26;
+  --color-line: #262b33;
+  --color-ink: #e6e9ee;
+  --color-ink-muted: #949bab;
+  --color-accent: #4c8dff;
+  --color-good: #2fbf71;
+  --color-warn: #e0a33e;
+  --color-bad: #e5484d;
+
+  --font-sans: "Inter", system-ui, -apple-system, "PingFang SC", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Numbers in a trading console are compared down a column far more
+     often than they are read in a sentence. Tabular figures everywhere. */
+  font-variant-numeric: tabular-nums;
+}

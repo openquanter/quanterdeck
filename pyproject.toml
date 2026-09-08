@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oq-deck"
+version = "0.0.1"
+description = "Quanterdeck — the self-hosted console for OpenQuanter"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "The Quanterdeck contributors" }]
+keywords = ["quant", "trading", "console", "openquanter", "self-hosted"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+# The server's dependencies. `oq_adapters` deliberately adds none of its
+# own — see scripts/check-adapter-deps.sh, which fails the build if an
+# adapter module imports anything outside the standard library.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+oq-deck = "oq_deck.__main__:main"
+
+# Adapters are discovered, not hardcoded. A third party ships their own
+# runtime support as a package that registers here; nothing in this
+# repository has to change.
+[project.entry-points."quanterdeck.adapters"]
+legacy_py = "oq_adapters.legacy_py:LegacyPyAdapter"
+oq_cli = "oq_adapters.oq_cli:OqCliAdapter"
+
+[project.urls]
+Homepage = "https://github.com/openquanter/quanterdeck"
+Issues = "https://github.com/openquanter/quanterdeck/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+oq_deck = ["web/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# `Depends(...)` and `Body(...)` in a default is how FastAPI declares a
+# dependency; B008 exists for mutable defaults, which these are not.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.Query",
+]
