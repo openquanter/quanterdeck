@@ -1,21 +1,9 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-build/
-dist/
-.venv/
-venv/
+/target
+**/*.rs.bk
 
 node_modules/
 web/dist/
-# The web build lands inside the package; it is a build artefact, and a
-# wheel gets it from `npm run build` rather than from git.
-src/oq_deck/web/
 
 .DS_Store
-*.sqlite3
 .env
-.gstack/
 .shots/

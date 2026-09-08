@@ -1,1 +1,1 @@
-{"root":["./src/main.tsx","./src/api/client.ts","./src/components/placeholder.tsx","./src/components/shell.tsx","./src/routes/overview.tsx","./src/routes/services.tsx","./src/routes/index.tsx"],"version":"5.9.3"}
+{"root":["./src/main.tsx","./src/api/client.ts","./src/components/placeholder.tsx","./src/components/shell.tsx","./src/routes/compare.tsx","./src/routes/overview.tsx","./src/routes/rundetail.tsx","./src/routes/runs.tsx","./src/routes/index.tsx"],"version":"5.9.3"}

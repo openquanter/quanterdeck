@@ -11,60 +11,63 @@ English · [中文](README.zh-CN.md)
 
 ## What this is
 
-OpenQuanter is a trading framework with no interface. Running it means
-editing JSON, remembering what `manager.sh` accepts, and knowing which
-actions cancel your resting orders. Quanterdeck is the layer that was
-missing:
+[OpenQuanter](https://github.com/openquanter/openquanter) accounts for
+every cent — identity triples, fill-by-fill parity, gap attribution, the
+residual that will not decompose. Those numbers currently exist in files
+and in terminal output. Quanterdeck is the layer that makes them
+something you can look at.
 
 > **Someone with no quant experience gets their first equity curve on
 > their own machine within thirty minutes; someone with experience never
-> loses their resting orders to a mis-clicked button.**
+> reads "cannot tell" as "all clear".**
 
 The second half matters as much as the first. Part of this console's job
 is to say no.
 
 ## What it is not
 
-- **Not hosted, not a SaaS, and it does not hold your API keys.** Keys are
-  encrypted on your machine and never appear in an API response, a log, or
-  a commit. Custody of user keys is a non-goal upstream, and it is one
-  here.
+- **Not hosted, not a SaaS, and it does not hold your API keys.** Custody
+  of user keys is a non-goal upstream, and it is one here.
 - **Not a market terminal, a copy-trading network, or a strategy store.**
-- **Not a judge of whether your strategy is any good.** It guarantees you
-  ran a backtest before going live. It does not guarantee the backtest
-  meant anything.
+- **Not a judge of whether your strategy is any good.**
+- **Not a change to the framework.** The console is a consumer with a
+  one-way dependency on the public crates. The framework need not know it
+  exists.
 
 ## Three rules, in code rather than in prose
 
-**1. Reading never changes the runtime.** Every read path is free of
-side effects on the running system. The authority for a position is the
-exchange, not a handover file on disk — so the console neither reads nor
-writes `cta_strategy_data.json`.
+**1. "Cannot tell" never renders as "they agree".** When a baseline is
+invalidated — the input data or effective configuration moved — nothing
+about the engine can be concluded. `passes` is false, the difference list
+is empty, and the banner is amber rather than red, with what to do about
+it: rebase. It is not a regression, and colouring it like one sends
+someone hunting a bug that is not there.
 
-**2. Dangerous actions are typed, not toggled.** The trading daemon
-offers Restart, which signals it to hand its orders over. Stop and Start
-sit in a danger zone, require the service name typed out, and state the
-consequence verbatim: every resting order cancelled, order ownership
-lost.
+**2. An incomplete decomposition has an unknown residual, not a zero
+one.** When any component is unavailable, the residual is `None`. A zero
+computed from a partial decomposition claims everything was explained,
+which is precisely the claim it must not make.
 
-**3. A write is a backup plus a write.** They are one operation and there
-is no flag that separates them. A stale etag is refused rather than
-merged, because nothing here knows which of the two versions you meant.
+**3. Reading never changes the runtime.** The console is an observer.
+That is upstream's FR-CORE-7, applied here.
 
 ## Status
 
-M0. Against a real OpenQuanter 1.x checkout it can already:
+M0. Against a directory of run files it can:
 
-- read the runtime's capabilities and render from them, so a feature the
-  runtime lacks produces no control rather than one that errors
-- list and drive the ten services behind `manager.sh`
-- **generate parameter forms from the strategy classes themselves** —
-  the fields come from the runtime's code, not from a schema kept here
-- read and write configuration, with backups, diffs and conflict detection
-- refuse every write while in read-only mode, which is the default
+- list every run **including the one that will not parse** — with its
+  reason, rather than absent from the listing
+- show the identity triple, the fills and the realized P&L; an untagged
+  fill and an empty-tagged one look different, because they are
+- compare two runs and distinguish three verdicts: comparable, code
+  changed, and **baseline invalidated**
+- report its own capabilities, rendering no control for what it cannot
+  do and saying why
+- start read-only and loopback-only, and **refuse to start** when told to
+  listen elsewhere without a password and a second factor
 
-Not yet: backtest submission, the live view, the promotion gate, the
-setup wizard, the 2.0 adapter. See [docs/BLUEPRINT.zh-CN.md](docs/BLUEPRINT.zh-CN.md).
+Not yet: journal replay, live reconciliation, the attribution view,
+sweeps, data quality, the setup wizard.
 
 ## Getting started
 
@@ -72,22 +75,21 @@ setup wizard, the 2.0 adapter. See [docs/BLUEPRINT.zh-CN.md](docs/BLUEPRINT.zh-C
 git clone https://github.com/openquanter/quanterdeck
 cd quanterdeck
 
-pip install -e ".[dev]"
-cd web && npm install && npm run build && cd ..
-
-export OQ_DECK_RUNTIME_ROOT=/path/to/openquanter
-export OQ_DECK_RUNTIME_PYTHON=/path/to/that/repo/env/bin/python
-
-oq-deck up          # http://127.0.0.1:8899
+cd web && npm install && npm run build && cd ..   # Node is build-time only
+export OQ_DECK_RUNS_DIR=/path/to/your/runs
+cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
 
-`OQ_DECK_RUNTIME_PYTHON` is the *runtime's* interpreter, which is usually
-not the one running the console. The console never imports the runtime;
-[docs/STACK.zh-CN.md](docs/STACK.zh-CN.md) §3 explains why.
+With no runs of your own, use the ones in the repository:
 
-It binds `127.0.0.1` and starts read-only. Binding anywhere else without
-a password and a second factor is refused at startup — a console that can
-place orders does not get a convenient default that exposes it.
+```bash
+export OQ_DECK_RUNS_DIR=$PWD/examples/fixtures/runs
+```
+
+They are written by the framework's own writer
+(`cargo run -p oq-deck-core --example make_fixtures`), so the format is
+correct by construction — and one of them is deliberately truncated, to
+show what the listing does with a file it cannot read.
 
 ## Licence
 

@@ -1,0 +1,19 @@
+[package]
+name = "oq-deck-core"
+description = "Domain logic for the OpenQuanter console: promotion gate, capabilities, and the read side of a run"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# No web framework, no async runtime. This crate is the part of the
+# console that has opinions about trading, and it must stay testable
+# without starting a server.
+[dependencies]
+oq-parity.workspace = true
+oq-types.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

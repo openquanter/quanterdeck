@@ -1,0 +1,6 @@
+[console_scripts]
+oq-deck = oq_deck.__main__:main
+
+[quanterdeck.adapters]
+legacy_py = oq_adapters.legacy_py:LegacyPyAdapter
+oq_cli = oq_adapters.oq_cli:OqCliAdapter

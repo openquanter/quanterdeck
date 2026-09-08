@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: oq-deck
+Version: 0.0.1
+Summary: Quanterdeck — the self-hosted console for OpenQuanter
+Author: The Quanterdeck contributors
+License: Apache-2.0
+Project-URL: Homepage, https://github.com/openquanter/quanterdeck
+Project-URL: Issues, https://github.com/openquanter/quanterdeck/issues
+Keywords: quant,trading,console,openquanter,self-hosted
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Environment :: Web Environment
+Classifier: Framework :: FastAPI
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Office/Business :: Financial :: Investment
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: pydantic>=2.7
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Dynamic: license-file
