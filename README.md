@@ -34,6 +34,24 @@ is to say no.
   one-way dependency on the public crates. The framework need not know it
   exists.
 
+## It requires a login, unconditionally
+
+Loopback is not a security boundary. Other processes and other accounts
+on the same machine can open the port; a page in the operator's browser
+can reach `127.0.0.1` by DNS rebinding; the first `ssh -L` makes
+"listens locally" describe the socket and nothing about who is on the
+other end; and with writes enabled it places orders.
+
+So: an Argon2id password, always; a `Host` allowlist; an `Origin` check
+on writes; `HttpOnly` + `SameSite=Strict` sessions; lockout after
+repeated failures; and a mandatory second factor off the loopback
+interface. On a first start with no password, the deck prints a one-time
+token to the terminal it was started from — reading it takes the local
+access the operator already has, and the token lives only in memory.
+
+The threat model, the measures, and **what is not done yet** are in
+[docs/SECURITY.zh-CN.md](docs/SECURITY.zh-CN.md).
+
 ## Three rules, in code rather than in prose
 
 **1. "Cannot tell" never renders as "they agree".** When a baseline is
@@ -53,7 +71,7 @@ That is upstream's FR-CORE-7, applied here.
 
 ## Status
 
-M0. Against a directory of run files it can:
+M1. Against a directory of run files it can:
 
 - list every run **including the one that will not parse** — with its
   reason, rather than absent from the listing
@@ -66,8 +84,18 @@ M0. Against a directory of run files it can:
 - start read-only and loopback-only, and **refuse to start** when told to
   listen elsewhere without a password and a second factor
 
-Not yet: journal replay, live reconciliation, the attribution view,
-sweeps, data quality, the setup wizard.
+Against a directory of journals it reconstructs what each process
+believed it held, reports how many frames it could not decode, and
+compares that against a venue record the operator pastes in.
+
+And it decomposes the gap between a live run and a model run into five
+causes — keeping **measured zero** and **not measured** apart, and
+returning a null residual rather than a zero one whenever the
+decomposition is incomplete.
+
+Not yet: event-by-event journal replay, sweeps, data quality, the setup
+wizard's interface, step-up authentication for dangerous actions, an
+audit log.
 
 ## Getting started
 
@@ -77,8 +105,14 @@ cd quanterdeck
 
 cd web && npm install && npm run build && cd ..   # Node is build-time only
 export OQ_DECK_RUNS_DIR=/path/to/your/runs
+export OQ_DECK_JOURNALS_DIR=/path/to/your/journals   # for reconciliation
 cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
+
+The first start prints a one-time token to the terminal. Use it at
+`/setup` to set a password, then put the returned
+`OQ_DECK_PASSWORD_HASH` in the environment and restart. Until then every
+route but `/api/v1/health` and `/setup` returns 401.
 
 With no runs of your own, use the ones in the repository:
 

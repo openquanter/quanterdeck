@@ -265,8 +265,8 @@ pub fn compare_ids(
     candidate_id: &str,
     tolerance: f64,
 ) -> Result<Comparison, String> {
-    let baseline = read_one(dir, baseline_id)?;
-    let candidate = read_one(dir, candidate_id)?;
+    let baseline = read(dir, baseline_id)?;
+    let candidate = read(dir, candidate_id)?;
     let report = compare(
         &baseline.manifest,
         &baseline.output,
@@ -276,7 +276,11 @@ pub fn compare_ids(
     Ok(build(baseline_id, candidate_id, &report, tolerance))
 }
 
-fn read_one(dir: &Path, id: &str) -> Result<Run, String> {
+/// One run, parsed.
+///
+/// # Errors
+/// The run is missing or will not read.
+pub fn read(dir: &Path, id: &str) -> Result<Run, String> {
     let path = resolve(dir, id).ok_or_else(|| format!("no run named {id}"))?;
     read_run(&path)
 }
