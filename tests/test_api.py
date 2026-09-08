@@ -78,17 +78,53 @@ def test_a_stale_write_is_refused(client):
     assert response.status_code == 412
 
 
-def test_deep_links_reach_the_single_page_app(client):
+@pytest.fixture
+def web_client(runtime, tmp_path, monkeypatch):
+    """A client with a stand-in for the built web app.
+
+    The real bundle is a build artefact that is not in git, so a test
+    that depended on it would pass on a developer's machine and fail in
+    CI — which is exactly what happened the first time these two tests
+    ran. What is under test here is the routing, not the bundle, so the
+    bundle is faked and the test says the same thing everywhere.
+    """
+    from oq_adapters.legacy_py import LegacyPyAdapter
+    from oq_deck import app as app_module
+
+    dist = tmp_path / "web"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<div id="root"></div>', encoding="utf-8")
+    (dist / "assets" / "index-AAAA1111.js").write_text("//", encoding="utf-8")
+    monkeypatch.setattr(app_module, "WEB_DIST", dist)
+
+    app = app_module.create_app()
+    settings = Settings(runtime_root=runtime)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_adapter] = lambda: LegacyPyAdapter(runtime)
+    return TestClient(app)
+
+
+def test_deep_links_reach_the_single_page_app(web_client):
     """A history-routed URL must survive a reload.
 
     `/services` has no file behind it; the router owns it. Answering
     404 there means every bookmark and every refresh breaks.
     """
-    response = client.get("/services")
-    assert response.status_code == 200
-    assert "<div id=\"root\">" in response.text
+    for path in ("/services", "/backtests/42", "/strategies/BTC-AG/edit"):
+        response = web_client.get(path)
+        assert response.status_code == 200, path
+        assert '<div id="root">' in response.text
 
 
-def test_a_missing_asset_is_still_a_404(client):
+def test_a_real_asset_is_served_as_itself(web_client):
+    assert web_client.get("/assets/index-AAAA1111.js").status_code == 200
+
+
+def test_a_missing_asset_is_still_a_404(web_client):
     """The fallback must not hand back HTML under a .js name."""
-    assert client.get("/assets/gone-BXXXXXXX.js").status_code == 404
+    assert web_client.get("/assets/gone-BXXXXXXX.js").status_code == 404
+
+
+def test_the_api_is_never_swallowed_by_the_fallback(web_client):
+    body = web_client.get("/api/v1/health").json()
+    assert body["status"] == "ok"
