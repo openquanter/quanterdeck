@@ -1,0 +1,11 @@
+{
+    "DEMO-GRID": {
+        "class_name": "DemoGridStrategy",
+        "vt_symbol": "BTCUSDT.BINANCE",
+        "setting": {
+            "grid_step": 500.0,
+            "grid_levels": 5,
+            "order_volume": 0.001
+        }
+    }
+}
