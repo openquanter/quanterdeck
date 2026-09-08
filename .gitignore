@@ -17,3 +17,5 @@ src/oq_deck/web/
 .DS_Store
 *.sqlite3
 .env
+.gstack/
+.shots/
