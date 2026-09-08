@@ -76,3 +76,19 @@ def test_a_stale_write_is_refused(client):
         json={"content": {}, "etag": "nottheetag"},
     )
     assert response.status_code == 412
+
+
+def test_deep_links_reach_the_single_page_app(client):
+    """A history-routed URL must survive a reload.
+
+    `/services` has no file behind it; the router owns it. Answering
+    404 there means every bookmark and every refresh breaks.
+    """
+    response = client.get("/services")
+    assert response.status_code == 200
+    assert "<div id=\"root\">" in response.text
+
+
+def test_a_missing_asset_is_still_a_404(client):
+    """The fallback must not hand back HTML under a .js name."""
+    assert client.get("/assets/gone-BXXXXXXX.js").status_code == 404

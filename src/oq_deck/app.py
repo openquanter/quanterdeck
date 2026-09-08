@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -26,8 +27,31 @@ def create_app() -> FastAPI:
 
     if WEB_DIST.is_dir():
         app.mount(
-            "/", StaticFiles(directory=WEB_DIST, html=True), name="web"
+            "/assets",
+            StaticFiles(directory=WEB_DIST / "assets"),
+            name="assets",
         )
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def spa(path: str) -> FileResponse:
+            """Serve the single-page app for any path it owns.
+
+            The router is history-based, so `/services` is a real URL a
+            user can reload or bookmark, and there is no file behind it.
+            A static mount alone answers those with 404 — which it did,
+            the first time anyone opened a deep link.
+
+            Paths under /api are matched by the routers above and never
+            reach here; anything else that looks like a file (a stale
+            asset request after a rebuild, say) is a genuine 404 rather
+            than an HTML page delivered under a .js name.
+            """
+            candidate = WEB_DIST / path
+            if path and candidate.is_file():
+                return FileResponse(candidate)
+            if path and "." in path.rsplit("/", 1)[-1]:
+                raise HTTPException(status_code=404, detail="not found")
+            return FileResponse(WEB_DIST / "index.html")
 
     return app
 
