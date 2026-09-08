@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["crates/oq-deck-core", "crates/oq-deck"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/openquanter/quanterdeck"
+
+[workspace.dependencies]
+oq-deck-core = { path = "crates/oq-deck-core" }
+
+# The framework, pinned to a commit rather than floated. A console that
+# reads a run file has to agree with the writer about what a run file is,
+# and "whatever main was that morning" is not an agreement.
+oq-parity = { git = "https://github.com/openquanter/openquanter", rev = "6d87df0" }
+oq-types = { git = "https://github.com/openquanter/openquanter", rev = "6d87df0" }
+
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

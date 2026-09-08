@@ -1,0 +1,11 @@
+openquanter-run 1
+body-sha256 e893d7cc1ae6df6c204ce49f9d14d291700a4e714fa87b9929b76ce03fb65b28
+code-commit a1b2c3d
+data-sha256 data-aaa
+config-sha256 config-aaa
+label L0
+pnl 123.456
+fills 2
+# ts symbol side price qty tag
+fill 1700000000000000000 BTCUSDT buy 6000000 5 -
+fill 1700000060000000000 BTCUSDT sell 6001000 5 exit

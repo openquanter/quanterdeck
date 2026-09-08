@@ -3,15 +3,17 @@ import { createBrowserRouter } from "react-router-dom";
 import { Placeholder } from "@/components/Placeholder";
 import { Shell } from "@/components/Shell";
 
+import { Compare } from "./Compare";
 import { Overview } from "./Overview";
-import { Services } from "./Services";
+import { RunDetail } from "./RunDetail";
+import { Runs } from "./Runs";
 
 /**
- * The route table is the contract with the design work: every screen in
- * the plan has an entry here from day one, so a design that arrives for
- * `/backtests/:id` has somewhere to land and nothing has to be renamed
- * later. Screens not yet built render a placeholder naming the
- * milestone they belong to.
+ * Every screen in the plan has an entry here from day one, so a design
+ * that arrives for `/attribution` has somewhere to land and nothing has
+ * to be renamed later. Screens not yet built name the milestone they
+ * belong to rather than saying "coming soon", so a reader can tell
+ * whether one is late or simply not due yet.
  */
 export const router = createBrowserRouter([
   {
@@ -19,79 +21,45 @@ export const router = createBrowserRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Overview /> },
-      { path: "services", element: <Services /> },
+      { path: "runs", element: <Runs /> },
+      { path: "runs/compare", element: <Compare /> },
+      { path: "runs/:id", element: <RunDetail /> },
+      {
+        path: "attribution",
+        element: (
+          <Placeholder
+            title="归因"
+            milestone="M2"
+            note="实盘减模型的差额分解，以及不可分解的残差。残差在分解不完整时是「未知」而不是零。"
+          />
+        ),
+      },
       {
         path: "live",
-        element: <Placeholder title="实盘" milestone="M1" />,
+        element: (
+          <Placeholder
+            title="实盘对账"
+            milestone="M1"
+            note="进程以为持有的（journal）与交易所实际持有的（venue）之间的差别；仍为 stale 的订单是边沿触发的告警。"
+          />
+        ),
       },
-      {
-        path: "live/logs",
-        element: <Placeholder title="日志" milestone="M1" />,
-      },
-      {
-        path: "strategies",
-        element: <Placeholder title="策略列表" milestone="M4" />,
-      },
-      {
-        path: "strategies/:id",
-        element: <Placeholder title="策略详情" milestone="M4" />,
-      },
-      {
-        path: "strategies/:id/edit",
-        element: <Placeholder title="策略编辑器" milestone="M4" />,
-      },
-      {
-        path: "backtests",
-        element: <Placeholder title="回测中心" milestone="M2" />,
-      },
-      {
-        path: "backtests/:id",
-        element: <Placeholder title="回测结果" milestone="M2" />,
-      },
-      {
-        path: "backtests/compare",
-        element: <Placeholder title="结果对比" milestone="M2" />,
-      },
+      { path: "journal", element: <Placeholder title="Journal 回放" milestone="M1" /> },
       {
         path: "sweeps",
         element: (
-          <Placeholder
-            title="参数扫描"
-            milestone="M2"
-            note="结果表会一并给出 DSR / PBO 过拟合提示。"
-          />
+          <Placeholder title="参数扫描" milestone="M3" note="结果表一并给出 DSR / PBO 过拟合提示。" />
         ),
       },
       {
-        path: "config",
-        element: <Placeholder title="配置中心" milestone="M1" />,
-      },
-      {
-        path: "config/history",
-        element: <Placeholder title="变更历史" milestone="M1" />,
-      },
-      {
-        path: "exchanges",
+        path: "data",
         element: (
-          <Placeholder
-            title="交易所与密钥"
-            milestone="M3"
-            note="密钥加密存放在本机，不出现在任何 API 响应中。"
-          />
+          <Placeholder title="数据质量" milestone="M3" note="capture → ingest → 特征化；book-check 与 trade-check 的 break。" />
         ),
       },
-      {
-        path: "alerts",
-        element: <Placeholder title="告警" milestone="M5" />,
-      },
-      {
-        path: "settings",
-        element: <Placeholder title="系统设置" milestone="M0" />,
-      },
+      { path: "strategies", element: <Placeholder title="策略" milestone="M4" /> },
+      { path: "settings", element: <Placeholder title="设置" milestone="M1" /> },
     ],
   },
-  {
-    path: "/setup",
-    element: <Placeholder title="首次运行向导" milestone="M3" />,
-  },
+  { path: "/setup", element: <Placeholder title="首次运行向导" milestone="M4" /> },
 ]);

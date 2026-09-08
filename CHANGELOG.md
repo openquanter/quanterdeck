@@ -2,15 +2,18 @@
 
 ## Unreleased
 
-### M0 — skeleton
+### M0 — a console that can read a run
 
-- Runtime adapter protocol, standard library only, discovered by entry point.
-- `legacy_py` adapter for OpenQuanter 1.x: services via `manager.sh`,
-  configuration with backups and conflict detection, strategy parameter
-  discovery through an out-of-process probe.
-- `oq_cli` adapter placeholder for 2.0, reporting honest capabilities
-  while the tools have no machine-readable output.
-- FastAPI surface at `/api/v1`, capability-driven web shell, seventeen
-  routes stubbed to their milestones.
-- Read-only by default; loopback-only by default; both need a deliberate
-  act to relax.
+- Reads a directory of run files through `oq_parity::wire`, listing the
+  ones that will not parse alongside the ones that did, with the reason.
+- Distinguishes comparable, code-changed and invalidated baselines, and
+  never reports an invalidated one as agreement.
+- Capability self-report drives the interface: a section the deck cannot
+  back produces no link, and the reason appears on the overview.
+- Promotion gate as a domain type: backtest, observation window,
+  sign-off; a configuration change voids the evidence, a code change
+  does not.
+- Read-only and loopback-only by default; both need a deliberate act to
+  relax, and an under-configured public bind refuses to start.
+- Backend rewritten from Python to Rust when the scope narrowed to
+  OpenQuanter 2.0. The reasoning is in `docs/STACK.zh-CN.md`.

@@ -4,9 +4,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// The build lands inside the Python package, so a wheel carries the UI and
-// a deployed deck needs no Node at all. Node is a build-time tool here,
-// never a runtime dependency on a machine that holds exchange keys.
+// The build lands in web/dist, which the server serves and a release
+// bundles next to the binary. Node is a build-time tool here, never a
+// runtime dependency on a machine that holds exchange keys.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   // The `@/` alias is declared in tsconfig.json for the editor and the
@@ -19,7 +19,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../src/oq_deck/web",
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {

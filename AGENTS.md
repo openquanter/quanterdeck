@@ -2,48 +2,65 @@
 
 给在本仓库工作的人和 agent。保持在 200 行以内。
 
+## 这是什么
+
+Quanterdeck 是 OpenQuanter **2.0** 的自托管控制台。它是框架的**消费者**：单向
+依赖公开 crate，框架不知道它存在，也不该为它改变。
+
+1.x 不在范围内。
+
 ## 本地命令
 
 ```bash
-pip install -e ".[dev]"      # 后端
-pytest                       # 全部测试，约 3 秒
-ruff check src tests         # lint
-cd web && npm run build      # 前端，产物落进 src/oq_deck/web/
-scripts/check-adapter-deps.sh  # oq_adapters 是否混入了第三方依赖
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all
+cargo run -p oq-deck-core --example make_fixtures   # 重新生成 run fixture
+
+cd web && npm install && npm run build              # 产物在 web/dist
 ```
 
 跑起来看：
 
 ```bash
-export OQ_DECK_RUNTIME_ROOT=/path/to/openquanter
-export OQ_DECK_RUNTIME_PYTHON=/path/to/runtime/env/bin/python
-oq-deck up
+export OQ_DECK_RUNS_DIR=/path/to/your/runs
+cargo run -p oq-deck                                 # http://127.0.0.1:8899
 ```
 
 ## 不变量
 
 改动若违反下列任何一条，即便测试通过也不应合入。
 
-1. **`oq_adapters` 只用标准库。** 它是外部扩展点，不该把本项目的技术选择
-   强加给第三方。CI 检查。
+1. **不重写上游已有的解析器。** run 文件由 `oq_parity::wire` 读，判定由
+   `oq_parity::manifest` 给。控制台自己解析会得到一个与写入方不一致的读法，
+   那比读不了更糟。
 
-2. **服务端进程不 import 运行时。** 1.x 的内省一律走 `probe.py` 子进程，用
-   运行时自己的解释器执行。理由：版本解耦 + 故障隔离，见 docs/STACK.zh-CN.md §3。
+2. **"无法判断"永远不能渲染成"一致"。** 基准失效时 `passes` 为假、差异为空、
+   横幅是琥珀色不是红色——它不是回归，把它画成回归会让人去找一个不存在的 bug。
 
-3. **probe 的结果从文件读，不从 stdout 读。** 1.x 在 import 时会往 stdout 打
-   横幅。这个坑已经踩过一次。
+3. **残差不完整时是 `None`，不是 0。** 分解不完整而报一个零残差，等于宣称
+   "全部都解释清楚了"，那正是它绝不能声称的。
 
-4. **restart 永远不能实现为 stop + start。** 两者对挂单的后果不同。
+4. **读的东西不改运行时。** 控制台是观察者。这是 2.0 的 FR-CORE-7，在这里
+   对所有读取路径生效。
 
-5. **配置写入必然伴随备份。** 备份与写入是一个操作，`backup=False` 只给测试用，
-   服务端任何路由都不得传。
+5. **能力只报真做得到的。** 报 `available: true` 的东西必须能用；报 false 的
+   必须在 `reason` 里写清原因——那句话会原样显示给操作者。
 
-6. **`capabilities()` 只报真的做得到的。** 报 True 的能力必须能用。
+6. **默认只读 + 默认只听回环。** 放宽任何一条都必须是显式动作，且有名字。
 
-7. **不读也不写 `cta_strategy_data.json`。** 那是重启交接文件，不是权威源；
-   持仓的权威是交易所。
+7. **run id 来自 URL，永远不当路径拼接。** 只在目录列表里匹配，不 join。
 
-8. **默认只读、默认只听回环。** 放宽任何一条都必须是显式动作，且有名字。
+8. **`oq-deck-core` 不依赖 web 框架。** 它是控制台里对交易有主张的那部分，
+   必须能在不启动服务器的情况下测试。
+
+## 上游依赖
+
+`Cargo.toml` 把框架**钉在某个 commit** 上，不浮动。读 run 文件的人必须和写它
+的人对同一个格式达成一致，而"那天早上的 main"不是一种一致。
+
+升级 = 改 rev + 跑 `make_fixtures` + 看 `git diff examples/fixtures/runs`。
+有 diff 说明格式动了，那是要读的，不是要 commit 掉的。
 
 ## 提交
 
