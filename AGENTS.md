@@ -76,6 +76,10 @@ cargo run -p oq-deck                                 # http://127.0.0.1:8899
 升级 = 改 rev + 跑 `make_fixtures` + 看 `git diff examples/fixtures/runs`。
 有 diff 说明格式动了，那是要读的，不是要 commit 掉的。
 
+**MSRV 是 1.88，不是上游声明的 1.85。** `oq-engine` 在钉住的 rev 上用了
+let-chain（`l0.rs:190`/`:200`），那是 1.88 才稳定的语法，所以对任何 link 它的
+下游而言 1.85 这个下限不成立。已报上游；修好后这里跟着降回去。
+
 ## 提交
 
 - Apache-2.0；每个 commit 需 DCO 签名：`git commit -s`
