@@ -28,10 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The framework declares 1.85 and the console consumes it, so a
-      # console that needed something newer would be unbuildable on a
-      # machine that can build what it manages.
-      - uses: dtolnay/rust-toolchain@1.85.0
+      # 1.88 rather than the 1.85 the framework declares. `oq-engine`
+      # at the pinned revision uses a let-chain (`l0.rs:190` and `:200`),
+      # stable only from 1.88, so the declared floor does not hold for
+      # anything that links it — found by this job on the commit that
+      # first pulled `oq-live` in. Reported upstream; when it is fixed
+      # this comes back down, and until then a floor that is honest about
+      # what actually builds beats one that is aspirational.
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
 
