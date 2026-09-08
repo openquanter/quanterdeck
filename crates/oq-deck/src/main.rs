@@ -18,6 +18,27 @@ fn web_dist() -> Option<PathBuf> {
     candidate.is_dir().then_some(candidate)
 }
 
+/// The one-time token that bootstraps a deck with no password yet.
+///
+/// Printed to stderr, which is the terminal the operator started this
+/// from. That is the whole security argument: reading it requires the
+/// local access they already have, and it is gone when the process is.
+/// It is never written to a file and never logged through `tracing`,
+/// because a log is a thing that gets copied.
+fn announce_setup(token: &str, host: &str, port: u16) {
+    eprintln!();
+    eprintln!("  ┌─ 首次运行 ─────────────────────────────────────────────");
+    eprintln!("  │ 尚未设置密码。用下面这个一次性令牌完成初始设置：");
+    eprintln!("  │");
+    eprintln!("  │   http://{host}:{port}/setup");
+    eprintln!("  │   {token}");
+    eprintln!("  │");
+    eprintln!("  │ 令牌只存在于本进程内存中，重启即失效。");
+    eprintln!("  │ 在此之前，除初始设置外的所有接口都会拒绝请求。");
+    eprintln!("  └────────────────────────────────────────────────────────");
+    eprintln!();
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -36,15 +57,41 @@ async fn main() -> ExitCode {
         }
     };
 
+    let setup_token = if settings.configured() {
+        None
+    } else {
+        match oq_deck_core::auth::new_token() {
+            Ok(token) => {
+                announce_setup(&token, &settings.host.to_string(), settings.port);
+                Some(token)
+            }
+            Err(error) => {
+                eprintln!("oq-deck: 无法生成初始设置令牌：{error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
+
     let address = (settings.host, settings.port);
     let mode = if settings.allow_writes {
         "writes enabled"
     } else {
         "read-only"
     };
-    tracing::info!("listening on http://{}:{} ({mode})", address.0, address.1);
+    let auth = if settings.totp_secret.is_some() {
+        "password + TOTP"
+    } else if settings.configured() {
+        "password"
+    } else {
+        "setup pending"
+    };
+    tracing::info!(
+        "listening on http://{}:{} ({mode}, {auth})",
+        address.0,
+        address.1
+    );
 
-    let router = app::router(settings, web_dist());
+    let router = app::router(settings, web_dist(), setup_token);
     let listener = match tokio::net::TcpListener::bind(address).await {
         Ok(listener) => listener,
         Err(error) => {

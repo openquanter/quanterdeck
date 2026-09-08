@@ -24,8 +24,11 @@ cd web && npm install && npm run build              # 产物在 web/dist
 
 ```bash
 export OQ_DECK_RUNS_DIR=/path/to/your/runs
+export OQ_DECK_JOURNALS_DIR=/path/to/your/journals   # 实盘对账需要
 cargo run -p oq-deck                                 # http://127.0.0.1:8899
 ```
+
+首次启动没有密码时，终端会打印一次性令牌，用它走 `/setup`。
 
 ## 不变量
 
@@ -47,12 +50,23 @@ cargo run -p oq-deck                                 # http://127.0.0.1:8899
 5. **能力只报真做得到的。** 报 `available: true` 的东西必须能用；报 false 的
    必须在 `reason` 里写清原因——那句话会原样显示给操作者。
 
-6. **默认只读 + 默认只听回环。** 放宽任何一条都必须是显式动作，且有名字。
+6. **认证是无条件的，不是"非回环才要"。** 回环不是安全边界；理由见
+   docs/SECURITY.zh-CN.md。默认只读、默认只听回环，放宽任何一条都必须是显式
+   动作且有名字。
+
+   检查顺序不可调换：`Host` → `Origin`（写入）→ 会话 → 写入模式。
+   过不了 `Host` 的请求不得走到会话查找。
 
 7. **run id 来自 URL，永远不当路径拼接。** 只在目录列表里匹配，不 join。
 
 8. **`oq-deck-core` 不依赖 web 框架。** 它是控制台里对交易有主张的那部分，
    必须能在不启动服务器的情况下测试。
+
+9. **密码、TOTP secret、会话令牌、一次性令牌永不进日志**，也不出现在任何
+   非专门用途的 API 响应里。
+
+10. **已测得为零 ≠ 不可得。** `Attributed::Explained(Cash(0))` 与
+    `Attributed::Unavailable` 是相反的事实；接口与界面都必须分开呈现。
 
 ## 上游依赖
 
