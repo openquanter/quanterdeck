@@ -5,7 +5,7 @@ members = ["crates/oq-deck-core", "crates/oq-deck"]
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.88"  # not the framework's 1.85: see AGENTS.md on let-chains
+rust-version = "1.89"  # the framework's floor: see AGENTS.md
 license = "Apache-2.0"
 repository = "https://github.com/openquanter/quanterdeck"
 
