@@ -63,6 +63,18 @@ impl Settings {
         self.host.is_loopback()
     }
 
+    /// Whether anyone but the local operator can reach the deck.
+    ///
+    /// Off the loopback interface, obviously. But also behind a TLS
+    /// proxy or with extra hosts allowed: those are how the security
+    /// notes say to publish a deck bound to 127.0.0.1, and judged by the
+    /// bind address alone that deck was "loopback" — its second factor
+    /// optional while the internet reached it through the proxy.
+    #[must_use]
+    pub fn is_exposed(&self) -> bool {
+        !self.is_loopback() || self.behind_tls || !self.extra_hosts.is_empty()
+    }
+
     /// Whether the operator has finished setting the deck up.
     #[must_use]
     pub fn configured(&self) -> bool {
@@ -79,12 +91,40 @@ impl Settings {
     /// The deck would listen off the loopback interface without both a
     /// password and a second factor.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.is_loopback() {
+        // Checked whatever the address. A hash that does not parse turned
+        // every login into "wrong password" and every attempt into a
+        // counted failure, so the operator locked themselves out chasing
+        // a password that was never the problem.
+        if let Some(hash) = &self.password_hash
+            && matches!(
+                oq_deck_core::auth::verify_password("", hash),
+                Err(oq_deck_core::auth::AuthError::Corrupt(_))
+            )
+        {
+            return Err(ConfigError(
+                "OQ_DECK_PASSWORD_HASH 无法解析为 Argon2 hash。请重新生成，不要手工编辑。"
+                    .to_owned(),
+            ));
+        }
+        // An empty or mistyped secret is not a second factor. Empty, every
+        // code an empty key produces was accepted — codes anyone can
+        // compute; mistyped, every login failed and counted.
+        if let Some(secret) = &self.totp_secret {
+            match oq_deck_core::auth::decode_totp_secret(secret) {
+                Ok(key) if key.len() >= 10 => {}
+                _ => {
+                    return Err(ConfigError(
+                        "OQ_DECK_TOTP_SECRET 不是有效的 base32 密钥（至少 80 位）。".to_owned(),
+                    ));
+                }
+            }
+        }
+        if !self.is_exposed() {
             return Ok(());
         }
         if self.password_hash.is_none() {
             return Err(ConfigError(format!(
-                "拒绝在 {} 上监听：尚未设置密码。请先绑定 127.0.0.1 完成初始设置\
+                "拒绝以对外可达的方式运行（{}）：尚未设置密码。请先绑定 127.0.0.1 完成初始设置\
                  （启动后终端会打印一次性令牌），或设置 OQ_DECK_PASSWORD_HASH。\
                  一个能下单的控制台不会不带认证地暴露在网络上。",
                 self.host
@@ -92,8 +132,8 @@ impl Settings {
         }
         if self.totp_secret.is_none() {
             return Err(ConfigError(format!(
-                "拒绝在 {} 上监听：尚未启用第二因素。请设置 OQ_DECK_TOTP_SECRET，\
-                 或改为绑定 127.0.0.1。",
+                "拒绝以对外可达的方式运行（{}）：尚未启用第二因素。请设置 OQ_DECK_TOTP_SECRET。\
+                 经反向代理或 OQ_DECK_EXTRA_HOSTS 发布同样算对外可达。",
                 self.host
             )));
         }
@@ -121,8 +161,11 @@ impl Settings {
         settings.journals_dir = std::env::var("OQ_DECK_JOURNALS_DIR")
             .ok()
             .map(PathBuf::from);
-        settings.password_hash = std::env::var("OQ_DECK_PASSWORD_HASH").ok();
-        settings.totp_secret = std::env::var("OQ_DECK_TOTP_SECRET").ok();
+        // An empty variable is an unset one: `OQ_DECK_TOTP_SECRET=` in an
+        // environment file read as a second factor with an empty key.
+        let set = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+        settings.password_hash = set("OQ_DECK_PASSWORD_HASH");
+        settings.totp_secret = set("OQ_DECK_TOTP_SECRET");
         settings.behind_tls = std::env::var("OQ_DECK_BEHIND_TLS").as_deref() == Ok("1");
         settings.allow_writes = std::env::var("OQ_DECK_ALLOW_WRITES").as_deref() == Ok("1");
         settings.extra_hosts = std::env::var("OQ_DECK_EXTRA_HOSTS")

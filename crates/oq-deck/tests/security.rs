@@ -351,6 +351,30 @@ async fn a_lockout_does_not_end_a_session_already_granted() {
     );
 }
 
+/// A hash that does not parse is the deck's fault, reported as such and
+/// not counted: read as a wrong password it locked the operator out.
+#[tokio::test]
+async fn a_corrupt_hash_is_not_a_wrong_password() {
+    let app = app(Settings {
+        password_hash: Some("not a hash".into()),
+        ..configured()
+    });
+    for _ in 0..6 {
+        let (status, body, _) = send(
+            &app,
+            post(
+                "/api/v1/session/login",
+                HOST,
+                Some("http://127.0.0.1:8899"),
+                serde_json::json!({ "password": PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        assert!(body["detail"].as_str().unwrap().contains("OQ_DECK_PASSWORD_HASH"));
+    }
+}
+
 // -- setup ----------------------------------------------------------------
 
 #[tokio::test]
