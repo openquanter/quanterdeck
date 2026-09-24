@@ -14,11 +14,12 @@
 //! reaches the session lookup, so an attacker cannot use timing there to
 //! learn whether a session exists.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -112,7 +113,6 @@ fn check_session(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     };
     match deck.sessions.touch(&token) {
         Ok(()) => Ok(()),
-        Err(Denied::LockedOut) => Err(locked_out(deck)),
         Err(Denied::NoSession) => Err(Refusal::new(
             StatusCode::UNAUTHORIZED,
             "会话已失效，请重新登录。",
@@ -120,10 +120,21 @@ fn check_session(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     }
 }
 
-fn locked_out(deck: &Deck) -> Refusal {
+/// Where a request came from, for counting failed attempts per source.
+///
+/// The peer address of the connection. Not `X-Forwarded-For`: a header
+/// the client writes is not evidence of who the client is. Behind a
+/// reverse proxy every request is the proxy's, and counting falls back
+/// to one source — no worse than before, and live sessions are spared
+/// either way.
+fn source_of(peer: Option<&axum::Extension<ConnectInfo<SocketAddr>>>) -> String {
+    peer.map_or_else(|| "unknown".to_owned(), |p| p.0.0.ip().to_string())
+}
+
+fn locked_out(deck: &Deck, source: &str) -> Refusal {
     let minutes = deck
         .sessions
-        .lockout_remaining()
+        .lockout_remaining(source)
         .map_or(0, |left| left.as_secs().div_ceil(60));
     Refusal::new(
         StatusCode::TOO_MANY_REQUESTS,
@@ -215,17 +226,19 @@ struct Login {
 /// the door for fifteen minutes.
 async fn login(
     State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     axum::Json(body): axum::Json<Login>,
 ) -> Response {
+    let source = source_of(peer.as_ref());
     if let Err(refusal) = check_host(&deck, &headers) {
         return refusal.into_response();
     }
     if let Err(refusal) = check_origin(&deck, &headers) {
         return refusal.into_response();
     }
-    if deck.sessions.lockout_remaining().is_some() {
-        return locked_out(&deck).into_response();
+    if deck.sessions.lockout_remaining(&source).is_some() {
+        return locked_out(&deck, &source).into_response();
     }
 
     let Some(stored) = deck.settings.password_hash.as_ref() else {
@@ -239,7 +252,7 @@ async fn login(
     let rejected = Refusal::new(StatusCode::UNAUTHORIZED, "密码或验证码不正确。");
 
     if auth::verify_password(&body.password, stored).is_err() {
-        deck.sessions.record_failure();
+        deck.sessions.record_failure(&source);
         return rejected.into_response();
     }
 
@@ -248,12 +261,12 @@ async fn login(
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
         if auth::verify_totp(secret, &body.totp, now).is_err() {
-            deck.sessions.record_failure();
+            deck.sessions.record_failure(&source);
             return rejected.into_response();
         }
     }
 
-    match deck.sessions.issue() {
+    match deck.sessions.issue(&source) {
         Ok(token) => (
             [(
                 header::SET_COOKIE,
@@ -310,9 +323,11 @@ struct SetupDone {
 /// moment setup completes.
 async fn setup(
     State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     axum::Json(body): axum::Json<SetupBody>,
 ) -> Response {
+    let source = source_of(peer.as_ref());
     if let Err(refusal) = check_host(&deck, &headers) {
         return refusal.into_response();
     }
@@ -323,7 +338,7 @@ async fn setup(
         return Refusal::new(StatusCode::CONFLICT, "初始设置已经完成。").into_response();
     };
     if !auth::secrets_match(expected, &body.token) {
-        deck.sessions.record_failure();
+        deck.sessions.record_failure(&source);
         return Refusal::new(StatusCode::UNAUTHORIZED, "一次性令牌不正确。").into_response();
     }
     if let Some(complaint) = auth::password_complaint(&body.password) {
