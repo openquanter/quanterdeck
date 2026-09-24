@@ -260,12 +260,108 @@ async fn behind_tls_the_cookie_becomes_secure() {
         post(
             "/api/v1/session/login",
             HOST,
-            Some("http://127.0.0.1:8899"),
+            // Behind TLS the browser's own origin is https.
+            Some("https://127.0.0.1:8899"),
             serde_json::json!({ "password": PASSWORD }),
         ),
     )
     .await;
     assert!(cookies.first().expect("cookie").contains("Secure"));
+}
+
+/// An origin is its scheme too. Compared by authority alone, a bare
+/// authority, another scheme, and plain http behind TLS all passed.
+#[tokio::test]
+async fn an_origin_with_the_wrong_scheme_is_not_ours() {
+    let plain = app(configured());
+    for origin in [
+        "ftp://127.0.0.1:8899",
+        "127.0.0.1:8899",
+        "https://127.0.0.1:8899",
+    ] {
+        let (status, _, _) = send(
+            &plain,
+            post(
+                "/api/v1/session/login",
+                HOST,
+                Some(origin),
+                serde_json::json!({ "password": PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{origin}");
+    }
+    let tls = app(Settings {
+        behind_tls: true,
+        ..configured()
+    });
+    let (status, _, _) = send(
+        &tls,
+        post(
+            "/api/v1/session/login",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "password": PASSWORD }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "plain http behind TLS");
+}
+
+/// No route is reached with a Host this deck does not answer to — not
+/// health, not logout, not a body parse.
+#[tokio::test]
+async fn a_foreign_host_reaches_no_route_at_all() {
+    let app = app(configured());
+    let (status, _, _) = send(&app, get("/api/v1/health", "evil.example", None)).await;
+    assert_eq!(status, StatusCode::MISDIRECTED_REQUEST);
+    let (status, _, _) = send(
+        &app,
+        post(
+            "/api/v1/session/logout",
+            "evil.example",
+            None,
+            serde_json::json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::MISDIRECTED_REQUEST);
+    let malformed = Request::builder()
+        .method("POST")
+        .uri("/api/v1/session/login")
+        .header(header::HOST, "evil.example")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{not json"))
+        .unwrap();
+    let (status, _, _) = send(&app, malformed).await;
+    assert_eq!(
+        status,
+        StatusCode::MISDIRECTED_REQUEST,
+        "refused before the body is read"
+    );
+}
+
+/// A mistyped API path is a 404, and every answer carries the headers
+/// that keep it out of frames, sniffers, referrers and caches.
+#[tokio::test]
+async fn unknown_api_paths_are_404_and_responses_are_hardened() {
+    let app = app(configured());
+    let response = app
+        .clone()
+        .oneshot(get("/api/v1/nope", HOST, None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let h = response.headers();
+    assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(h[header::X_FRAME_OPTIONS], "DENY");
+    assert_eq!(h[header::CACHE_CONTROL], "no-store");
+    assert!(
+        h[header::CONTENT_SECURITY_POLICY]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors 'none'")
+    );
 }
 
 // -- guessing -------------------------------------------------------------
