@@ -99,7 +99,7 @@ fn check_host(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
 
 fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
-    if origin_permitted(origin, &deck.hosts) {
+    if origin_permitted(origin, &deck.hosts, deck.settings.behind_tls) {
         return Ok(());
     }
     Err(Refusal::new(
@@ -307,6 +307,11 @@ async fn login(
 }
 
 async fn logout(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    // A write like any other: it ends a session, and a page elsewhere
+    // should not be able to end the operator's.
+    if let Err(refusal) = check_origin(&deck, &headers) {
+        return refusal.into_response();
+    }
     let cookie = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
     if let Some(token) = session::token_from_cookies(cookie) {
         deck.sessions.revoke(&token);
@@ -634,11 +639,16 @@ pub fn router(
         .route("/journals", get(list_journals))
         .route("/journals/{id}/belief", get(journal_belief))
         .route("/journals/{id}/reconcile", post(reconcile))
-        .with_state(deck);
+        // An API path that does not exist is a 404 in the API's own
+        // shape, not the interface's index page with a 200 — which told a
+        // client asking for a mistyped route that it had succeeded.
+        .fallback(api_not_found)
+        .layer(axum::middleware::from_fn(no_store))
+        .with_state(deck.clone());
 
     let router = Router::new().nest("/api/v1", api);
 
-    match web_dist {
+    let router = match web_dist {
         // The interface is history-routed, so `/runs/42` is a URL a user
         // can reload or paste to a colleague and there is no file behind
         // it. `fallback_service` turns those into the app instead of a
@@ -648,5 +658,66 @@ pub fn router(
             router.fallback_service(ServeDir::new(dist).fallback(ServeFile::new(index)))
         }
         _ => router,
+    };
+
+    // Outermost, so nothing — a static file, `/health`, a body being
+    // parsed — is reached by a request with a Host this deck does not
+    // answer to. The handlers' own checks stay; this is the one that
+    // cannot be forgotten on a new route.
+    router
+        .layer(axum::middleware::from_fn(security_headers))
+        .layer(axum::middleware::from_fn_with_state(deck, host_first))
+}
+
+async fn host_first(
+    State(deck): State<Deck>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if let Err(refusal) = check_host(&deck, request.headers()) {
+        return refusal.into_response();
     }
+    next.run(request).await
+}
+
+/// Headers every response carries.
+///
+/// The console shows account figures and can, with writes enabled, place
+/// orders; it has no reason to be framed, to have its types sniffed, to
+/// leak its URLs in a referrer, or to load a script from anywhere but
+/// itself.
+async fn security_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    let h = response.headers_mut();
+    let set = |h: &mut HeaderMap, name: header::HeaderName, value: &'static str| {
+        h.insert(name, header::HeaderValue::from_static(value));
+    };
+    set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    set(h, header::X_FRAME_OPTIONS, "DENY");
+    set(h, header::REFERRER_POLICY, "no-referrer");
+    set(
+        h,
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; \
+         base-uri 'none'; form-action 'self'",
+    );
+    response
+}
+
+/// API answers are about the account; no cache should keep them.
+async fn no_store(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+async fn api_not_found() -> Response {
+    Refusal::new(StatusCode::NOT_FOUND, "没有这个 API 路径。").into_response()
 }
