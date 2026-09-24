@@ -308,6 +308,30 @@ async fn an_origin_with_the_wrong_scheme_is_not_ours() {
     assert_eq!(status, StatusCode::FORBIDDEN, "plain http behind TLS");
 }
 
+/// A browser that says a write came from another site is believed, even
+/// when the Origin it sent would pass.
+#[tokio::test]
+async fn a_write_the_browser_marks_cross_site_is_refused() {
+    let app = app(configured());
+    for (site, expected) in [
+        ("cross-site", StatusCode::FORBIDDEN),
+        ("same-site", StatusCode::FORBIDDEN),
+        ("same-origin", StatusCode::OK),
+    ] {
+        let mut request = post(
+            "/api/v1/session/login",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "password": PASSWORD }),
+        );
+        request
+            .headers_mut()
+            .insert("sec-fetch-site", site.parse().unwrap());
+        let (status, _, _) = send(&app, request).await;
+        assert_eq!(status, expected, "{site}");
+    }
+}
+
 /// No route is reached with a Host this deck does not answer to — not
 /// health, not logout, not a body parse.
 #[tokio::test]

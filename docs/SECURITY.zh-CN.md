@@ -42,7 +42,7 @@ Quanterdeck 是单操作者、自托管的控制台。它读交易系统的运�
 的中间件，覆盖 `/health`、静态文件、logout，并且先于任何请求体解析。
 
 写入请求的 `Origin` 按完整 origin 比对：TLS 后面必须是 `https://`，否则 `http://`；
-缺少、协议不符或不带协议的一律拒绝。logout 也是写入，同样检查。
+缺少、协议不符或不带协议的一律拒绝。logout 也是写入，同样检查。浏览器带了 `Sec-Fetch-Site` 时，写入还要求它是 `same-origin` 或 `none`（Fetch Metadata，叠加在 Origin 检查之上）；没带时仍由 Origin 检查决定。
 
 每个响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、
 `Referrer-Policy: no-referrer` 和只允许同源的 CSP；API 响应另带
