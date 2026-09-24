@@ -111,10 +111,16 @@ fn read_run(path: &Path) -> Result<Run, String> {
 /// A missing directory is an empty listing, not an error: a deck pointed
 /// at a runs directory that does not exist yet is a deck nobody has run
 /// anything with, and that is a normal state on the first day.
-#[must_use]
-pub fn list(dir: &Path) -> Vec<Entry> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
+///
+/// # Errors
+/// Any other failure to read the directory. A directory the deck may not
+/// read is not an empty one: listed as empty, it told the operator there
+/// were no runs when it could not tell whether there were.
+pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
 
     let mut paths: Vec<PathBuf> = entries
@@ -124,7 +130,7 @@ pub fn list(dir: &Path) -> Vec<Entry> {
         .collect();
     paths.sort();
 
-    paths
+    Ok(paths
         .iter()
         .map(|path| {
             let id = path
@@ -139,7 +145,7 @@ pub fn list(dir: &Path) -> Vec<Entry> {
                 },
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Resolve a run id to a path inside `dir`, refusing anything else.
@@ -285,16 +291,30 @@ pub fn read(dir: &Path, id: &str) -> Result<Run, String> {
     read_run(&path)
 }
 
-/// Sum of realized P&L across the readable runs in a listing.
+/// Sum of realized P&L across a listing, when a sum means something.
+///
+/// `None` when any run would not read — a total that quietly left one
+/// out is a number the reader cannot check — or when the runs are of
+/// different kinds: a backtest's P&L plus a live run's is not the P&L of
+/// anything.
 #[must_use]
-pub fn total_pnl(entries: &[Entry]) -> f64 {
-    entries
-        .iter()
-        .filter_map(|entry| match entry {
-            Entry::Read(summary) => Some(summary.pnl),
-            Entry::Unreadable { .. } => None,
-        })
-        .sum()
+pub fn total_pnl(entries: &[Entry]) -> Option<f64> {
+    let mut kind: Option<&str> = None;
+    let mut total = 0.0;
+    for entry in entries {
+        match entry {
+            Entry::Read(summary) => {
+                let label = summary.identity.label.as_str();
+                if kind.is_some_and(|k| k != label) {
+                    return None;
+                }
+                kind = Some(label);
+                total += summary.pnl;
+            }
+            Entry::Unreadable { .. } => return None,
+        }
+    }
+    Some(total)
 }
 
 /// Build a run output, for tests and fixtures.

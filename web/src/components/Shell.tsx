@@ -29,7 +29,9 @@ export function Shell() {
         <div className="mb-6 px-2 font-mono text-sm tracking-tight text-ink">
           quanterdeck
           <div className="mt-1 text-xs text-ink-muted">
-            {caps ? `v${caps.version} · 只读` : " "}
+            {/* From the capability, not a literal: this said "只读" whether
+                or not writes were on. */}
+            {caps ? `v${caps.version} · ${caps.writes.available ? "可写入" : "只读"}` : " "}
           </div>
         </div>
         <ul className="space-y-1">

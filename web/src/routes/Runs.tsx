@@ -17,7 +17,9 @@ export function Runs() {
       <h1 className="mb-1 text-lg text-ink">运行记录</h1>
       <p className="mb-4 text-sm text-ink-muted">
         {data.entries.length} 个文件 · 合计已实现盈亏{" "}
-        <span className="text-ink">{data.total_pnl.toFixed(3)}</span>
+        <span className="text-ink">
+          {data.total_pnl !== null ? data.total_pnl.toFixed(3) : "—（无法合计）"}
+        </span>
         {unreadable > 0 && (
           // Said out loud, because a total that quietly excluded a file
           // would be a number the reader cannot check.

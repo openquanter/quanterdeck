@@ -182,11 +182,23 @@ async fn identical_output_under_new_code_passes() {
 
 // -- attribution ----------------------------------------------------------
 
+/// The precision the amounts are computed at is the caller's to give;
+/// there is no default that would be right for a contract it never saw.
+#[tokio::test]
+async fn attribution_without_a_precision_is_refused() {
+    let (status, body) = client()
+        .await
+        .get("/api/v1/attribution?live=config-moved&model=baseline")
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["detail"].as_str().unwrap().contains("price_scale"));
+}
+
 #[tokio::test]
 async fn attribution_declines_a_residual_it_cannot_compute() {
     let (status, body) = client()
         .await
-        .get("/api/v1/attribution?live=config-moved&model=baseline")
+        .get("/api/v1/attribution?price_scale=2&qty_scale=2&live=config-moved&model=baseline")
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -222,7 +234,7 @@ async fn attribution_declines_a_residual_it_cannot_compute() {
 async fn attribution_reports_the_gap_it_can_compute() {
     let (_, body) = client()
         .await
-        .get("/api/v1/attribution?live=config-moved&model=baseline")
+        .get("/api/v1/attribution?price_scale=2&qty_scale=2&live=config-moved&model=baseline")
         .await;
     // 481.5 - 123.456, computed by the framework from the two P&Ls.
     let gap = body["gap"].as_f64().unwrap();
@@ -240,7 +252,7 @@ async fn half_a_funding_pair_is_not_taken_as_a_pair() {
     // zero nobody provided, and produce a fee difference out of thin air.
     let (_, body) = client()
         .await
-        .get("/api/v1/attribution?live=config-moved&model=baseline&venue_fees=1.0")
+        .get("/api/v1/attribution?price_scale=2&qty_scale=2&live=config-moved&model=baseline&venue_fees=1.0")
         .await;
     let fee_component = body["components"]
         .as_array()
@@ -258,7 +270,7 @@ async fn half_a_funding_pair_is_not_taken_as_a_pair() {
 async fn a_supplied_fee_pair_becomes_a_measured_component() {
     let (_, body) = client()
         .await
-        .get("/api/v1/attribution?live=config-moved&model=baseline&venue_fees=2.5&model_fees=1.0")
+        .get("/api/v1/attribution?price_scale=2&qty_scale=2&live=config-moved&model=baseline&venue_fees=2.5&model_fees=1.0")
         .await;
     let fee_component = body["components"]
         .as_array()
