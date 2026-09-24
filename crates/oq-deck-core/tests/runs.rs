@@ -20,7 +20,7 @@ fn ids(entries: &[runs::Entry]) -> Vec<String> {
 
 #[test]
 fn a_listing_names_every_file_including_the_broken_one() {
-    let entries = runs::list(&fixtures());
+    let entries = runs::list(&fixtures()).expect("the fixtures directory reads");
     let names = ids(&entries);
     assert!(names.contains(&"baseline".to_owned()));
     assert!(
@@ -31,7 +31,7 @@ fn a_listing_names_every_file_including_the_broken_one() {
 
 #[test]
 fn the_broken_one_carries_the_reason() {
-    let entries = runs::list(&fixtures());
+    let entries = runs::list(&fixtures()).expect("the fixtures directory reads");
     let broken = entries
         .iter()
         .find_map(|entry| match entry {
@@ -42,20 +42,44 @@ fn the_broken_one_carries_the_reason() {
     assert!(!broken.is_empty(), "a refusal must say why");
 }
 
+/// A total that quietly left a file out is a number nobody can check, so
+/// with an unreadable file there is no total; over the readable ones,
+/// nothing that failed contributes a zero.
 #[test]
-fn totals_ignore_what_could_not_be_read() {
-    let entries = runs::list(&fixtures());
+fn a_total_is_withheld_while_a_file_will_not_read() {
+    let entries = runs::list(&fixtures()).expect("the fixtures directory reads");
+    assert_eq!(runs::total_pnl(&entries), None);
+
+    let readable: Vec<runs::Entry> = entries
+        .into_iter()
+        .filter(|e| matches!(e, runs::Entry::Read(_)))
+        .collect();
     // Three readable fixtures: 123.456 + 123.456 + 481.5.
-    let total = runs::total_pnl(&entries);
-    assert!(
-        (total - 728.412).abs() < 1e-9,
-        "a file that did not read must not contribute a zero, got {total}"
-    );
+    let total = runs::total_pnl(&readable).expect("one kind of run, all read");
+    assert!((total - 728.412).abs() < 1e-9, "got {total}");
+}
+
+/// A backtest's P&L plus a live run's is not the P&L of anything.
+#[test]
+fn runs_of_different_kinds_have_no_total() {
+    let mut entries: Vec<runs::Entry> = runs::list(&fixtures())
+        .expect("reads")
+        .into_iter()
+        .filter(|e| matches!(e, runs::Entry::Read(_)))
+        .collect();
+    if let Some(runs::Entry::Read(summary)) = entries.first_mut() {
+        summary.identity.label = "live".to_owned();
+    }
+    assert_eq!(runs::total_pnl(&entries), None);
 }
 
 #[test]
 fn a_missing_directory_is_an_empty_listing_not_a_failure() {
-    assert!(runs::list(Path::new("/nonexistent/runs")).is_empty());
+    assert!(
+        runs::list(Path::new("/nonexistent/runs"))
+            .expect("absent is empty, not an error")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -112,4 +136,26 @@ fn a_moved_configuration_is_not_a_regression() {
         "the verdict must say what to do: {:?}",
         comparison.verdict.changed
     );
+}
+
+/// A directory the deck may not read is not an empty one. Listed as
+/// empty, it said "no runs" when the deck could not look.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_directory_is_reported_not_listed_as_empty() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("oq-deck-sealed-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+    // Root reads through permissions; there is nothing to test there.
+    let readable_anyway = std::fs::read_dir(&dir).is_ok();
+    let listed = runs::list(&dir);
+    let caps = oq_deck_core::capabilities::detect(Some(&dir), None, false);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("chmod back");
+    std::fs::remove_dir_all(&dir).ok();
+    if readable_anyway {
+        return;
+    }
+    assert!(listed.is_err(), "unreadable is not empty");
+    assert!(!caps.runs.available, "and not available either");
 }

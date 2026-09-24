@@ -135,18 +135,22 @@ fn from_cash(cash: Cash) -> f64 {
 }
 
 fn matched_from(model: &Fill, venue: &Fill) -> Option<Matched> {
-    // Different side or different size is not the same event, whatever
-    // position it occupies. Those become two unmatched fills instead.
-    (model.side == venue.side && model.qty == venue.qty).then_some(Matched {
-        side: model.side,
-        qty: model.qty,
-        model_price: model.price,
-        venue_price: venue.price,
-        // A run file records no prevailing price. Upstream reads this
-        // `None` as "slippage and latency cannot be separated", and that
-        // is exactly the situation.
-        reference_price: None,
-    })
+    // Different side, size or instrument is not the same event, whatever
+    // position it occupies. Those become two unmatched fills instead —
+    // two instruments' fills of one side and size were paired, and their
+    // price difference charged to slippage.
+    (model.symbol == venue.symbol && model.side == venue.side && model.qty == venue.qty).then_some(
+        Matched {
+            side: model.side,
+            qty: model.qty,
+            model_price: model.price,
+            venue_price: venue.price,
+            // A run file records no prevailing price. Upstream reads this
+            // `None` as "slippage and latency cannot be separated", and that
+            // is exactly the situation.
+            reference_price: None,
+        },
+    )
 }
 
 fn unmatched_from(fill: &Fill, at_venue: bool) -> Unmatched {
@@ -314,4 +318,20 @@ pub fn from_runs(
         matched_fills,
         unmatched_fills,
     })
+}
+
+#[cfg(test)]
+mod pairing {
+    use super::matched_from;
+    use oq_parity::Fill;
+    use oq_types::Side;
+
+    /// Two instruments' fills of one side and size are not one event.
+    #[test]
+    fn fills_of_different_instruments_are_not_paired() {
+        let btc = Fill::new(1, "BTCUSDT", Side::Buy, 100, 5);
+        let eth = Fill::new(1, "ETHUSDT", Side::Buy, 90, 5);
+        assert!(matched_from(&btc, &eth).is_none());
+        assert!(matched_from(&btc, &Fill::new(1, "BTCUSDT", Side::Buy, 101, 5)).is_some());
+    }
 }

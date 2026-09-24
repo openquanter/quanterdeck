@@ -54,7 +54,13 @@ pub struct Capabilities {
 
 fn directory(configured: Option<&Path>, variable: &str) -> Capability {
     match configured {
-        Some(dir) if dir.is_dir() => Capability::on(),
+        // A directory that exists and cannot be read is not available:
+        // reported as on, its pages showed "nothing here" for "could not
+        // look".
+        Some(dir) if dir.is_dir() => match std::fs::read_dir(dir) {
+            Ok(_) => Capability::on(),
+            Err(e) => Capability::off(format!("{} 无法读取：{e}", dir.display())),
+        },
         Some(dir) => Capability::off(format!("{} 不是一个目录", dir.display())),
         None => Capability::off(format!("尚未配置目录；请设置 {variable}")),
     }
