@@ -100,9 +100,14 @@ async fn main() -> ExitCode {
         }
     };
 
-    if let Err(error) = axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown())
-        .await
+    // With the peer address attached, so failed logins are counted per
+    // source rather than across everyone who can reach the port.
+    if let Err(error) = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await
     {
         eprintln!("oq-deck: {error}");
         return ExitCode::FAILURE;
