@@ -96,10 +96,14 @@ fn id_of(path: &Path) -> String {
 ///
 /// A missing directory is an empty listing, not an error: a deck pointed
 /// at a journal directory nothing has written to yet is a normal state.
-#[must_use]
-pub fn list(dir: &Path) -> Vec<Entry> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
+///
+/// # Errors
+/// Any other failure to read the directory, which is not an empty one.
+pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
 
     let mut paths: Vec<PathBuf> = entries
@@ -109,7 +113,7 @@ pub fn list(dir: &Path) -> Vec<Entry> {
         .collect();
     paths.sort();
 
-    paths
+    Ok(paths
         .iter()
         .map(|path| {
             let id = id_of(path);
@@ -126,7 +130,7 @@ pub fn list(dir: &Path) -> Vec<Entry> {
                 },
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Resolve a journal id inside `dir`, refusing anything else.
@@ -184,12 +188,31 @@ pub struct Reconciliation {
     pub venue: RecordView,
     /// One line per disagreement, from the framework's own comparison.
     pub differences: Vec<String>,
+    /// Whether the two can be said to agree, disagree, or neither.
+    pub verdict: Verdict,
+    /// True only when `verdict` is `Agree`. Kept for readers of the old
+    /// field; it no longer reads "no differences found" as agreement.
     pub agrees: bool,
     /// Repeated here because it qualifies everything above: a belief
     /// rebuilt from a journal with undecodable frames may agree by luck.
     pub undecodable: u64,
     /// Present when the account holds both legs.
     pub hedged: bool,
+}
+
+/// What a reconciliation concluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    /// Nothing differs, and the belief is whole.
+    Agree,
+    /// Something differs.
+    Disagree,
+    /// Nothing differs, but the belief has holes — undecodable frames, or
+    /// no record of the position the process took over — so "no
+    /// difference" may be luck. Not agreement; `agrees` was true here, and
+    /// it is the case this console exists to not render as agreement.
+    CannotTell,
 }
 
 /// Compare a process's belief against a venue record.
@@ -211,11 +234,20 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
     let believed = belief.to_record(venue.read_at_ms);
     let differences = believed.differences(&venue);
 
+    let verdict = if !differences.is_empty() {
+        Verdict::Disagree
+    } else if belief.undecodable > 0 || !belief.adopted {
+        Verdict::CannotTell
+    } else {
+        Verdict::Agree
+    };
+
     Ok(Reconciliation {
         journal: id.to_owned(),
         believed: RecordView::from(&believed),
         venue: RecordView::from(&venue),
-        agrees: differences.is_empty(),
+        agrees: verdict == Verdict::Agree,
+        verdict,
         differences,
         undecodable: belief.undecodable,
         hedged: belief.hedged,

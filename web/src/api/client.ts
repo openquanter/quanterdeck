@@ -68,7 +68,9 @@ export type RunEntry = RunSummary | UnreadableRun;
 
 export interface Listing {
   entries: RunEntry[];
-  total_pnl: number;
+  /** `null` when no total means anything: a run would not read, or the
+   * runs are of different kinds. */
+  total_pnl: number | null;
 }
 
 export interface Fill {

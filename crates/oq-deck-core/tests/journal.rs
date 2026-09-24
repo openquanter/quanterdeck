@@ -61,3 +61,64 @@ fn a_cancelled_order_is_neither_resting_nor_undecodable() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+fn journal(dir: &std::path::Path, records: &[Record]) {
+    std::fs::create_dir_all(dir).expect("dir");
+    let path = dir.join("run.oqj");
+    let _ = std::fs::remove_file(&path);
+    let mut w = Writer::open(&path, SyncPolicy::EveryRecord).expect("journal opens");
+    for r in records {
+        w.append(r.kind(), &r.encode()).expect("append");
+    }
+    w.sync().expect("sync");
+}
+
+fn start() -> Record {
+    Record::SessionStart {
+        prefix: "oq".into(),
+        symbol: "BTCUSDT".into(),
+        price_scale: 2,
+        qty_scale: 3,
+    }
+}
+
+const FLAT_VENUE: &str = "symbol BTCUSDT\nread_at_ms 1";
+
+/// No difference is not agreement when the belief has a hole: a journal
+/// that never recorded the position it took over reads as flat whether
+/// or not it was.
+#[test]
+fn no_difference_over_a_belief_with_holes_is_cannot_tell() {
+    let dir = std::env::temp_dir().join(format!("oq-deck-verdict-a-{}", std::process::id()));
+    journal(&dir, &[start()]);
+    let r = oq_deck_core::live::reconcile(&dir, "run", FLAT_VENUE).expect("reconciles");
+    assert!(r.differences.is_empty());
+    assert_eq!(r.verdict, oq_deck_core::live::Verdict::CannotTell);
+    assert!(!r.agrees);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// And a whole belief that matches is agreement.
+#[test]
+fn no_difference_over_a_whole_belief_is_agreement() {
+    let dir = std::env::temp_dir().join(format!("oq-deck-verdict-b-{}", std::process::id()));
+    journal(
+        &dir,
+        &[
+            start(),
+            Record::Reconciled {
+                at: Nanos(1),
+                legs: Vec::new(),
+            },
+        ],
+    );
+    let r = oq_deck_core::live::reconcile(&dir, "run", FLAT_VENUE).expect("reconciles");
+    assert_eq!(
+        r.verdict,
+        oq_deck_core::live::Verdict::Agree,
+        "{:?}",
+        r.differences
+    );
+    assert!(r.agrees);
+    std::fs::remove_dir_all(&dir).ok();
+}

@@ -431,7 +431,16 @@ fn dir_of(configured: Option<&PathBuf>, variable: &str) -> Result<PathBuf, Refus
 #[derive(Serialize)]
 struct Listing {
     entries: Vec<runs::Entry>,
-    total_pnl: f64,
+    /// `null` when no total means anything: a run would not read, or the
+    /// runs are of different kinds.
+    total_pnl: Option<f64>,
+}
+
+fn unreadable_dir(why: String) -> Refusal {
+    Refusal::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        format!("目录无法读取，所以无法判断其中有什么：{why}"),
+    )
 }
 
 async fn list_runs(State(deck): State<Deck>, headers: HeaderMap) -> Response {
@@ -439,11 +448,13 @@ async fn list_runs(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         return refusal.into_response();
     }
     match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
-        Ok(dir) => {
-            let entries = runs::list(&dir);
-            let total_pnl = runs::total_pnl(&entries);
-            axum::Json(Listing { entries, total_pnl }).into_response()
-        }
+        Ok(dir) => match runs::list(&dir) {
+            Ok(entries) => {
+                let total_pnl = runs::total_pnl(&entries);
+                axum::Json(Listing { entries, total_pnl }).into_response()
+            }
+            Err(why) => unreadable_dir(why).into_response(),
+        },
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -497,18 +508,17 @@ async fn compare_runs(
 struct AttributionQuery {
     live: String,
     model: String,
-    #[serde(default = "default_scale")]
-    price_scale: u8,
-    #[serde(default = "default_scale")]
-    qty_scale: u8,
+    /// Required, and checked after the session so an unauthenticated
+    /// request still reads 401. They defaulted to 2 — a precision nobody
+    /// chose, which the tolerance beside it says is indefensible: set
+    /// wrongly, every explained component was off by a power of ten and
+    /// still shown as measured.
+    price_scale: Option<u8>,
+    qty_scale: Option<u8>,
     venue_funding: Option<f64>,
     model_funding: Option<f64>,
     venue_fees: Option<f64>,
     model_fees: Option<f64>,
-}
-
-const fn default_scale() -> u8 {
-    2
 }
 
 impl AttributionQuery {
@@ -531,9 +541,16 @@ async fn attribution_report(
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
+    let (Some(price_scale), Some(qty_scale)) = (query.price_scale, query.qty_scale) else {
+        return Refusal::bad_request(
+            "需要 price_scale 和 qty_scale：归因金额按合约的价格与数量精度计算，\
+             没有默认值可以替你选。",
+        )
+        .into_response();
+    };
     let inputs = attribution::Inputs {
-        price_scale: query.price_scale,
-        qty_scale: query.qty_scale,
+        price_scale,
+        qty_scale,
         funding: AttributionQuery::pair(query.venue_funding, query.model_funding),
         fees: AttributionQuery::pair(query.venue_fees, query.model_fees),
     };
@@ -552,7 +569,10 @@ async fn list_journals(State(deck): State<Deck>, headers: HeaderMap) -> Response
         return refusal.into_response();
     }
     match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
-        Ok(dir) => axum::Json(live::list(&dir)).into_response(),
+        Ok(dir) => match live::list(&dir) {
+            Ok(entries) => axum::Json(entries).into_response(),
+            Err(why) => unreadable_dir(why).into_response(),
+        },
         Err(refusal) => refusal.into_response(),
     }
 }

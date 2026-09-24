@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type Capabilities } from "@/api/client";
 
 export function Overview() {
-  const { data: caps } = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
+  const { data: caps, isError: capsFailed } = useQuery({
+    queryKey: ["capabilities"],
+    queryFn: api.capabilities,
+  });
   const { data: listing } = useQuery({
     queryKey: ["runs"],
     queryFn: api.runs,
@@ -17,12 +20,25 @@ export function Overview() {
         <Tile label="运行记录" value={listing ? String(listing.entries.length) : "—"} />
         <Tile
           label="合计已实现盈亏"
-          value={listing ? listing.total_pnl.toFixed(3) : "—"}
+          value={listing && listing.total_pnl !== null ? listing.total_pnl.toFixed(3) : "—"}
+          sub={
+            listing && listing.total_pnl === null
+              ? "无法合计：有记录未能读取，或混有不同类型的运行"
+              : undefined
+          }
         />
+        {/* Unknown until the deck says. A failed request rendered as
+            "只读" was a definite answer to a question nobody had asked. */}
         <Tile
           label="写入模式"
-          value={caps?.writes.available ? "已开启" : "只读"}
-          sub={caps?.writes.available ? undefined : caps?.writes.reason}
+          value={caps ? (caps.writes.available ? "已开启" : "只读") : "—"}
+          sub={
+            capsFailed
+              ? "无法获取能力信息"
+              : caps?.writes.available
+                ? undefined
+                : caps?.writes.reason
+          }
         />
       </div>
       {caps && <Unavailable caps={caps} />}
