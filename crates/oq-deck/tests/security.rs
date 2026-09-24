@@ -321,6 +321,36 @@ async fn repeated_failures_close_the_door() {
     assert!(body["detail"].as_str().unwrap().contains("分钟"));
 }
 
+/// Someone else's failures do not evict the operator.
+///
+/// The lockout used to refuse every session while it lasted, so anything
+/// that could reach the port — another local process, anyone past a
+/// reverse proxy — locked the operator out of a session they already had
+/// with five bad requests, and could repeat it every fifteen minutes.
+#[tokio::test]
+async fn a_lockout_does_not_end_a_session_already_granted() {
+    let app = app(configured());
+    let cookie = log_in(&app).await;
+    for _ in 0..5 {
+        send(
+            &app,
+            post(
+                "/api/v1/session/login",
+                HOST,
+                Some("http://127.0.0.1:8899"),
+                serde_json::json!({ "password": "wrong but long enough" }),
+            ),
+        )
+        .await;
+    }
+    let (status, _, _) = send(&app, get("/api/v1/runs", HOST, Some(&cookie))).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the operator's session is still theirs"
+    );
+}
+
 // -- setup ----------------------------------------------------------------
 
 #[tokio::test]
