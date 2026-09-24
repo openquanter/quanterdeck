@@ -14,7 +14,7 @@ const SECTIONS: { to: string; label: string; capability: CapabilityName | null }
   { to: "/runs", label: "运行记录", capability: "runs" },
   { to: "/attribution", label: "归因", capability: "attribution" },
   { to: "/live", label: "实盘对账", capability: "live" },
-  { to: "/journal", label: "Journal", capability: "journal" },
+  { to: "/journal", label: "Journal", capability: "live" },
   { to: "/sweeps", label: "参数扫描", capability: "runs" },
   { to: "/data", label: "数据质量", capability: null },
   { to: "/settings", label: "设置", capability: null },

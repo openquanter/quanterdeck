@@ -142,8 +142,7 @@ pub fn resolve(dir: &Path, id: &str) -> Option<PathBuf> {
     if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
         return None;
     }
-    let candidate = dir.join(format!("{id}.oqj"));
-    candidate.is_file().then_some(candidate)
+    crate::listed(dir, &format!("{id}.oqj"))
 }
 
 /// One journal's belief.

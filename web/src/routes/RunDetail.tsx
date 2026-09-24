@@ -54,11 +54,9 @@ export function RunDetail() {
               <tr key={index} className="border-t border-line">
                 <td className="px-3 py-2 font-mono text-xs">{fill.ts}</td>
                 <td className="px-3 py-2 font-mono">{fill.symbol}</td>
-                <td
-                  className={`px-3 py-2 ${fill.side === "buy" ? "text-good" : "text-bad"}`}
-                >
-                  {fill.side}
-                </td>
+                {/* Neutral: green and red mean a conclusion held or
+                    failed (UI-BRIEF §8), and a sell is neither. */}
+                <td className="px-3 py-2 text-ink">{fill.side}</td>
                 <td className="px-3 py-2 text-right font-mono">{fill.price_ticks}</td>
                 <td className="px-3 py-2 text-right font-mono">{fill.qty_lots}</td>
                 {/* No tag and an empty tag are different things in the
