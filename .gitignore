@@ -7,3 +7,12 @@ web/dist/
 .DS_Store
 .env
 .shots/
+
+# Generated or tool-local; never source.
+__pycache__/
+*.pyc
+*.egg-info/
+.gstack/
+# The interface's build output. It is built into web/dist; a copy under
+# src/ is the Python backend's, which no longer exists.
+/src/
