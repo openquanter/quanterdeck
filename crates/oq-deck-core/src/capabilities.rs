@@ -85,10 +85,27 @@ pub fn detect(
         },
         runs,
         live,
+        // Off until there is a write route to use. Reported on when the
+        // variable was set, the capability promised what no route
+        // delivers — the one thing a capability must not do.
         writes: if writes_allowed {
-            Capability::on()
+            Capability::off("已设置 OQ_DECK_ALLOW_WRITES，但本版本还没有任何写入功能")
         } else {
             Capability::off("本 deck 处于只读模式；要修改任何东西，请先在设置中开启写入")
         },
+    }
+}
+
+#[cfg(test)]
+mod writes {
+    use super::detect;
+
+    /// Allowed is not available: there is no write route yet, and a
+    /// capability reported on is a promise that a route delivers.
+    #[test]
+    fn writes_are_not_offered_before_there_is_anything_to_write_with() {
+        let caps = detect(None, None, true);
+        assert!(!caps.writes.available);
+        assert!(caps.writes.reason.contains("还没有"));
     }
 }
