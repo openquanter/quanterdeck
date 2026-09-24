@@ -38,7 +38,15 @@ Quanterdeck 是单操作者、自托管的控制台。它读交易系统的运�
 | 账户信息进入日志/history/referrer | 对账记录走 POST body，不走 query string |
 
 检查顺序是固定的，最外层是 `Host`：一个过不了 `Host` 检查的请求根本走不到会话
-查找，因此攻击者无法在那里用时间差判断会话是否存在。
+查找，因此攻击者无法在那里用时间差判断会话是否存在。`Host` 检查是整个 router 最外层
+的中间件，覆盖 `/health`、静态文件、logout，并且先于任何请求体解析。
+
+写入请求的 `Origin` 按完整 origin 比对：TLS 后面必须是 `https://`，否则 `http://`；
+缺少、协议不符或不带协议的一律拒绝。logout 也是写入，同样检查。
+
+每个响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、
+`Referrer-Policy: no-referrer` 和只允许同源的 CSP；API 响应另带
+`Cache-Control: no-store`。不存在的 `/api/v1/*` 路径返回 404，不落到界面页面。
 
 ## 具体做法
 

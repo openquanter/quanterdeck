@@ -66,15 +66,23 @@ impl Hosts {
 /// A missing `Origin` is refused rather than allowed. Same-origin `GET`
 /// omits it, but this only runs on writes, where every browser sends it.
 #[must_use]
-pub fn origin_permitted(origin: Option<&str>, hosts: &Hosts) -> bool {
+///
+/// The scheme is part of an origin, and compared: `https` behind TLS,
+/// `http` otherwise. Compared by authority alone, `ftp://…`, a bare
+/// `127.0.0.1:8899` and — behind TLS — a plain `http://` page on the same
+/// name all passed as this console's own.
+pub fn origin_permitted(origin: Option<&str>, hosts: &Hosts, https: bool) -> bool {
     let Some(origin) = origin else {
         return false;
     };
+    let Some((scheme, rest)) = origin.split_once("://") else {
+        return false;
+    };
+    let expected = if https { "https" } else { "http" };
+    if !scheme.eq_ignore_ascii_case(expected) {
+        return false;
+    }
     // Compare authority to authority: `http://127.0.0.1:8899` against
     // the same `127.0.0.1:8899` the Host check uses.
-    let authority = origin
-        .split_once("://")
-        .map_or(origin, |(_, rest)| rest)
-        .trim_end_matches('/');
-    hosts.permits(Some(authority))
+    hosts.permits(Some(rest.trim_end_matches('/')))
 }
