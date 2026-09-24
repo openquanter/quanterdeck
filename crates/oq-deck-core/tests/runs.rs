@@ -159,3 +159,24 @@ fn an_unreadable_directory_is_reported_not_listed_as_empty() {
     assert!(listed.is_err(), "unreadable is not empty");
     assert!(!caps.runs.available, "and not available either");
 }
+
+/// A link in the directory is not a run in it: joined onto the path, an
+/// id naming a symlink was followed wherever it pointed.
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_is_not_resolved() {
+    let dir = std::env::temp_dir().join(format!("oq-deck-links-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let outside = dir.with_extension("outside");
+    std::fs::write(&outside, "not a run").expect("write");
+    let link = dir.join("escape.run");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&outside, &link).expect("symlink");
+    std::fs::write(dir.join("plain.run"), "x").expect("write");
+
+    assert!(runs::resolve(&dir, "escape").is_none());
+    assert!(runs::resolve(&dir, "plain").is_some());
+
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_file(&outside).ok();
+}
