@@ -131,6 +131,14 @@ fn source_of(peer: Option<&axum::Extension<ConnectInfo<SocketAddr>>>) -> String 
     peer.map_or_else(|| "unknown".to_owned(), |p| p.0.0.ip().to_string())
 }
 
+/// The deck's own configuration is broken, not the request.
+fn misconfigured(what: &str) -> Refusal {
+    Refusal::new(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("{what}这是配置问题，不是密码错误；本次尝试不计入失败次数。"),
+    )
+}
+
 fn locked_out(deck: &Deck, source: &str) -> Refusal {
     let minutes = deck
         .sessions
@@ -251,18 +259,31 @@ async fn login(
 
     let rejected = Refusal::new(StatusCode::UNAUTHORIZED, "密码或验证码不正确。");
 
-    if auth::verify_password(&body.password, stored).is_err() {
-        deck.sessions.record_failure(&source);
-        return rejected.into_response();
+    match auth::verify_password(&body.password, stored) {
+        Ok(()) => {}
+        Err(auth::AuthError::Rejected) => {
+            deck.sessions.record_failure(&source);
+            return rejected.into_response();
+        }
+        // The stored hash, not the attempt. Reported as itself and not
+        // counted: read as a wrong password it sent the operator after a
+        // password that was never the problem, and locked them out.
+        Err(_) => return misconfigured("OQ_DECK_PASSWORD_HASH 无法解析。").into_response(),
     }
 
     if let Some(secret) = deck.settings.totp_secret.as_ref() {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
-        if auth::verify_totp(secret, &body.totp, now).is_err() {
-            deck.sessions.record_failure(&source);
-            return rejected.into_response();
+        match auth::verify_totp(secret, &body.totp, now) {
+            Ok(()) => {}
+            Err(auth::AuthError::Rejected) => {
+                deck.sessions.record_failure(&source);
+                return rejected.into_response();
+            }
+            Err(_) => {
+                return misconfigured("OQ_DECK_TOTP_SECRET 无法解析。").into_response();
+            }
         }
     }
 
