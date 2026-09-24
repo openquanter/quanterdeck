@@ -106,6 +106,7 @@ cd quanterdeck
 cd web && npm install && npm run build && cd ..   # Node is build-time only
 export OQ_DECK_RUNS_DIR=/path/to/your/runs
 export OQ_DECK_JOURNALS_DIR=/path/to/your/journals   # for reconciliation
+export OQ_DECK_TICKS_DIR=/path/to/your/ticks         # .oqtk files, for markouts
 cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
 

@@ -23,7 +23,7 @@ use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use oq_deck_core::{attribution, auth, capabilities, live, runs};
+use oq_deck_core::{attribution, auth, capabilities, live, markout, runs};
 use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -426,6 +426,7 @@ async fn caps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
     axum::Json(capabilities::detect(
         deck.settings.runs_dir.as_deref(),
         deck.settings.journals_dir.as_deref(),
+        deck.settings.ticks_dir.as_deref(),
         deck.settings.allow_writes,
     ))
     .into_response()
@@ -509,6 +510,63 @@ async fn compare_runs(
         runs::compare_ids(&dir, &query.baseline, &query.candidate, query.tolerance)
             .map_err(Refusal::not_found)
     }) {
+        Ok(comparison) => axum::Json(comparison).into_response(),
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+// -- markout ----------------------------------------------------------------
+
+async fn list_ticks(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match dir_of(deck.settings.ticks_dir.as_ref(), "OQ_DECK_TICKS_DIR") {
+        Ok(dir) => match markout::list_ticks(&dir) {
+            Ok(ids) => axum::Json(ids).into_response(),
+            Err(why) => unreadable_dir(why).into_response(),
+        },
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct MarkoutQuery {
+    baseline: String,
+    candidate: String,
+    ticks: String,
+}
+
+async fn markout_runs(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    Query(query): Query<MarkoutQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let dirs = dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR").and_then(|runs| {
+        dir_of(deck.settings.ticks_dir.as_ref(), "OQ_DECK_TICKS_DIR").map(|ticks| (runs, ticks))
+    });
+    // Reading a tick file is the one request here that is not bounded by
+    // the size of a run: it walks the whole file. Off the async workers,
+    // so a large one does not stall every other request.
+    let result = match dirs {
+        Ok((runs, ticks)) => tokio::task::spawn_blocking(move || {
+            markout::compare(
+                &runs,
+                &ticks,
+                &query.baseline,
+                &query.candidate,
+                &query.ticks,
+            )
+        })
+        .await
+        .map_err(|e| Refusal::not_found(e.to_string()))
+        .and_then(|r| r.map_err(Refusal::not_found)),
+        Err(refusal) => Err(refusal),
+    };
+    match result {
         Ok(comparison) => axum::Json(comparison).into_response(),
         Err(refusal) => refusal.into_response(),
     }
@@ -666,6 +724,8 @@ pub fn router(
         .route("/runtime/capabilities", get(caps))
         .route("/runs", get(list_runs))
         .route("/runs/compare", get(compare_runs))
+        .route("/runs/markout", get(markout_runs))
+        .route("/ticks", get(list_ticks))
         .route("/runs/{id}", get(run_detail))
         .route("/attribution", get(attribution_report))
         .route("/journals", get(list_journals))

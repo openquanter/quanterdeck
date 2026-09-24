@@ -1,9 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { api, type Verdict } from "@/api/client";
 
 import { Failure } from "./Runs";
+
+// Loaded when a comparison is shown: the chart library is most of the
+// bundle, and nobody who never compares two runs should download it.
+const MarkoutPanel = lazy(() =>
+  import("./Markout").then((m) => ({ default: m.MarkoutPanel })),
+);
 
 /**
  * A parity comparison, and the one thing this screen must never do:
@@ -62,6 +68,9 @@ export function Compare() {
               </>
             )}
           </dl>
+          <Suspense fallback={<p className="mt-8 text-sm text-ink-muted">加载图表…</p>}>
+            <MarkoutPanel baseline={baseline} candidate={candidate} />
+          </Suspense>
         </>
       )}
     </div>

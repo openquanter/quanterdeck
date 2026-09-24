@@ -12,6 +12,8 @@ pub struct Settings {
     pub port: u16,
     pub runs_dir: Option<PathBuf>,
     pub journals_dir: Option<PathBuf>,
+    /// Tick files (`.oqtk`) to price fills against, for markouts.
+    pub ticks_dir: Option<PathBuf>,
     /// Argon2id hash of the operator's password.
     ///
     /// `None` means setup has not been done. It does **not** mean the
@@ -37,6 +39,7 @@ impl Default for Settings {
             port: 8899,
             runs_dir: None,
             journals_dir: None,
+            ticks_dir: None,
             password_hash: None,
             totp_secret: None,
             extra_hosts: Vec::new(),
@@ -161,6 +164,7 @@ impl Settings {
         settings.journals_dir = std::env::var("OQ_DECK_JOURNALS_DIR")
             .ok()
             .map(PathBuf::from);
+        settings.ticks_dir = std::env::var("OQ_DECK_TICKS_DIR").ok().map(PathBuf::from);
         // An empty variable is an unset one: `OQ_DECK_TOTP_SECRET=` in an
         // environment file read as a second factor with an empty key.
         let set = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());

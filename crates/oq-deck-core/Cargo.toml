@@ -16,6 +16,7 @@ base32.workspace = true
 hmac.workspace = true
 oq-gateway.workspace = true
 oq-journal.workspace = true
+oq-data.workspace = true
 oq-live.workspace = true
 oq-parity.workspace = true
 oq-types.workspace = true
@@ -25,4 +26,5 @@ sha1.workspace = true
 subtle.workspace = true
 
 [dev-dependencies]
+oq-engine.workspace = true
 tempfile = "3"

@@ -71,6 +71,7 @@ export interface Capabilities {
   version: string;
   runs: Capability;
   attribution: Capability;
+  markout: Capability;
   live: Capability;
   writes: Capability;
 }
@@ -139,6 +140,25 @@ export interface Comparison {
   passes: boolean;
 }
 
+/** One horizon of markouts, in basis points; statistics absent when too few fills. */
+export interface Horizon {
+  seconds: number;
+  samples: number;
+  measured: boolean;
+  mean_bps: number | null;
+  median_bps: number | null;
+  p10_bps: number | null;
+  p90_bps: number | null;
+  adverse_share: number | null;
+}
+
+export interface MarkoutComparison {
+  ticks: string;
+  baseline: { id: string; horizons: Horizon[] };
+  candidate: { id: string; horizons: Horizon[] };
+  contrast: { seconds: number; difference_bps: number | null }[];
+}
+
 export const api = {
   capabilities: () => request<Capabilities>("/runtime/capabilities"),
   runs: () => request<Listing>("/runs"),
@@ -147,6 +167,12 @@ export const api = {
     request<Comparison>(
       `/runs/compare?baseline=${encodeURIComponent(baseline)}` +
         `&candidate=${encodeURIComponent(candidate)}&tolerance=${tolerance}`,
+    ),
+  ticks: () => request<string[]>("/ticks"),
+  markout: (baseline: string, candidate: string, ticks: string) =>
+    request<MarkoutComparison>(
+      `/runs/markout?baseline=${encodeURIComponent(baseline)}` +
+        `&candidate=${encodeURIComponent(candidate)}&ticks=${encodeURIComponent(ticks)}`,
     ),
   session: () => request<SessionState>("/session"),
   login: (password: string, totp: string) =>
