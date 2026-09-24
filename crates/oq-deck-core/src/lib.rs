@@ -5,6 +5,7 @@ pub mod auth;
 pub mod capabilities;
 pub mod gate;
 pub mod live;
+pub mod markout;
 pub mod runs;
 
 /// A file named exactly `file_name` in `dir`'s own listing, if there is

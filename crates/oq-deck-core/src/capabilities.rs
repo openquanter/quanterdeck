@@ -48,6 +48,11 @@ pub struct Capabilities {
     /// Needs the runs directory: the decomposition compares a live run
     /// against a model run, and both are run files.
     pub attribution: Capability,
+    /// Markouts: where the price went after each fill, for two runs.
+    ///
+    /// Needs both directories: the fills are in run files and the prices
+    /// they are marked against are in tick files.
+    pub markout: Capability,
     /// Whether this deck may change anything at all.
     pub writes: Capability,
 }
@@ -71,10 +76,12 @@ fn directory(configured: Option<&Path>, variable: &str) -> Capability {
 pub fn detect(
     runs_dir: Option<&Path>,
     journals_dir: Option<&Path>,
+    ticks_dir: Option<&Path>,
     writes_allowed: bool,
 ) -> Capabilities {
     let runs = directory(runs_dir, "OQ_DECK_RUNS_DIR");
     let live = directory(journals_dir, "OQ_DECK_JOURNALS_DIR");
+    let ticks = directory(ticks_dir, "OQ_DECK_TICKS_DIR");
 
     Capabilities {
         version: env!("CARGO_PKG_VERSION"),
@@ -82,6 +89,16 @@ pub fn detect(
             Capability::on()
         } else {
             Capability::off("归因要把一次实盘 run 与一次模型 run 相比；请先配置 OQ_DECK_RUNS_DIR")
+        },
+        markout: match (runs.available, ticks.available) {
+            (true, true) => Capability::on(),
+            (false, _) => {
+                Capability::off("markout 要读 run 文件里的成交；请先配置 OQ_DECK_RUNS_DIR")
+            }
+            (true, false) => Capability::off(format!(
+                "markout 要用 tick 文件给成交定价：{}",
+                ticks.reason
+            )),
         },
         runs,
         live,
@@ -104,7 +121,7 @@ mod writes {
     /// capability reported on is a promise that a route delivers.
     #[test]
     fn writes_are_not_offered_before_there_is_anything_to_write_with() {
-        let caps = detect(None, None, true);
+        let caps = detect(None, None, None, true);
         assert!(!caps.writes.available);
         assert!(caps.writes.reason.contains("还没有"));
     }

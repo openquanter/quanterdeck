@@ -332,3 +332,78 @@ async fn a_journal_id_cannot_escape_its_directory() {
         .await;
     assert_ne!(status, StatusCode::OK);
 }
+
+/// A directory holding two runs and the day they traded on.
+fn markout_dir() -> PathBuf {
+    use oq_parity::manifest::RunManifest;
+    use oq_parity::wire::Run;
+    const S: i64 = 1_000_000_000;
+    let dir = std::env::temp_dir().join(format!("oq-deck-markout-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ticks: Vec<oq_engine::Tick> = (0..120)
+        .map(|i| {
+            let p = 10_000 + i;
+            oq_engine::Tick::trades_only(oq_types::Stamp::new(i * S, i * S), p, p, p)
+        })
+        .collect();
+    std::fs::write(dir.join("day.oqtk"), oq_data::encode(1, &ticks)).unwrap();
+    for (id, offset) in [("model", 0), ("live", 5)] {
+        let fills = (0..40)
+            .map(|i| oq_parity::Fill::new(i * S / 10, "X", oq_types::Side::Buy, 10_000 + offset, 1))
+            .collect();
+        let run = Run::new(
+            RunManifest::from_content("c", b"d", b"g", "L0"),
+            oq_parity::RunOutput::new(fills, 0.0),
+        );
+        std::fs::write(dir.join(format!("{id}.run")), run.render()).unwrap();
+    }
+    dir
+}
+
+#[tokio::test]
+async fn markout_is_off_until_there_are_ticks_to_price_against() {
+    let (_, body) = client().await.get("/api/v1/runtime/capabilities").await;
+    assert_eq!(body["markout"]["available"], false);
+    assert!(
+        body["markout"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("OQ_DECK_TICKS_DIR")
+    );
+}
+
+#[tokio::test]
+async fn two_runs_are_compared_by_markout_against_a_chosen_tick_file() {
+    let dir = markout_dir();
+    let client = Client::new(Settings {
+        runs_dir: Some(dir.clone()),
+        ticks_dir: Some(dir.clone()),
+        ..settings()
+    })
+    .await;
+    let (_, caps) = client.get("/api/v1/runtime/capabilities").await;
+    assert_eq!(caps["markout"]["available"], true);
+
+    let (status, ticks) = client.get("/api/v1/ticks").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ticks, serde_json::json!(["day"]));
+
+    let (status, body) = client
+        .get("/api/v1/runs/markout?baseline=model&candidate=live&ticks=day")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ticks"], "day");
+    assert_eq!(body["baseline"]["horizons"][0]["samples"], 40);
+    let difference = body["contrast"][0]["difference_bps"].as_f64().unwrap();
+    assert!((difference + 5.0).abs() < 0.01, "{body}");
+
+    let (status, _) = client
+        .get("/api/v1/runs/markout?baseline=model&candidate=live&ticks=..%2Fday")
+        .await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "a tick id cannot leave its directory"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
