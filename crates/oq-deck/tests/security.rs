@@ -371,7 +371,12 @@ async fn a_corrupt_hash_is_not_a_wrong_password() {
         )
         .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
-        assert!(body["detail"].as_str().unwrap().contains("OQ_DECK_PASSWORD_HASH"));
+        assert!(
+            body["detail"]
+                .as_str()
+                .unwrap()
+                .contains("OQ_DECK_PASSWORD_HASH")
+        );
     }
 }
 
