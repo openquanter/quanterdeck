@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { api, type RunEntry } from "@/api/client";
+import { ApiError, api, type RunEntry } from "@/api/client";
 
 export function Runs() {
   const { data, isLoading, error } = useQuery({ queryKey: ["runs"], queryFn: api.runs });
@@ -89,9 +89,18 @@ export function Skeleton() {
 }
 
 export function Failure({ error }: { error: unknown }) {
+  const status = error instanceof ApiError ? error.status : 0;
+  // Two refusals that are protections, not failures of the operator's
+  // (UI-BRIEF §5.4): said as what they are, with what to do about them.
+  const headline =
+    status === 421
+      ? "这个地址不在本 deck 应答的名字里——这是防 DNS rebinding 的保护。若经反向代理访问，请把代理的域名加进 OQ_DECK_EXTRA_HOSTS。"
+      : status === 403
+        ? "这个写入请求被跨站保护拒绝了：它的来源不是本 deck 的页面。这不是操作失败。"
+        : "读取失败。";
   return (
     <div className="rounded border border-bad/40 bg-bad/10 p-4 text-sm">
-      <p className="text-ink">读取失败。</p>
+      <p className="text-ink">{headline}</p>
       <p className="mt-2 font-mono text-xs text-ink-muted">
         {error instanceof Error ? error.message : String(error)}
       </p>
