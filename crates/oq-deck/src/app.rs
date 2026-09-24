@@ -38,7 +38,9 @@ pub struct Deck {
     pub hosts: Arc<Hosts>,
     /// The one-time token printed at startup when no password is set.
     /// `None` once setup is done.
-    pub setup_token: Arc<Option<String>>,
+    /// Taken, not read, by a setup that succeeds: the token is single
+    /// use, as the notes and the startup message say it is.
+    pub setup_token: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 /// A refusal the interface can act on.
@@ -355,16 +357,25 @@ async fn setup(
     if let Err(refusal) = check_origin(&deck, &headers) {
         return refusal.into_response();
     }
-    let Some(expected) = deck.setup_token.as_ref() else {
-        return Refusal::new(StatusCode::CONFLICT, "初始设置已经完成。").into_response();
+    // Checked and taken under one lock, so two requests racing with the
+    // same token cannot both be answered. It stayed valid after a setup
+    // succeeded, until the process restarted: a second setup with it
+    // issued a second hash and a second secret.
+    let token = {
+        let mut slot = deck.setup_token.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(expected) = slot.as_ref() else {
+            return Refusal::new(StatusCode::CONFLICT, "初始设置已经完成。").into_response();
+        };
+        if !auth::secrets_match(expected, &body.token) {
+            deck.sessions.record_failure(&source);
+            return Refusal::new(StatusCode::UNAUTHORIZED, "一次性令牌不正确。").into_response();
+        }
+        // A password that is refused does not spend the token.
+        if let Some(complaint) = auth::password_complaint(&body.password) {
+            return Refusal::bad_request(complaint).into_response();
+        }
+        slot.take()
     };
-    if !auth::secrets_match(expected, &body.token) {
-        deck.sessions.record_failure(&source);
-        return Refusal::new(StatusCode::UNAUTHORIZED, "一次性令牌不正确。").into_response();
-    }
-    if let Some(complaint) = auth::password_complaint(&body.password) {
-        return Refusal::bad_request(complaint).into_response();
-    }
 
     match (auth::hash_password(&body.password), auth::new_totp_secret()) {
         (Ok(password_hash), Ok(totp_secret)) => axum::Json(SetupDone {
@@ -377,11 +388,15 @@ async fn setup(
             ],
         })
         .into_response(),
-        (Err(error), _) | (_, Err(error)) => Refusal::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("初始设置失败：{error}"),
-        )
-        .into_response(),
+        (Err(error), _) | (_, Err(error)) => {
+            // Nothing was issued, so the token is given back.
+            *deck.setup_token.lock().unwrap_or_else(|e| e.into_inner()) = token;
+            Refusal::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("初始设置失败：{error}"),
+            )
+            .into_response()
+        }
     }
 }
 
@@ -602,7 +617,7 @@ pub fn router(
         settings: Arc::new(settings),
         sessions: Arc::new(Sessions::new()),
         hosts: Arc::new(hosts),
-        setup_token: Arc::new(setup_token),
+        setup_token: Arc::new(std::sync::Mutex::new(setup_token)),
     };
 
     let api = Router::new()
