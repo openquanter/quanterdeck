@@ -99,6 +99,18 @@ fn check_host(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
 
 fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    // Fetch Metadata, on top of Origin rather than instead of it: a
+    // browser that sends `Sec-Fetch-Site` says where the request came
+    // from in words a page cannot choose. Anything but this origin or
+    // the user's own navigation is refused. Its absence — an older
+    // browser, a script — leaves the Origin check to decide.
+    let site = headers.get("sec-fetch-site").and_then(|v| v.to_str().ok());
+    if site.is_some_and(|s| !matches!(s, "same-origin" | "none")) {
+        return Err(Refusal::new(
+            StatusCode::FORBIDDEN,
+            "该写入请求来自其他站点（Sec-Fetch-Site），跨站点的写入会被拒绝。",
+        ));
+    }
     if origin_permitted(origin, &deck.hosts, deck.settings.behind_tls) {
         return Ok(());
     }
