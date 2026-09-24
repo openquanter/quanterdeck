@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type CapabilityName } from "@/api/client";
 
@@ -57,9 +57,31 @@ export function Shell() {
           ))}
         </ul>
       </nav>
-      <main className="flex-1 p-6">
-        <Outlet />
+      <main className="flex-1">
+        <SessionBar />
+        <div className="p-6">
+          <Outlet />
+        </div>
       </main>
+    </div>
+  );
+}
+
+/** Top right: whose session this is, and the way out (UI-BRIEF §5.3). */
+function SessionBar() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  async function logOut() {
+    await api.logout().catch(() => undefined);
+    await queryClient.invalidateQueries();
+    navigate("/login", { replace: true });
+  }
+  return (
+    <div className="flex items-center justify-end gap-3 border-b border-line px-6 py-2 text-xs text-ink-muted">
+      <span>已登录</span>
+      <button type="button" onClick={logOut} className="rounded border border-line px-2 py-1 hover:text-ink">
+        登出
+      </button>
     </div>
   );
 }

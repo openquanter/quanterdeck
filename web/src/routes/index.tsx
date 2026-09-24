@@ -2,6 +2,9 @@ import { createBrowserRouter } from "react-router-dom";
 
 import { Placeholder } from "@/components/Placeholder";
 import { Shell } from "@/components/Shell";
+import { AuthGate } from "@/features/auth/AuthGate";
+import { Login } from "@/features/auth/Login";
+import { Setup } from "@/features/auth/Setup";
 
 import { Compare } from "./Compare";
 import { Overview } from "./Overview";
@@ -16,9 +19,15 @@ import { Runs } from "./Runs";
  * whether one is late or simply not due yet.
  */
 export const router = createBrowserRouter([
+  { path: "/login", element: <Login /> },
+  { path: "/setup", element: <Setup /> },
   {
     path: "/",
-    element: <Shell />,
+    element: (
+      <AuthGate>
+        <Shell />
+      </AuthGate>
+    ),
     children: [
       { index: true, element: <Overview /> },
       { path: "runs", element: <Runs /> },
@@ -61,5 +70,4 @@ export const router = createBrowserRouter([
       { path: "settings", element: <Placeholder title="设置" milestone="M1" /> },
     ],
   },
-  { path: "/setup", element: <Placeholder title="首次运行向导" milestone="M4" /> },
 ]);
