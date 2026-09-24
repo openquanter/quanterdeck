@@ -87,6 +87,7 @@ cd quanterdeck
 cd web && npm install && npm run build && cd ..   # 构建期才需要 Node
 export OQ_DECK_RUNS_DIR=/path/to/your/runs
 export OQ_DECK_JOURNALS_DIR=/path/to/your/journals   # 实盘对账需要
+export OQ_DECK_TICKS_DIR=/path/to/your/ticks         # .oqtk 文件，markout 用来给成交定价
 cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
 
