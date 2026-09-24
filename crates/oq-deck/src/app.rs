@@ -388,7 +388,7 @@ async fn setup(
             totp_secret: totp_secret.clone(),
             next_steps: vec![
                 "把 OQ_DECK_PASSWORD_HASH 设为上面的 hash，重启 deck。".to_owned(),
-                "把 TOTP secret 录入验证器应用；要在非回环地址监听时它是必需的。".to_owned(),
+                "把 TOTP secret 录入验证器应用，并设为 OQ_DECK_TOTP_SECRET；deck 对外可达时（非回环地址、反向代理或 OQ_DECK_EXTRA_HOSTS）它是必需的。".to_owned(),
                 "两者都不要提交进 git，也不要写进任何日志。".to_owned(),
             ],
         })

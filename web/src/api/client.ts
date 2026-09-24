@@ -15,13 +15,50 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/v1${path}`);
+/**
+ * Raised when an authenticated request comes back 401: the session ended
+ * under a page the operator was reading. The auth gate answers it with a
+ * sign-in dialog over that page rather than a navigation away from it.
+ */
+export const UNAUTHENTICATED = "oq:unauthenticated";
+
+async function read<T>(response: Response, path: string): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
+    if (response.status === 401 && path !== "/session/login" && path !== "/setup") {
+      window.dispatchEvent(new Event(UNAUTHENTICATED));
+    }
     throw new ApiError(response.status, body?.detail ?? response.statusText);
   }
   return response.json() as Promise<T>;
+}
+
+async function request<T>(path: string): Promise<T> {
+  return read<T>(await fetch(`/api/v1${path}`), path);
+}
+
+/** A write. The browser sets `Origin`, which the deck checks on every one. */
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return read<T>(response, path);
+}
+
+export interface SessionState {
+  authenticated: boolean;
+  /** True until the first password is set; the interface goes to setup. */
+  setup_required: boolean;
+  /** Whether the login form needs a six-digit code field. */
+  totp_required: boolean;
+}
+
+export interface SetupDone {
+  password_hash: string;
+  totp_secret: string;
+  next_steps: string[];
 }
 
 /** A capability that is off carries the sentence explaining it. */
@@ -111,4 +148,9 @@ export const api = {
       `/runs/compare?baseline=${encodeURIComponent(baseline)}` +
         `&candidate=${encodeURIComponent(candidate)}&tolerance=${tolerance}`,
     ),
+  session: () => request<SessionState>("/session"),
+  login: (password: string, totp: string) =>
+    post<{ authenticated: boolean }>("/session/login", { password, totp }),
+  logout: () => post<{ authenticated: boolean }>("/session/logout", {}),
+  setup: (token: string, password: string) => post<SetupDone>("/setup", { token, password }),
 };
