@@ -433,6 +433,40 @@ async fn setup_needs_the_token_from_the_terminal() {
     assert!(!body["totp_secret"].as_str().unwrap().is_empty());
 }
 
+/// The token is single use: a second setup with it is refused. It used
+/// to stay valid until the process restarted, and each use issued a new
+/// hash and secret.
+#[tokio::test]
+async fn the_setup_token_is_spent_by_a_setup_that_succeeds() {
+    let app = router(Settings::default(), None, Some("once".to_owned()));
+    let attempt = || {
+        post(
+            "/api/v1/setup",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "token": "once", "password": PASSWORD }),
+        )
+    };
+    assert_eq!(send(&app, attempt()).await.0, StatusCode::OK);
+    assert_eq!(send(&app, attempt()).await.0, StatusCode::CONFLICT);
+}
+
+/// A password that is refused does not spend the token.
+#[tokio::test]
+async fn a_refused_password_leaves_the_token_usable() {
+    let app = router(Settings::default(), None, Some("t".to_owned()));
+    let with = |password: &str| {
+        post(
+            "/api/v1/setup",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "token": "t", "password": password }),
+        )
+    };
+    assert_eq!(send(&app, with("short")).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(send(&app, with(PASSWORD)).await.0, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn setup_refuses_a_weak_password_with_a_reason() {
     let app = router(Settings::default(), None, Some("t".to_owned()));
