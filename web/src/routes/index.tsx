@@ -39,7 +39,7 @@ export const router = createBrowserRouter([
           <Placeholder
             title="归因"
             milestone="M2"
-            note="实盘减模型的差额分解，以及不可分解的残差。残差在分解不完整时是「未知」而不是零。"
+            note="接口已可用（/api/v1/attribution），界面在 M2。实盘减模型的差额分解，以及不可分解的残差；残差在分解不完整时是「未知」而不是零。"
           />
         ),
       },
@@ -48,8 +48,8 @@ export const router = createBrowserRouter([
         element: (
           <Placeholder
             title="实盘对账"
-            milestone="M1"
-            note="进程以为持有的（journal）与交易所实际持有的（venue）之间的差别；仍为 stale 的订单是边沿触发的告警。"
+            milestone="M2"
+            note="接口已可用（/api/v1/journals），界面在 M2。进程以为持有的（journal）与交易所实际持有的（venue）之间的差别；仍为 stale 的订单是边沿触发的告警。"
           />
         ),
       },

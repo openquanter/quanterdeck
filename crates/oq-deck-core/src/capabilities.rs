@@ -45,8 +45,8 @@ pub struct Capabilities {
     pub live: Capability,
     /// Gap attribution: the decomposition of live minus model.
     ///
-    /// Needs both directories: the decomposition compares a live run
-    /// against a model run, and names the journal the live one came from.
+    /// Needs the runs directory: the decomposition compares a live run
+    /// against a model run, and both are run files.
     pub attribution: Capability,
     /// Whether this deck may change anything at all.
     pub writes: Capability,

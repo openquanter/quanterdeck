@@ -158,8 +158,7 @@ pub fn resolve(dir: &Path, id: &str) -> Option<PathBuf> {
     if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
         return None;
     }
-    let candidate = dir.join(format!("{id}.run"));
-    candidate.is_file().then_some(candidate)
+    crate::listed(dir, &format!("{id}.run"))
 }
 
 /// One run, with its fills.

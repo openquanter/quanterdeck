@@ -70,7 +70,6 @@ export interface Capability {
 export interface Capabilities {
   version: string;
   runs: Capability;
-  journal: Capability;
   attribution: Capability;
   live: Capability;
   writes: Capability;
