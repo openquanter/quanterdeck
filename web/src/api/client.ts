@@ -240,6 +240,52 @@ export interface Alert {
   key: string;
   since_ms: number;
   message: string;
+  silenced_until_ms?: number | null;
+}
+
+export interface AlertsView {
+  active: Alert[];
+  history: { at_ms: number; key: string; message: string; raised: boolean }[];
+}
+
+export interface ConfigFile {
+  name: string;
+  size: number;
+  sha: string;
+}
+
+export interface ConfigDoc {
+  name: string;
+  content: string;
+  sha: string;
+  backups: { id: string; at_ms: number | null }[];
+  backup_content: string | null;
+}
+
+export type Stage = "draft" | "backtested" | "observing" | "confirmed" | "live";
+
+export interface StrategyView {
+  instance: {
+    id: string;
+    name: string;
+    config: string;
+    stage: Stage;
+    backtest_run: string | null;
+    backtest_passed: boolean;
+    config_sha: string | null;
+    observing_since_ms: number | null;
+    confirmed_by: string | null;
+    history: { at_ms: number; from: Stage; to: Stage; actor: string; reason: string }[];
+  };
+  evidence: { observation_hours: number; observation_fills: number; required_hours: number; required_fills: number };
+  config_sha_now: string | null;
+  next: Stage | null;
+  decision: { allowed: boolean; reason: string };
+}
+
+export interface Accounts {
+  processes: Record<string, { log: string; fingerprint: string | null; line: string }>;
+  same_account: boolean;
 }
 
 export interface LogFile {
@@ -291,6 +337,13 @@ export interface Releases {
 }
 
 export type OpsAction =
+  | { action: "config_put"; name: string; content: string; base_sha: string }
+  | { action: "config_rollback"; name: string; backup: string; base_sha: string }
+  | { action: "strategy_create"; name: string; config: string }
+  | { action: "strategy_backtest"; id: string; run: string; passed: boolean }
+  | { action: "strategy_advance"; id: string }
+  | { action: "alert_test" }
+  | { action: "alert_silence"; key: string; minutes: number }
   | { action: "halt" }
   | { action: "shutdown" }
   | { action: "resume" }
@@ -428,7 +481,13 @@ export const api = {
   units: () => request<UnitState[]>("/ops/units"),
   traderStatus: () => request<TraderStatus>("/ops/status"),
   orders: () => request<{ orders: RestingOrder[] }>("/ops/orders"),
-  alerts: () => request<Alert[]>("/ops/alerts"),
+  alerts: async () => (await request<AlertsView>("/ops/alerts")).active,
+  alertsView: () => request<AlertsView>("/ops/alerts"),
+  accounts: () => request<Accounts>("/ops/accounts"),
+  configs: () => request<ConfigFile[]>("/ops/configs"),
+  config: (name: string, backup?: string) =>
+    request<ConfigDoc>(`/ops/config?name=${encodeURIComponent(name)}${backup ? `&backup=${encodeURIComponent(backup)}` : ""}`),
+  strategies: () => request<StrategyView[]>("/ops/strategies"),
   logs: () => request<LogFile[]>("/ops/logs"),
   log: (name: string, lines: number, grep: string) =>
     request<LogTail>(

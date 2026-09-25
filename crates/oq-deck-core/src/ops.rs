@@ -76,8 +76,46 @@ pub enum Op {
     Deploy { id: String },
     /// Switch back to the release that ran before the current one.
     Rollback,
-    /// Alerts raised and not yet cleared.
+    /// Alerts raised and not yet cleared, and the recent history.
     Alerts,
+    /// Post a test message to the alert channel.
+    AlertTest,
+    /// Stop notifying about one alert for a while.
+    AlertSilence { key: String, minutes: i64 },
+    /// Which account each process is using, by key fingerprint.
+    Accounts,
+    /// The strategy config files.
+    ConfigList,
+    /// One config file, or one of its backups.
+    ConfigGet {
+        name: String,
+        #[serde(default)]
+        backup: Option<String>,
+    },
+    /// Replace a config file, if it is still what was read.
+    ConfigPut {
+        name: String,
+        content: String,
+        base_sha: String,
+    },
+    /// Put a backup back.
+    ConfigRollback {
+        name: String,
+        backup: String,
+        base_sha: String,
+    },
+    /// Strategy instances and where each stands on the road to live.
+    Strategies,
+    /// A new instance, in draft.
+    StrategyCreate { name: String, config: String },
+    /// Attach the backtest that justifies an instance's configuration.
+    StrategyBacktest {
+        id: String,
+        run: String,
+        passed: bool,
+    },
+    /// One step forward, if the gate allows it.
+    StrategyAdvance { id: String },
 }
 
 /// How much harm a request can do.
@@ -108,15 +146,24 @@ impl Op {
             | Self::LogTail { .. }
             | Self::Audit { .. }
             | Self::Releases
-            | Self::Alerts => Risk::Read,
-            Self::Halt => Risk::Reduce,
+            | Self::Alerts
+            | Self::Accounts
+            | Self::ConfigList
+            | Self::ConfigGet { .. }
+            | Self::Strategies => Risk::Read,
+            Self::Halt | Self::AlertTest | Self::AlertSilence { .. } => Risk::Reduce,
             // Shutdown withdraws the take-profits too, leaving the position
             // unprotected and unmanaged: not a risk reduction.
             Self::Shutdown
             | Self::Resume
             | Self::Unit { .. }
             | Self::Deploy { .. }
-            | Self::Rollback => Risk::High,
+            | Self::Rollback
+            | Self::ConfigPut { .. }
+            | Self::ConfigRollback { .. }
+            | Self::StrategyCreate { .. }
+            | Self::StrategyBacktest { .. }
+            | Self::StrategyAdvance { .. } => Risk::High,
         }
     }
 
@@ -127,6 +174,17 @@ impl Op {
             Self::Unit { unit, verb } => format!("{verb} {unit}"),
             Self::LogTail { name, .. } => format!("log {name}"),
             Self::Deploy { id } => format!("deploy {id}"),
+            Self::ConfigPut { name, .. } => format!("config write {name}"),
+            Self::ConfigRollback { name, backup, .. } => {
+                format!("config rollback {name} to {backup}")
+            }
+            Self::ConfigGet { name, .. } => format!("config read {name}"),
+            Self::StrategyCreate { name, .. } => format!("strategy create {name}"),
+            Self::StrategyBacktest { id, run, passed } => {
+                format!("strategy {id} backtest {run} passed={passed}")
+            }
+            Self::StrategyAdvance { id } => format!("strategy {id} advance"),
+            Self::AlertSilence { key, minutes } => format!("silence {key} {minutes}m"),
             Self::Audit { .. } => "audit".into(),
             other => serde_json::to_value(other)
                 .ok()
