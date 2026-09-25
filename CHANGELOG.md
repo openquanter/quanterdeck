@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### English, beside Chinese
+
+- **The interface is in Chinese and English,** switched from the top bar
+  or Settings and remembered in the browser. Every piece of copy is
+  written as `tr("中文", "English")` where it is used, and
+  `scripts/check-i18n.py` (run in CI) fails on Chinese that has no
+  English beside it.
+- **The deck answers in the reader's language:** refusals, capability
+  reasons and attribution's missing inputs follow the request's
+  `Accept-Language`. The agent writes each alert in both (`message`,
+  `message_en`), in its alert lists and in the black box; the
+  notification channel keeps the Chinese.
+- Settings chooses the language and the theme instead of describing
+  them.
+
 ### v4 interface — organised by task, and a console rather than a list
 
 - **Navigation grouped by what the operator does** (交易 / 诊断 / 变更 /

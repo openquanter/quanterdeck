@@ -260,12 +260,14 @@ export interface Alert {
   key: string;
   since_ms: number;
   message: string;
+  /** The same message in English; absent from agents before it was added. */
+  message_en?: string;
   silenced_until_ms?: number | null;
 }
 
 export interface AlertsView {
   active: Alert[];
-  history: { at_ms: number; key: string; message: string; raised: boolean }[];
+  history: { at_ms: number; key: string; message: string; message_en?: string; raised: boolean }[];
 }
 
 export interface ConfigFile {
@@ -350,6 +352,7 @@ export interface BlackboxEvent {
   unit?: string;
   key?: string;
   message?: string;
+  message_en?: string;
   reason?: string | null;
   result?: string | null;
   exit_status?: string | null;

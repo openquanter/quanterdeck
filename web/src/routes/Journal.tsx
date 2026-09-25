@@ -5,6 +5,7 @@ import { AlertTriangle, ScrollText } from "lucide-react";
 import { api } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { kindNames } from "@/features/trading";
+import { tr } from "@/i18n";
 import { Button, Card, Help, PageHeader, cx } from "@/ui/kit";
 
 import { RecordRows } from "./Trading";
@@ -44,10 +45,10 @@ export function Journal() {
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2">
-            事件回放 <Help term="journal" />
+            {tr("事件回放", "Event replay")} <Help term="journal" />
           </span>
         }
-        description="交易进程在行动前写下的每一条记录，最新的在前；按类型筛选，一页 200 条。"
+        description={tr("交易进程在行动前写下的每一条记录，最新的在前；按类型筛选，一页 200 条。", "Every record the trader wrote before acting, newest first. Filter by kind; 200 per page.")}
         actions={
           ids.length > 0 && (
             <select
@@ -60,8 +61,8 @@ export function Journal() {
                 return (
                   <option key={j} value={j}>
                     {j}
-                    {k === 0 ? "（最新）" : ""}
-                    {e?.state === "unreadable" ? "（读不了）" : ""}
+                    {k === 0 ? tr("（最新）", " (latest)") : ""}
+                    {e?.state === "unreadable" ? tr("（读不了）", " (unreadable)") : ""}
                   </option>
                 );
               })}
@@ -71,7 +72,7 @@ export function Journal() {
       />
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-xs text-ink-muted">类型</span>
+        <span className="mr-1 text-xs text-ink-muted">{tr("类型", "Kind")}</span>
         {Object.entries(kindNames()).map(([k, name]) => (
           <button
             key={k}
@@ -85,59 +86,66 @@ export function Journal() {
           </button>
         ))}
         <Button size="sm" variant="ghost" onClick={() => setKinds(DEFAULT_KINDS)}>
-          恢复默认
+          {tr("恢复默认", "Reset to default")}
         </Button>
       </div>
 
       {journals.isLoading ? (
         <Skeleton rows={8} />
       ) : journals.isError ? (
-        <ErrorState error={journals.error} what="journal 列表" />
+        <ErrorState error={journals.error} what={tr("journal 列表", "the journal list")} />
       ) : !journals.data?.length ? (
-        <Empty title="还没有 journal。" next="交易进程启动后会写下它；确认 OQ_DECK_JOURNALS_DIR 指向那个目录。" />
+        <Empty
+          title={tr("还没有 journal。", "No journals yet.")}
+          next={tr("交易进程启动后会写下它；确认 OQ_DECK_JOURNALS_DIR 指向那个目录。", "The trader writes one when it starts; check that OQ_DECK_JOURNALS_DIR points at that directory.")}
+        />
       ) : entry?.state === "unreadable" ? (
         <Card tone="bad">
-          <p className="text-sm text-ink">这份 journal 读不了。</p>
+          <p className="text-sm text-ink">{tr("这份 journal 读不了。", "This journal cannot be read.")}</p>
           {entry.error && <p className="mt-1 font-mono text-xs text-ink-muted">{entry.error}</p>}
         </Card>
       ) : kinds.length === 0 ? (
-        <Empty title="没有选任何记录类型。" next="在上面点选要看的类型。" />
+        <Empty title={tr("没有选任何记录类型。", "No record kinds selected.")} next={tr("在上面点选要看的类型。", "Pick the kinds to show above.")} />
       ) : page.isLoading ? (
         <Skeleton rows={8} />
       ) : page.isError ? (
-        <ErrorState error={page.error} what="journal 记录" />
+        <ErrorState error={page.error} what={tr("journal 记录", "journal records")} />
       ) : page.data ? (
         <div className="space-y-3">
           {page.data.undecodable > 0 && (
             <div className="flex items-center gap-2 rounded-[var(--radius-card)] border border-warn/40 bg-warn/8 px-4 py-3 text-sm text-ink">
               <AlertTriangle className="h-4 w-4 text-warn" />
-              这份 journal 有 {page.data.undecodable} 条记录解不开，回放有洞。
+              {tr(
+                `这份 journal 有 ${page.data.undecodable} 条记录解不开，回放有洞。`,
+                `${page.data.undecodable} record${page.data.undecodable === 1 ? "" : "s"} in this journal could not be decoded; the replay has holes.`,
+              )}
             </div>
           )}
           <Card
-            title="记录"
+            title={tr("记录", "Records")}
             icon={<ScrollText className="h-4 w-4" />}
             bodyClassName="p-0"
             extra={<span className="font-mono">{page.data.journal}</span>}
           >
-            <RecordRows page={page.data} empty="这份 journal 里没有所选类型的记录。" />
+            <RecordRows page={page.data} empty={tr("这份 journal 里没有所选类型的记录。", "No records of the selected kinds in this journal.")} />
             <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-xs text-ink-faint">
               <span>
-                共 {page.data.total} 条所选类型的记录{before.length > 0 && ` · 往前第 ${before.length + 1} 页`}
+                {tr(`共 ${page.data.total} 条所选类型的记录`, `${page.data.total} record${page.data.total === 1 ? "" : "s"} of the selected kinds`)}
+                {before.length > 0 && tr(` · 往前第 ${before.length + 1} 页`, ` · page ${before.length + 1} back`)}
               </span>
               <div className="flex gap-2">
                 {before.length > 0 && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => setBefore([])}>
-                      回到最新
+                      {tr("回到最新", "Latest")}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setBefore(before.slice(0, -1))}>
-                      较新
+                      {tr("较新", "Newer")}
                     </Button>
                   </>
                 )}
                 <Button size="sm" disabled={!page.data.next_before} onClick={() => setBefore([...before, page.data!.next_before!])}>
-                  较早
+                  {tr("较早", "Older")}
                 </Button>
               </div>
             </div>

@@ -16,23 +16,43 @@ use crate::config::Config;
 use crate::notify::{GREEN, Message, RED};
 use crate::system;
 
+/// A sentence for a person, in Chinese and in English.
+///
+/// The deck shows alerts in its reader's language, so the agent writes
+/// both where it words them; the notification channel gets the Chinese.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Said {
+    pub zh: String,
+    pub en: String,
+}
+
+impl Said {
+    #[must_use]
+    pub fn new(zh: impl Into<String>, en: impl Into<String>) -> Self {
+        Self {
+            zh: zh.into(),
+            en: en.into(),
+        }
+    }
+}
+
 /// Alerts currently raised, by key: since when, and the message.
 #[derive(Debug, Default)]
 pub struct Raised {
-    pub active: BTreeMap<String, (i64, String)>,
+    pub active: BTreeMap<String, (i64, Said)>,
     /// Set when an operator stopped the trader on purpose, so its absence
     /// is not alarming; cleared when it is started again.
     pub trader_stopped_on_purpose: bool,
     /// Raised and cleared, newest last, the most recent few hundred.
-    pub history: std::collections::VecDeque<(i64, String, String, bool)>,
+    pub history: std::collections::VecDeque<(i64, String, Said, bool)>,
     /// Keys not to notify about until the given time.
     pub silenced: BTreeMap<String, i64>,
 }
 
 impl Raised {
-    fn note(&mut self, at: i64, key: &str, msg: &str, raised: bool) {
+    fn note(&mut self, at: i64, key: &str, msg: &Said, raised: bool) {
         self.history
-            .push_back((at, key.to_string(), msg.to_string(), raised));
+            .push_back((at, key.to_string(), msg.clone(), raised));
         while self.history.len() > 300 {
             self.history.pop_front();
         }
@@ -52,32 +72,56 @@ pub fn assess(
     host: &Value,
     stopped_on_purpose: bool,
     last_unreadable: Option<u64>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, Said> {
     let mut found = BTreeMap::new();
     let trader_up = units.iter().any(|(u, up)| u == trader_unit && *up);
     for (unit, up) in units {
         if !up && !(unit == trader_unit && stopped_on_purpose) {
-            found.insert(format!("unit:{unit}"), format!("{unit} 没有在运行"));
+            found.insert(
+                format!("unit:{unit}"),
+                Said::new(
+                    format!("{unit} 没有在运行"),
+                    format!("{unit} is not running"),
+                ),
+            );
         }
     }
     match status {
         Ok(s) => {
             if s["halted"] == true {
-                let why = s["halt_reason"].as_str().unwrap_or("原因未记录");
-                found.insert("halted".into(), format!("交易进程已停机：{why}"));
+                let said = match s["halt_reason"].as_str() {
+                    Some(why) => Said::new(
+                        format!("交易进程已停机：{why}"),
+                        format!("The trader has halted: {why}"),
+                    ),
+                    None => Said::new(
+                        "交易进程已停机：原因未记录",
+                        "The trader has halted; no reason was recorded",
+                    ),
+                };
+                found.insert("halted".into(), said);
             }
             if let Some(j) = s["journal_lost"].as_str() {
                 found.insert(
                     "journal".into(),
-                    format!("交易日志无法写入，已停止开新单：{j}"),
+                    Said::new(
+                        format!("交易日志无法写入，已停止开新单：{j}"),
+                        format!("The journal cannot be written; no new orders are opened: {j}"),
+                    ),
                 );
             }
             if s["reconcile"]["agreed"] == false {
                 found.insert(
                     "reconcile".into(),
-                    format!(
-                        "最近一次持仓核对与交易所不一致（累计 {} 次）",
-                        s["reconcile"]["mismatches"]
+                    Said::new(
+                        format!(
+                            "最近一次持仓核对与交易所不一致（累计 {} 次）",
+                            s["reconcile"]["mismatches"]
+                        ),
+                        format!(
+                            "The latest position check disagreed with the venue ({} so far this run)",
+                            s["reconcile"]["mismatches"]
+                        ),
                     ),
                 );
             }
@@ -85,14 +129,22 @@ pub fn assess(
             if last_unreadable.is_some_and(|before| unreadable > before) {
                 found.insert(
                     "feed".into(),
-                    format!("行情出现读不出的消息：累计 {unreadable}"),
+                    Said::new(
+                        format!("行情出现读不出的消息：累计 {unreadable}"),
+                        format!(
+                            "The feed sent messages that could not be read: {unreadable} so far"
+                        ),
+                    ),
                 );
             }
         }
         Err(why) if trader_up => {
             found.insert(
                 "control".into(),
-                format!("交易进程在运行，但控制口无应答：{why}"),
+                Said::new(
+                    format!("交易进程在运行，但控制口无应答：{why}"),
+                    format!("The trader is running but its control port does not answer: {why}"),
+                ),
             );
         }
         Err(_) => {}
@@ -105,13 +157,25 @@ pub fn assess(
             {
                 found.insert(
                     format!("disk:{}", d["mount"].as_str().unwrap_or("?")),
-                    format!("{} 剩余空间不足 10%", d["mount"].as_str().unwrap_or("?")),
+                    Said::new(
+                        format!("{} 剩余空间不足 10%", d["mount"].as_str().unwrap_or("?")),
+                        format!(
+                            "{} has less than 10% free",
+                            d["mount"].as_str().unwrap_or("?")
+                        ),
+                    ),
                 );
             }
         }
     }
     if host["clock_synced"] == false {
-        found.insert("clock".into(), "系统时钟未与 NTP 同步".into());
+        found.insert(
+            "clock".into(),
+            Said::new(
+                "系统时钟未与 NTP 同步",
+                "The system clock is not synced with NTP",
+            ),
+        );
     }
     found
 }
@@ -123,7 +187,7 @@ const GROWTH_EVERY_MS: i64 = 10 * 60_000;
 pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::Sender<Message>) {
     let mut last_unreadable: Option<u64> = None;
     let mut recorder = crate::blackbox::Recorder::new(&cfg.state_dir);
-    let (mut grown, mut grown_at): (Vec<(String, String)>, i64) = (Vec::new(), 0);
+    let (mut grown, mut grown_at): (Vec<(String, Said)>, i64) = (Vec::new(), 0);
     loop {
         // Whether each unit runs, from its cgroup: no process started.
         let units: Vec<(String, bool)> = cfg
@@ -186,7 +250,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
                     if !r.quiet(&key, now) {
                         let _ = notify.send(Message {
                             title: "已恢复".into(),
-                            body: msg,
+                            body: msg.zh,
                             color: GREEN,
                         });
                     }
@@ -199,7 +263,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
                     if !r.quiet(&key, now) {
                         let _ = notify.send(Message {
                             title: "告警".into(),
-                            body: msg.clone(),
+                            body: msg.zh.clone(),
                             color: RED,
                         });
                     }
@@ -219,8 +283,8 @@ pub fn list(raised: &Raised) -> Value {
             .active
             .iter()
             .map(
-                |(k, (since, msg))| json!({"key": k, "since_ms": since, "message": msg,
-                "silenced_until_ms": raised.silenced.get(k)})
+                |(k, (since, msg))| json!({"key": k, "since_ms": since, "message": msg.zh,
+                "message_en": msg.en, "silenced_until_ms": raised.silenced.get(k)})
             )
             .collect::<Vec<_>>()
     )
@@ -234,7 +298,9 @@ pub fn history(raised: &Raised) -> Value {
             .history
             .iter()
             .rev()
-            .map(|(at, k, msg, up)| json!({"at_ms": at, "key": k, "message": msg, "raised": up}))
+            .map(|(at, k, msg, up)| {
+                json!({"at_ms": at, "key": k, "message": msg.zh, "message_en": msg.en, "raised": up})
+            })
             .collect::<Vec<_>>()
     )
 }
@@ -293,7 +359,8 @@ mod tests {
                 "unit:oq-recon.service"
             ]
         );
-        assert!(found["halted"].contains("operator: test"));
+        assert!(found["halted"].zh.contains("operator: test"));
+        assert!(found["halted"].en.contains("operator: test"));
     }
 
     #[test]

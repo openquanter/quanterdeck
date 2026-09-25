@@ -44,6 +44,14 @@ export function tr(zh: string, en: string): string {
   return current === "en" ? en : zh;
 }
 
+/**
+ * A sentence the server wrote in both languages — an alert, a black-box
+ * event — in the current one. Older records carry only the Chinese.
+ */
+export function said(m: { message?: string | null; message_en?: string | null }): string {
+  return (current === "en" && m.message_en) || m.message || "";
+}
+
 /** The BCP 47 tag for dates and numbers in the current language. */
 export function intlLocale(): string {
   return current === "en" ? "en-US" : "zh-CN";
