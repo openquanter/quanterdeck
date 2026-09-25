@@ -4,7 +4,7 @@ import { AlertTriangle, ListOrdered, ShieldCheck, Wallet } from "lucide-react";
 
 import { api, type RecordsPage, type TraderStatus } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
-import { KIND_NAMES, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
+import { kindNames, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
 import { TimeSeries } from "@/ui/charts";
 import { Badge, Button, Card, Freshness, KV, PageHeader, Segmented, Stat, TabBar, Table, cx, fmtDuration, fmtTime, useTab } from "@/ui/kit";
 
@@ -236,7 +236,7 @@ export function RecordRows({ page, empty }: { page: RecordsPage; empty: string }
           <tr key={r.seq}>
             <td className="whitespace-nowrap font-mono text-xs text-ink-muted">{r.at ? fmtTime(r.at / 1e6) : "—"}</td>
             <td className="whitespace-nowrap">
-              <Badge tone={r.kind === "fill" ? "accent" : r.kind === "refused" ? "warn" : "neutral"}>{KIND_NAMES[r.kind] ?? r.kind}</Badge>
+              <Badge tone={r.kind === "fill" ? "accent" : r.kind === "refused" ? "warn" : "neutral"}>{kindNames()[r.kind] ?? r.kind}</Badge>
             </td>
             <td className="font-mono text-xs text-ink">{recordText(r, page.price_scale, page.qty_scale)}</td>
             <td className="font-mono text-xs text-ink-faint">{String(r.fields.client_id ?? "")}</td>

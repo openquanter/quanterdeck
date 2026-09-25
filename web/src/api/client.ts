@@ -6,6 +6,8 @@
  * are the types the server serves.
  */
 
+import { acceptLanguage, tr } from "@/i18n";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -34,14 +36,14 @@ async function read<T>(response: Response, path: string): Promise<T> {
 }
 
 async function request<T>(path: string): Promise<T> {
-  return read<T>(await fetch(`/api/v1${path}`), path);
+  return read<T>(await fetch(`/api/v1${path}`, { headers: { "Accept-Language": acceptLanguage() } }), path);
 }
 
 /** A write. The browser sets `Origin`, which the deck checks on every one. */
 async function post<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Accept-Language": acceptLanguage() },
     body: JSON.stringify(body),
   });
   return read<T>(response, path);
@@ -540,7 +542,7 @@ function fromShadow(raw: Record<string, unknown>): AttributionReport {
     method: "shadow",
     missing_inputs: components
       .filter((c) => c.amount === null && c.unavailable)
-      .map((c) => `${c.name}：${c.unavailable}`),
+      .map((c) => tr(`${c.name}：${c.unavailable}`, `${c.name}: ${c.unavailable}`)),
     matched_fills: Number(raw.matched_fills ?? 0),
     unmatched_fills: Number(raw.unmatched_fills ?? 0),
   };

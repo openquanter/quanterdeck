@@ -31,7 +31,7 @@ import {
 
 import { api, type BlackboxWindow, type TraderStatus } from "@/api/client";
 import { ErrorState } from "@/components/States";
-import { KIND_NAMES, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
+import { kindNames, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
 import { Ago, Badge, Card, Freshness, IconTile, Money, PageHeader, Ring, Stat, StatusDot, cx, fmtDuration, type Hue, type Tone } from "@/ui/kit";
 
 // The chart library is most of the bundle; the overview's numbers should
@@ -533,7 +533,7 @@ function Activity() {
   const items = useMemo(() => {
     const out: { at: number; kind: string; label: string; text: string; failed?: boolean }[] = [];
     for (const r of records.data?.records ?? []) {
-      if (r.at) out.push({ at: r.at / 1e6, kind: r.kind, label: KIND_NAMES[r.kind] ?? r.kind, text: recordText(r, records.data!.price_scale, records.data!.qty_scale) });
+      if (r.at) out.push({ at: r.at / 1e6, kind: r.kind, label: kindNames()[r.kind] ?? r.kind, text: recordText(r, records.data!.price_scale, records.data!.qty_scale) });
     }
     // Each action is recorded when asked and again with its result; the
     // result is the one worth a line.

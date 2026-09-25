@@ -4,6 +4,7 @@ import { OctagonPause, Play, Power } from "lucide-react";
 
 import { api, type OpsAction, type RecordsPage, type TraderStatus } from "@/api/client";
 import { ActionDialog } from "@/components/ActionDialog";
+import { intlLocale, tr } from "@/i18n";
 import { Button } from "@/ui/kit";
 
 /**
@@ -32,19 +33,22 @@ export function useNewestJournal() {
   return { ...q, id };
 }
 
-export const KIND_NAMES: Record<string, string> = {
-  session_start: "启动",
-  tick: "行情",
-  submitted: "下单",
-  outcome: "回报",
-  cancelled: "撤单",
-  fill: "成交",
-  refused: "风控拒绝",
-  reconciled: "接管仓位",
-  waiting: "策略等待",
-  operator: "操作者",
-  funding: "资金费",
-};
+/** What each journal record kind is called, in the current language. */
+export function kindNames(): Record<string, string> {
+  return {
+    session_start: tr("启动", "Start"),
+    tick: tr("行情", "Tick"),
+    submitted: tr("下单", "Submitted"),
+    outcome: tr("回报", "Outcome"),
+    cancelled: tr("撤单", "Cancelled"),
+    fill: tr("成交", "Fill"),
+    refused: tr("风控拒绝", "Refused"),
+    reconciled: tr("接管仓位", "Adopted"),
+    waiting: tr("策略等待", "Waiting"),
+    operator: tr("操作者", "Operator"),
+    funding: tr("资金费", "Funding"),
+  };
+}
 
 /** One journal record as a line of text. Text, never markup: these fields come from a venue. */
 export function recordText(r: RecordsPage["records"][number], ps: number, qs: number): string {
@@ -54,21 +58,28 @@ export function recordText(r: RecordsPage["records"][number], ps: number, qs: nu
     case "fill":
       return `${f.side} ${f.qty} @ ${f.price}${f.leg ? ` ${f.leg}` : ""}`;
     case "submitted":
-      return `${f.side} ${scale(f.qty, qs)} @ ${f.limit_price === 0 ? "市价" : scale(f.limit_price, ps)}${f.leg ? ` ${f.leg}` : ""}${f.reduce_only ? " 平仓" : ""}`;
+      return `${f.side} ${scale(f.qty, qs)} @ ${f.limit_price === 0 ? tr("市价", "market") : scale(f.limit_price, ps)}${f.leg ? ` ${f.leg}` : ""}${f.reduce_only ? tr(" 平仓", " close") : ""}`;
     case "outcome":
       return `${f.tag} ${f.detail}`;
     case "cancelled":
-      return "撤单";
+      return tr("撤单", "Cancelled");
     case "refused":
-      return `风控拒绝：${f.breach}`;
+      return tr(`风控拒绝：${f.breach}`, `Refused: ${f.breach}`);
     case "funding":
-      return `结算 ${new Date(Number(f.settled_ms)).toLocaleString("zh-CN", { hour12: false })} · 费率 ${f.rate} · 标记价 ${f.mark} · 实盘 ${f.venue} · 模型 ${f.model}${f.verified ? "" : " · 实盘持仓复现不出交易所金额"}`;
+      {
+        const at = new Date(Number(f.settled_ms)).toLocaleString(intlLocale(), { hour12: false });
+        const unverified = f.verified ? "" : tr(" · 实盘持仓复现不出交易所金额", " · the live positions did not reproduce the venue's figure");
+        return tr(
+          `结算 ${at} · 费率 ${f.rate} · 标记价 ${f.mark} · 实盘 ${f.venue} · 模型 ${f.model}${unverified}`,
+          `Settled ${at} · rate ${f.rate} · mark ${f.mark} · live ${f.venue} · model ${f.model}${unverified}`,
+        );
+      }
     case "operator":
-      return `${f.command}：${f.reason} → ${f.outcome}（${f.origin}）`;
+      return tr(`${f.command}：${f.reason} → ${f.outcome}（${f.origin}）`, `${f.command}: ${f.reason} → ${f.outcome} (${f.origin})`);
     case "tick":
       return `last ${scale(f.last, ps)} · bid ${scale(f.bid, ps)} · ask ${scale(f.ask, ps)}`;
     case "reconciled":
-      return `接管 ${JSON.stringify(f.legs)}`;
+      return tr(`接管 ${JSON.stringify(f.legs)}`, `Adopted ${JSON.stringify(f.legs)}`);
     case "waiting":
       return Object.entries(f)
         .map(([k, v]) => `${k} ${v}`)
@@ -80,24 +91,39 @@ export function recordText(r: RecordsPage["records"][number], ps: number, qs: nu
 
 export type Pending = { title: string; consequence: string; action: OpsAction; highRisk: boolean };
 
-export const HALT: Pending = {
-  title: "停机",
-  consequence: "停止开新仓，撤掉开仓挂单，保留止盈等平仓单，进程继续看着持仓。出事时用这个。",
-  action: { action: "halt" },
-  highRisk: false,
-};
-export const RESUME: Pending = {
-  title: "解除停机",
-  consequence: "清除停机状态，策略恢复下单。进程会先确认最近一次持仓核对一致、日志可写，否则拒绝。",
-  action: { action: "resume" },
-  highRisk: true,
-};
-export const SHUTDOWN: Pending = {
-  title: "退出交易进程",
-  consequence: "撤掉全部挂单（包括止盈），然后退出且不会自动重启：持仓将无人管理、没有止盈保护。只用于计划内维护。",
-  action: { action: "shutdown" },
-  highRisk: true,
-};
+export function haltAction(): Pending {
+  return {
+    title: tr("停机", "Halt"),
+    consequence: tr(
+      "停止开新仓，撤掉开仓挂单，保留止盈等平仓单，进程继续看着持仓。出事时用这个。",
+      "Stop opening positions and withdraw opening orders; take-profits and other closing orders stay, and the process keeps watching the position. Use this when something is wrong.",
+    ),
+    action: { action: "halt" },
+    highRisk: false,
+  };
+}
+export function resumeAction(): Pending {
+  return {
+    title: tr("解除停机", "Resume"),
+    consequence: tr(
+      "清除停机状态，策略恢复下单。进程会先确认最近一次持仓核对一致、日志可写，否则拒绝。",
+      "Clear the halt and let the strategy trade again. The process first checks that the last position check agreed and the journal is writable, and refuses otherwise.",
+    ),
+    action: { action: "resume" },
+    highRisk: true,
+  };
+}
+export function shutdownAction(): Pending {
+  return {
+    title: tr("退出交易进程", "Shut down the trader"),
+    consequence: tr(
+      "撤掉全部挂单（包括止盈），然后退出且不会自动重启：持仓将无人管理、没有止盈保护。只用于计划内维护。",
+      "Withdraw every order, take-profits included, and exit without restarting: the position is left unmanaged and unprotected. For planned maintenance only.",
+    ),
+    action: { action: "shutdown" },
+    highRisk: true,
+  };
+}
 
 /** Halt, resume and shut down, each through the confirming dialog. */
 export function TraderActions({ s, writable, compact }: { s: TraderStatus | undefined; writable: boolean; compact?: boolean }) {
@@ -106,18 +132,18 @@ export function TraderActions({ s, writable, compact }: { s: TraderStatus | unde
   return (
     <>
       {!s.halted && (
-        <Button variant="danger" icon={<OctagonPause className="h-4 w-4" />} onClick={() => setPending(HALT)}>
-          停机
+        <Button variant="danger" icon={<OctagonPause className="h-4 w-4" />} onClick={() => setPending(haltAction())}>
+          {tr("停机", "Halt")}
         </Button>
       )}
       {s.halted && s.resume_allowed && (
-        <Button variant="primary" icon={<Play className="h-4 w-4" />} onClick={() => setPending(RESUME)}>
-          解除停机
+        <Button variant="primary" icon={<Play className="h-4 w-4" />} onClick={() => setPending(resumeAction())}>
+          {tr("解除停机", "Resume")}
         </Button>
       )}
       {!compact && (
-        <Button variant="ghost" icon={<Power className="h-4 w-4" />} onClick={() => setPending(SHUTDOWN)}>
-          退出进程
+        <Button variant="ghost" icon={<Power className="h-4 w-4" />} onClick={() => setPending(shutdownAction())}>
+          {tr("退出进程", "Shut down")}
         </Button>
       )}
       {pending && <ActionDialog {...pending} onClose={() => setPending(null)} />}

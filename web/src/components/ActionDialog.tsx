@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ShieldAlert, TriangleAlert } from "lucide-react";
 
 import { api, ApiError, type OpsAction } from "@/api/client";
+import { tr } from "@/i18n";
 import { Button, cx } from "@/ui/kit";
 
 /**
@@ -63,13 +64,13 @@ export function ActionDialog({
 
         <div className="space-y-4 px-5 py-4">
           <label className="block text-xs text-ink-muted">
-            原因 <span className="text-ink-faint">· 必填，写进审计、交易日志和告警频道</span>
+            {tr("原因", "Reason")} <span className="text-ink-faint">· {tr("必填，写进审计、交易日志和告警频道", "required; it goes into the audit trail, the trader's journal and the alert channel")}</span>
             <textarea className={input} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
           </label>
 
           {highRisk && (
             <label className="block text-xs text-ink-muted">
-              二次验证码 <span className="text-ink-faint">· 验证器里「oq-agent」那一项的 6 位数字</span>
+              {tr("二次验证码", "Step-up code")} <span className="text-ink-faint">· {tr("验证器里「oq-agent」那一项的 6 位数字", "the six digits of the \"oq-agent\" entry in your authenticator")}</span>
               <input
                 className={cx(input, "w-44 font-mono tracking-[0.4em]")}
                 inputMode="numeric"
@@ -82,7 +83,7 @@ export function ActionDialog({
 
           <label className="flex items-center gap-2 text-sm text-ink">
             <input type="checkbox" className="h-4 w-4 accent-[var(--color-accent)]" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-            我确认执行「{title}」
+            {tr(`我确认执行「${title}」`, `I confirm: ${title}`)}
           </label>
 
           {error && <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</p>}
@@ -90,10 +91,10 @@ export function ActionDialog({
 
         <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            取消
+            {tr("取消", "Cancel")}
           </Button>
           <Button variant={highRisk ? "danger" : "primary"} disabled={!ready} onClick={submit}>
-            {busy ? "执行中…" : "执行"}
+            {busy ? tr("执行中…", "Working…") : tr("执行", "Run")}
           </Button>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { AlertTriangle, ScrollText } from "lucide-react";
 
 import { api } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
-import { KIND_NAMES } from "@/features/trading";
+import { kindNames } from "@/features/trading";
 import { Button, Card, Help, PageHeader, cx } from "@/ui/kit";
 
 import { RecordRows } from "./Trading";
@@ -72,7 +72,7 @@ export function Journal() {
 
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs text-ink-muted">类型</span>
-        {Object.entries(KIND_NAMES).map(([k, name]) => (
+        {Object.entries(kindNames()).map(([k, name]) => (
           <button
             key={k}
             onClick={() => toggle(k)}
