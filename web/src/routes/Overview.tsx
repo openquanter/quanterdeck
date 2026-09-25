@@ -175,6 +175,18 @@ function Banner({ status: s, failed, writable }: { status: TraderStatus | undefi
   );
 }
 
+/**
+ * The fee in a one-line summary.
+ *
+ * A run whose books were never told what the venue charges reports no
+ * fee at all, and that is a different statement from a fee of zero —
+ * the console's own rule is that a measured zero and an unavailable
+ * figure are opposite facts.
+ */
+function feesLabel(fees: string | null): string {
+  return fees == null ? tr("手续费未测得", "fees not measured") : tr(`手续费 ${fees}`, `fees ${fees}`);
+}
+
 /** Trader samples from the black box as points for one field. */
 function traderPoints(day: BlackboxWindow | undefined, pick: (t: BlackboxWindow["trader"][number]["trader"]) => number | null | undefined) {
   return (day?.trader ?? []).map((t) => [t.at, pick(t.trader) ?? null] as [number, number | null]).filter((p) => p[1] !== null);
@@ -183,7 +195,7 @@ function traderPoints(day: BlackboxWindow | undefined, pick: (t: BlackboxWindow[
 export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
   const long = s.positions.filter((p) => Number(p.amount) > 0);
   const short = s.positions.filter((p) => Number(p.amount) < 0);
-  const pnl = traderPoints(day, (t) => (t.pnl ? Number(t.pnl.net) : null));
+  const pnl = traderPoints(day, (t) => (t.pnl?.net == null ? null : Number(t.pnl.net)));
   const equity = traderPoints(day, (t) => (t.pnl ? Number(t.pnl.equity) : null));
   const resting = traderPoints(day, (t) => t.resting);
   const spark = (points: [number, number | null][]) =>
@@ -194,17 +206,22 @@ export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
     ) : (
       <div className="h-9" />
     );
-  const net = s.pnl ? Number(s.pnl.net) : 0;
+  // Not `?? 0`: an unmeasured net is not a break-even run, and the
+  // arrow and the colour are a verdict about direction.
+  const net = s.pnl?.net == null ? null : Number(s.pnl.net);
   return (
     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
       <Stat
         label={tr("本次运行盈亏", "Run P&L")}
-        icon={net >= 0 ? <TrendingUp /> : <ArrowDownRight />}
-        hue={net >= 0 ? "green" : "red"}
+        icon={net == null ? <ActivityIcon /> : net >= 0 ? <TrendingUp /> : <ArrowDownRight />}
+        hue={net == null ? "blue" : net >= 0 ? "green" : "red"}
         value={s.pnl ? <Money value={s.pnl.net} signed /> : "—"}
         sub={
           s.pnl
-            ? tr(`已实现 ${s.pnl.realized} · 手续费 ${s.pnl.fees} · 资金费 ${s.pnl.funding}`, `Realized ${s.pnl.realized} · fees ${s.pnl.fees} · funding ${s.pnl.funding}`)
+            ? tr(
+                `已实现 ${s.pnl.realized} · ${feesLabel(s.pnl.fees)} · 资金费 ${s.pnl.funding}`,
+                `Realized ${s.pnl.realized} · ${feesLabel(s.pnl.fees)} · funding ${s.pnl.funding}`,
+              )
             : tr("此版本的交易进程不报告盈亏", "This trader version does not report P&L")
         }
         help="run_pnl"
