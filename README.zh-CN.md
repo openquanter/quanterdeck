@@ -165,9 +165,10 @@ deck：
 |---|---|---|
 | `OQ_AGENT_SOCKET` | `$RUNTIME_DIRECTORY/agent.sock` | deck 从这里连它 |
 | `OQ_AGENT_PEERS` | `oq-deck` | 允许连接的用户 |
-| `OQ_AGENT_UNITS` | 交易进程、对账进程、deck、代理、反向代理 | 展示并记录的服务 |
+| `OQ_AGENT_UNITS` | 交易进程、对账进程、deck、agent | 展示并记录的服务 |
 | `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | 允许启停的服务 |
 | `OQ_AGENT_TRADER_UNIT` | `trader.service` | 交易进程 |
+| `OQ_AGENT_RELEASE_BINARIES` | 交易进程的二进制、`oq-recon` | 一个签名发布允许携带的二进制 |
 | `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | 交易进程控制口所在目录 |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | 日志文件 |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | 审计、告警、黑匣子、门控状态 |

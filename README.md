@@ -211,9 +211,10 @@ reference deployment is:
 |---|---|---|
 | `OQ_AGENT_SOCKET` | `$RUNTIME_DIRECTORY/agent.sock` | Where the deck reaches it |
 | `OQ_AGENT_PEERS` | `oq-deck` | Users allowed to connect |
-| `OQ_AGENT_UNITS` | the trader, watcher, deck, agent and proxy | Units shown and recorded |
+| `OQ_AGENT_UNITS` | the trader, watcher, deck and agent | Units shown and recorded |
 | `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | Units it may start and stop |
 | `OQ_AGENT_TRADER_UNIT` | `trader.service` | The trader |
+| `OQ_AGENT_RELEASE_BINARIES` | the trader's binary, `oq-recon` | The binaries a signed release may carry |
 | `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | The trader's control socket directory |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | Log files |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | Audit trail, alerts, black box, gate state |
