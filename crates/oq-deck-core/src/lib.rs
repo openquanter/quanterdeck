@@ -8,6 +8,7 @@ pub mod live;
 pub mod markout;
 pub mod ops;
 pub mod runs;
+pub mod sweeps;
 
 /// A file named exactly `file_name` in `dir`'s own listing, if there is
 /// one and it is a regular file.
