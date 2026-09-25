@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### M2 — operating the host, and every screen of the brief
+
+- **A host agent, `oq-agent`,** runs on the trading host as its own user
+  and is the only thing the deck asks to act. It reads the trader's
+  status, resting orders and halt state from its control port; starts,
+  stops and restarts the units it is allowed to; halts, shuts down and
+  resumes the trader; and deploys releases only if they carry a trusted
+  signature, with a five-minute health check and automatic rollback.
+  Risky requests need a reason and a one-time code the agent verifies,
+  so a compromised deck cannot act alone. Every action goes into a
+  hash-chained audit trail and to the alert channel. (#14, #15)
+- **The screens the brief asks for:** attribution from run files or live
+  from the trader's shadow; live reconciliation against the watcher's
+  latest reading without pasting, with a market block and the fills;
+  journal replay event by event; settings; novice and expert modes with
+  a glossary; the four states on every screen. (#17)
+- **Configuration** (form and raw JSON, a diff before saving, a backup
+  of every version, rollback), **the promotion gate** for strategy
+  instances (a configuration change sends one back to draft), **alerts**
+  (history, test send, silencing), **accounts** (which key fingerprint
+  each process uses) and **the live feed's quality**. (#18)
+- **A black box.** Every 30 s, kept 90 days: the host, each service and
+  the trader's status, with state changes and alerts as events; a review
+  page that opens any moment with the snapshot, the trader's decisions
+  and fills around it, and its systemd-journal output around it. Logs
+  read each service's journal; a service whose memory keeps growing
+  raises an alert. (#19, #20, #22)
+- **Sweeps.** `.sweep` files are shown verdict first: refusals, deflated
+  Sharpe and PBO before the table of configurations. (#21)
+- **Markouts** on the compare page. (#11)
+- **The trader's P&L and risk limits** on the operations page and in the
+  black box. (#23)
+
 ### M1 — reconciliation, attribution, and a door
 
 - **Authentication is now unconditional.** It was previously required
