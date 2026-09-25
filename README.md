@@ -24,6 +24,29 @@ something you can look at.
 The second half matters as much as the first. Part of this console's job
 is to say no.
 
+## What it looks like
+
+The overview answers one question — is the trading host all right — and every "no" links to where it is dealt with.
+
+<img src="docs/screenshots/overview.png" alt="Overview">
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/live.png" alt="Live: positions, orders, fills, market and risk limits on one page"><br><sub>Live: positions, orders, fills, market and risk limits on one page</sub></td>
+    <td width="50%"><img src="docs/screenshots/reconcile.png" alt="Venue reconciliation: what the process believes against what the venue holds"><br><sub>Venue reconciliation: what the process believes against what the venue holds</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/attribution.png" alt="Attribution: five causes in three states; an unknown residual is not zero"><br><sub>Attribution: five causes in three states; an unknown residual is not zero</sub></td>
+    <td width="50%"><img src="docs/screenshots/blackbox-moment.png" alt="Black box: any moment, opened up"><br><sub>Black box: any moment, opened up</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/host.png" alt="Host and services"><br><sub>Host and services</sub></td>
+    <td width="50%"><img src="docs/screenshots/deploy.png" alt="Releases: signed builds, deploy and roll back"><br><sub>Releases: signed builds, deploy and roll back</sub></td>
+  </tr>
+</table>
+
+Generated from a running deck by `scripts/screenshots.py`, with the deployment's names replaced before the pictures are taken; rerun it after a UI change.
+
 ## What it is not
 
 - **Not hosted, not a SaaS, and it does not hold your API keys.** Custody
