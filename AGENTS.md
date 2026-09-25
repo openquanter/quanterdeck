@@ -25,6 +25,8 @@ cd web && npm install && npm run build              # 产物在 web/dist
 ```bash
 export OQ_DECK_RUNS_DIR=/path/to/your/runs
 export OQ_DECK_JOURNALS_DIR=/path/to/your/journals   # 实盘对账需要
+export OQ_DECK_TICKS_DIR=/path/to/your/ticks         # markout 需要
+export OQ_DECK_AGENT_SOCKET=/run/oq-agent/agent.sock # 运维功能需要，经 oq-agent
 cargo run -p oq-deck                                 # http://127.0.0.1:8899
 ```
 

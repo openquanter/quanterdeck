@@ -18,21 +18,25 @@ precise issues, and arguing with the design documents.
 
 ## Before you open a pull request
 
+The same checks CI runs:
+
 ```bash
-pytest
-ruff check src tests
-scripts/check-adapter-deps.sh
-cd web && npm run build
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo run -p oq-deck-core --example make_fixtures && git diff --exit-code examples/fixtures/runs
+scripts/check-incoming.sh
+cd web && npm ci && npm run build
 ```
 
 ## The invariants
 
-`AGENTS.md` lists eight rules that hold regardless of what the tests say.
+`AGENTS.md` lists ten rules that hold regardless of what the tests say.
 Most were paid for by a real incident. If a change needs one of them
 relaxed, that is a discussion to have in an issue first — not a diff.
 
 ## What a good issue looks like
 
-The runtime you pointed it at (1.x or 2.0), its Python version, what you
-expected, what happened, and the relevant lines from the console's own
+The OpenQuanter revision it was built against (the `rev` in
+`Cargo.toml`), your OS and browser, what you expected, what happened, and the relevant lines from the console's own
 output. A screenshot helps for UI problems and is not enough on its own.

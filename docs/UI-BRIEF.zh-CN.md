@@ -5,6 +5,10 @@
 > 状态：v3，2026-09-08。
 > v1 曾写"不要设计登录流程"，错的——更正见 §5。
 > v2 曾写"不要设计实时行情面板"，也太宽了——行情要做，约束在数据来源，见 §4.8。
+>
+> **现状（2026-09-25）**：本文所列的每一屏都已实现，另外加了运维类页面（运维、挂单、
+> 日志、部署、审计、黑匣子复盘、配置、告警、账户）。本文保留为设计输入与判定规则的
+> 出处；做了什么、没做什么以 README 的「状态」一节为准。
 
 ---
 
@@ -55,7 +59,8 @@ accent #4c8dff   good #2fbf71      warn #e0a33e             bad #e5484d
 **侧栏导航是动态的**：后端返回一份"能力表"，做不到的功能**不渲染入口**。所以
 请设计成"条目数量可变"的列表，不要按固定 8 项排版。
 
-导航项：总览 / 运行记录 / 归因 / 实盘对账 / Journal / 参数扫描 / 数据质量 / 设置
+导航项（v3 设计时）：总览 / 运行记录 / 归因 / 实盘对账 / Journal / 参数扫描 / 数据质量 / 设置。
+现在的完整清单以 `web/src/components/Shell.tsx` 为准。
 
 ---
 
@@ -188,7 +193,7 @@ components[] : {
 }
 residual        : number | null   ← 关键
 residual_share  : number | null
-method          : "run-files"     ← 证据来源。将来的 "shadow" 是更强的来源
+method          : "run-files"     ← 证据来源。实时的 "shadow" 来源经 /api/v1/ops/attribution 提供
 missing_inputs  : string[]        ← 要让不可得的成因变得可得，还缺什么
 matched_fills, unmatched_fills : number
 ```
@@ -208,26 +213,24 @@ matched_fills, unmatched_fills : number
 
 `missing_inputs` 要显眼——它是"怎么才能看到完整答案"的操作指引，不是脚注。
 
-建议形态：瀑布图（live → 各成因 → model），不可得的成因画成虚线/斜纹段，
-残差单独一段并可标记为未知。
-
-**`residual` 为 `null` 时绝对不能显示成 0。** 任一成因不可得，残差就是"未知"。
-一个由不完整分解算出的零残差等于宣称"全都解释清楚了"，那是这个产品最不能撒的谎。
 请为"残差未知"设计一个独立的视觉状态。
 
-建议形态：瀑布图（live → 各成因 → model），残差单独一段并可标记为未知。
+建议形态：瀑布图（live → 各成因 → model），不可得的成因画成虚线/斜纹段，
+残差单独一段并可标记为未知。
 
 ---
 
 ### 4.6 `/live` 实盘对账（**后端已实现**）
 
 进程以为自己持有什么（从它自己的 journal 重建）vs 交易所实际持有什么
-（操作者粘贴 `oq-recon --record` 的输出）。
+（操作者粘贴 `oq-recon --record` 的输出，或对账进程写下的最新读数）。
 
 ```
 GET  /api/v1/journals              → journal 列表，读不了的也在列表里带原因
 GET  /api/v1/journals/:id/belief   → 该进程相信自己持有什么
 POST /api/v1/journals/:id/reconcile{ venue_record } → 两边的差别
+GET  /api/v1/live/latest           → 最新 journal 对交易所最新读数，免粘贴
+GET  /api/v1/journals/:id/records  → 逐条记录，分页、按类型和时间筛选
 ```
 
 belief 字段：
@@ -264,11 +267,11 @@ hedged          : boolean
 
 | 路由 | 页面 | 后端状态 |
 |---|---|---|
-| `/settings` | 只读/写入模式、目录路径、语言、主题、登出 | 数据已有 |
-| `/strategies` | 策略列表与上线门控流水线（见 §6） | 部分已有（门控判定已实现，实例列表未定） |
-| `/journal` | journal 逐事件回放：一次运行按发生顺序的决策序列 | 数据未定 |
-| `/sweeps` | 参数扫描结果表 + **DSR / PBO 过拟合提示** | 数据未定 |
-| `/data` | 数据质量：capture → ingest → 特征化，book-check / trade-check 的 break | 数据未定 |
+| `/settings` | 只读/写入模式、目录路径、登出（界面只有中文、深色一套） | 已实现 |
+| `/strategies` | 策略实例与上线门控流水线（见 §6） | 已实现（`/api/v1/ops/strategies`，经主机代理） |
+| `/journal` | journal 逐事件回放：一次运行按发生顺序的决策序列 | 已实现（`/api/v1/journals/:id/records`） |
+| `/sweeps` | 参数扫描结果表 + **DSR / PBO 过拟合提示** | 已实现（`/api/v1/sweeps`，读 `.sweep` 文件） |
+| `/data` | 数据质量 | 部分：本机实时行情的质量已实现；采集主机的 capture → ingest 与 book-check / trade-check 不在 deck 的管理范围 |
 
 `/setup` 不在这张表里：它是**必做**的，规格见 §5.1。
 
@@ -361,7 +364,7 @@ deck 默认**只读**。开启写入是个显式动作，界面上要有明确�
 
 ---
 
-## 6. 上线门控流水线（`/strategies/:id` 的核心组件）
+## 6. 上线门控流水线（`/strategies` 的核心组件）
 
 五个阶段，只能一步步走，不能跳：
 
