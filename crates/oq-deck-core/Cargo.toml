@@ -12,6 +12,7 @@ repository.workspace = true
 # without starting a server.
 [dependencies]
 argon2.workspace = true
+oq-backtest.workspace = true
 base32.workspace = true
 hmac.workspace = true
 oq-gateway.workspace = true
