@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "@/api/client";
-import { ErrorState, ModeToggle, Skeleton } from "@/components/States";
+import { ErrorState, Skeleton } from "@/components/States";
 
 /**
  * What this deck is, how it is reached, and what it may do (UI-BRIEF
@@ -45,11 +45,6 @@ export function Settings() {
 
       <section>
         <h2 className="mb-2 text-sm text-ink-muted">界面</h2>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-ink-muted">显示密度</span>
-          <ModeToggle />
-          <span className="text-xs text-ink-muted">新手模式隐藏高级字段、术语带一句解释；只保存在这个浏览器里。</span>
-        </div>
         <p className="mt-2 text-xs text-ink-muted">语言：中文（界面文案目前只有中文）。主题：深色（按设计只有这一套）。</p>
       </section>
 

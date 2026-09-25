@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api, type AttributionReport, type RunEntry } from "@/api/client";
 import { Empty, ErrorState, Expert, Skeleton, Term } from "@/components/States";
+import { Segmented } from "@/ui/kit";
 
 /**
  * Live minus model, decomposed (UI-BRIEF §4.5).
@@ -13,7 +14,7 @@ import { Empty, ErrorState, Expert, Skeleton, Term } from "@/components/States";
  * residual from an incomplete decomposition claims everything was
  * explained, which is the one lie this product must not tell.
  */
-export function Attribution() {
+export function Attribution({ embedded }: { embedded?: boolean } = {}) {
   const caps = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
   const [source, setSource] = useState<"shadow" | "runs">("shadow");
   useEffect(() => {
@@ -22,14 +23,17 @@ export function Attribution() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg text-ink">归因</h1>
-      <div className="flex gap-2 text-sm">
-        <SourceTab on={source === "shadow"} onClick={() => setSource("shadow")} disabled={!caps.data?.ops.available}>
-          交易进程实时（shadow）
-        </SourceTab>
-        <SourceTab on={source === "runs"} onClick={() => setSource("runs")} disabled={!caps.data?.runs.available}>
-          两份 run 文件
-        </SourceTab>
+      {!embedded && <h1 className="text-xl font-semibold text-ink">盈亏归因</h1>}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-ink-muted">来源</span>
+        <Segmented
+          value={source}
+          onChange={setSource}
+          options={[
+            ...(caps.data?.ops.available ? [{ value: "shadow" as const, label: "交易进程实时（shadow）" }] : []),
+            ...(caps.data?.runs.available ? [{ value: "runs" as const, label: "两份 run 文件" }] : []),
+          ]}
+        />
       </div>
       <p className="text-xs text-ink-muted">
         {source === "shadow"
@@ -38,32 +42,6 @@ export function Attribution() {
       </p>
       {source === "shadow" ? <ShadowSource /> : <RunsSource />}
     </div>
-  );
-}
-
-function SourceTab({
-  on,
-  disabled,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className={[
-        "rounded border px-3 py-1",
-        on ? "border-accent text-accent" : "border-line text-ink-muted",
-        disabled ? "opacity-40" : "hover:text-ink",
-      ].join(" ")}
-    >
-      {children}
-    </button>
   );
 }
 

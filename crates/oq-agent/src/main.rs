@@ -218,7 +218,13 @@ fn handle(state: &State, line: &str) -> AgentResponse {
     let cfg = &state.cfg;
 
     let result: Result<serde_json::Value, String> = match &req.op {
-        Op::Host => Ok(system::host_health()),
+        Op::Host => {
+            // The host's name as alerts carry it, so the console names the
+            // machine it is operating rather than leaving that implicit.
+            let mut h = system::host_health();
+            h["name"] = json!(cfg.host);
+            Ok(h)
+        }
         Op::Units => Ok(json!(
             cfg.units
                 .iter()

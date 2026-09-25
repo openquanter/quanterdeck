@@ -170,6 +170,8 @@ export interface Disk {
 }
 
 export interface HostHealth {
+  /** The host's name as the agent's alerts carry it. */
+  name?: string;
   load: number[];
   mem_total: number | null;
   mem_available: number | null;

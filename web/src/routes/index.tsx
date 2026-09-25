@@ -1,25 +1,25 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { Shell } from "@/components/Shell";
 import { AuthGate } from "@/features/auth/AuthGate";
 import { Login } from "@/features/auth/Login";
 import { Setup } from "@/features/auth/Setup";
 
-import { Compare } from "./Compare";
-import { Ops } from "./Ops";
-import { OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
-import { Live } from "./Live";
-import { Attribution } from "./Attribution";
+import { Accounts, Alerts } from "./Watch";
 import { Blackbox } from "./Blackbox";
-import { Journal } from "./Journal";
-import { Settings } from "./Settings";
+import { Compare } from "./Compare";
 import { Config } from "./Config";
-import { Strategies } from "./Strategies";
-import { Sweeps } from "./Sweeps";
-import { Accounts, Alerts, DataQuality } from "./Watch";
+import { Journal } from "./Journal";
+import { Ops } from "./Ops";
+import { OpsAudit, OpsDeploy, OpsLogs } from "./OpsPages";
 import { Overview } from "./Overview";
+import { Reconcile } from "./Reconcile";
 import { RunDetail } from "./RunDetail";
 import { Runs } from "./Runs";
+import { Settings } from "./Settings";
+import { Strategies } from "./Strategies";
+import { Sweeps } from "./Sweeps";
+import { Trading } from "./Trading";
 
 /**
  * Every screen in the plan, one entry each. The navigation is drawn from
@@ -38,25 +38,37 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Overview /> },
+      // 交易
+      { path: "live", element: <Trading /> },
+      { path: "reconcile", element: <Reconcile /> },
+      // 诊断
+      { path: "alerts", element: <Alerts /> },
+      { path: "blackbox", element: <Blackbox /> },
+      { path: "logs", element: <OpsLogs /> },
+      { path: "journal", element: <Journal /> },
+      // 变更
+      { path: "strategies", element: <Strategies /> },
+      { path: "config", element: <Config /> },
+      { path: "deploy", element: <OpsDeploy /> },
+      // 研究
       { path: "runs", element: <Runs /> },
       { path: "runs/compare", element: <Compare /> },
       { path: "runs/:id", element: <RunDetail /> },
-      { path: "attribution", element: <Attribution /> },
-      { path: "live", element: <Live /> },
-      { path: "ops", element: <Ops /> },
-      { path: "ops/orders", element: <OpsOrders /> },
-      { path: "ops/logs", element: <OpsLogs /> },
-      { path: "ops/deploy", element: <OpsDeploy /> },
-      { path: "ops/audit", element: <OpsAudit /> },
-      { path: "blackbox", element: <Blackbox /> },
-      { path: "journal", element: <Journal /> },
       { path: "sweeps", element: <Sweeps /> },
-      { path: "data", element: <DataQuality /> },
-      { path: "strategies", element: <Strategies /> },
-      { path: "config", element: <Config /> },
-      { path: "alerts", element: <Alerts /> },
+      // 系统
+      { path: "host", element: <Ops /> },
       { path: "accounts", element: <Accounts /> },
+      { path: "audit", element: <OpsAudit /> },
       { path: "settings", element: <Settings /> },
+      // Where things were before docs/UI-V4, so bookmarks still land.
+      { path: "ops", element: <Navigate to="/host" replace /> },
+      { path: "ops/orders", element: <Navigate to="/live?tab=positions" replace /> },
+      { path: "ops/logs", element: <Navigate to="/logs" replace /> },
+      { path: "ops/deploy", element: <Navigate to="/deploy" replace /> },
+      { path: "ops/audit", element: <Navigate to="/audit" replace /> },
+      { path: "attribution", element: <Navigate to="/reconcile?tab=attribution" replace /> },
+      { path: "data", element: <Navigate to="/live?tab=market" replace /> },
+      { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
 ]);

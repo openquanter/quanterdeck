@@ -2,33 +2,54 @@
 
 /* The palette is defined once, here, and referenced everywhere else.
    A colour written inline in a component is a colour that will not
-   follow the theme, so the lint rule and review both look for them. */
-@theme {
-  --color-ground: #0b0d10;
-  --color-surface: #14171c;
-  --color-surface-raised: #1b1f26;
-  --color-line: #262b33;
-  --color-ink: #e6e9ee;
-  --color-ink-muted: #949bab;
-  --color-accent: #4c8dff;
-  --color-good: #2fbf71;
-  --color-warn: #e0a33e;
-  --color-bad: #e5484d;
+   follow the theme, so the lint rule and review both look for them.
 
-  --font-sans: "Inter", system-ui, -apple-system, "PingFang SC", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+   Colour means state and nothing else: good, warn, bad, and accent for
+   what can be acted on or is selected. Buy and sell stay neutral. */
+@theme {
+  --color-ground: #0a0c10;
+  --color-surface: #12151b;
+  --color-surface-raised: #191d25;
+  --color-surface-hover: #1f242d;
+  --color-line: #232833;
+  --color-line-strong: #2e3542;
+  --color-ink: #e8ebf0;
+  --color-ink-muted: #9aa3b2;
+  --color-ink-faint: #6b7383;
+  --color-accent: #5b9bff;
+  --color-good: #34c47c;
+  --color-warn: #e8a83e;
+  --color-bad: #ef5a5f;
+
+  --font-sans: "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-card: 10px;
 }
 
 :root {
   color-scheme: dark;
 }
 
+html,
 body {
   margin: 0;
   background: var(--color-ground);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
   /* Numbers in a trading console are compared down a column far more
      often than they are read in a sentence. Tabular figures everywhere. */
   font-variant-numeric: tabular-nums;
+}
+
+/* Thin, quiet scrollbars: a console is full of scrolling panes. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
