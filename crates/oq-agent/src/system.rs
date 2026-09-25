@@ -163,8 +163,22 @@ pub fn journal(
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with("-- ")).collect();
+    let mut lines: Vec<&str> = text.lines().filter(|l| !l.starts_with("-- ")).collect();
+    // `-n` with `--grep` comes back newest first on some systemd versions;
+    // the page reads oldest first, like a file's tail.
+    if lines
+        .first()
+        .zip(lines.last())
+        .is_some_and(|(a, b)| stamp(a) > stamp(b))
+    {
+        lines.reverse();
+    }
     Ok(json!({"unit": unit, "lines": lines}))
+}
+
+/// A short-iso-precise line's timestamp, which sorts as text.
+fn stamp(line: &str) -> &str {
+    line.split_once(' ').map_or("", |(t, _)| t)
 }
 
 fn regex_escape(s: &str) -> String {
