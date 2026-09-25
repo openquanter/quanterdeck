@@ -630,7 +630,7 @@ mod tests {
         let d = tempfile::tempdir().expect("dir");
         let base: i64 = 1_790_000_000_000;
         let units = [
-            "oqp-live.service",
+            "trader.service",
             "oq-recon.service",
             "oq-deck.service",
             "oq-agent.service",

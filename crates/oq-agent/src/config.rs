@@ -18,6 +18,8 @@ pub struct Config {
     pub manageable: Vec<String>,
     /// The trading process's unit.
     pub trader_unit: String,
+    /// The binaries a signed release may carry.
+    pub release_binaries: Vec<String>,
     /// Where the trader's control socket is.
     pub control_dir: PathBuf,
     /// Log files that may be read.
@@ -87,15 +89,31 @@ impl Config {
         for user in list("OQ_AGENT_PEERS", "oq-deck") {
             peers.push(uid_of(&user)?);
         }
+        let trader_unit = var("OQ_AGENT_TRADER_UNIT", "trader.service");
+        // A release carries the trader and the framework's watcher. The
+        // trader's binary is named after its unit, so a deployment that
+        // renames the unit does not also have to say what a release may
+        // carry — and a release cannot carry anything else.
+        let trader_binary = trader_unit
+            .strip_suffix(".service")
+            .unwrap_or(&trader_unit)
+            .to_owned();
         Ok(Self {
             socket,
             peers,
             units: list(
                 "OQ_AGENT_UNITS",
-                "oqp-live.service,oq-recon.service,oq-deck.service,oq-agent.service,caddy.service",
+                &format!("{trader_unit},oq-recon.service,oq-deck.service,oq-agent.service"),
             ),
-            manageable: list("OQ_AGENT_MANAGEABLE", "oqp-live.service,oq-recon.service"),
-            trader_unit: var("OQ_AGENT_TRADER_UNIT", "oqp-live.service"),
+            manageable: list(
+                "OQ_AGENT_MANAGEABLE",
+                &format!("{trader_unit},oq-recon.service"),
+            ),
+            release_binaries: list(
+                "OQ_AGENT_RELEASE_BINARIES",
+                &format!("{trader_binary},oq-recon"),
+            ),
+            trader_unit,
             control_dir: PathBuf::from(var("OQ_AGENT_CONTROL_DIR", "/run/oq-live")),
             log_dir: PathBuf::from(var("OQ_AGENT_LOG_DIR", "/var/log/oq")),
             state_dir: PathBuf::from(var("OQ_AGENT_STATE", "/var/lib/oq-agent")),
@@ -107,7 +125,7 @@ impl Config {
             credentials: std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from),
             host: var("OQ_AGENT_HOST", "host"),
             discord_guild: std::env::var("OQ_AGENT_DISCORD_GUILD").ok(),
-            discord_channel: var("OQ_AGENT_DISCORD_CHANNEL", "监控告警"),
+            discord_channel: var("OQ_AGENT_DISCORD_CHANNEL", "alerts"),
             proxy: std::env::var("OQ_AGENT_PROXY")
                 .ok()
                 .filter(|p| !p.is_empty()),

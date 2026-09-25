@@ -28,9 +28,6 @@ use crate::config::Config;
 use crate::notify::{BLUE, GREEN, Message, RED};
 use crate::system;
 
-/// The binaries a release may carry.
-pub const ALLOWED: &[&str] = &["oqp-live", "oq-recon"];
-
 /// The namespace signatures are made in, so a signature for anything else
 /// made with the same key does not pass here.
 pub const NAMESPACE: &str = "oq-release";
@@ -185,7 +182,7 @@ pub fn verify(cfg: &Config, id: &str) -> Result<Value, Said> {
         return Err(missing);
     }
     for (name, want) in files {
-        if !ALLOWED.contains(&name.as_str()) {
+        if !cfg.release_binaries.contains(name) {
             return Err(Said::new(
                 format!("{name} 不是发布可以携带的程序"),
                 format!("{name} is not a binary a release may carry"),
@@ -296,7 +293,7 @@ fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, Said> {
     // A release carrying only some binaries keeps the others from the one
     // it replaces.
     if let Some(cur) = link_target(&cfg.releases.join("current")) {
-        for name in ALLOWED {
+        for name in &cfg.release_binaries {
             let to = tmp.join(name);
             let from = cfg.releases.join(&cur).join(name);
             if !to.exists() && from.exists() {
@@ -693,6 +690,7 @@ mod tests {
             units: vec![],
             manageable: vec![],
             trader_unit: "t".into(),
+            release_binaries: vec!["trader".into(), "oq-recon".into()],
             control_dir: root.join("run"),
             log_dir: root.join("log"),
             state_dir: root.join("state"),
@@ -730,9 +728,9 @@ mod tests {
         }
         let dir = root.join("incoming").join(id);
         std::fs::create_dir_all(&dir).expect("dir");
-        std::fs::write(dir.join("oqp-live"), b"#!/bin/sh\necho new\n").expect("bin");
-        let sum = sha256_file(&dir.join("oqp-live")).expect("sum");
-        let manifest = json!({"id": id, "files": {"oqp-live": sum}});
+        std::fs::write(dir.join("trader"), b"#!/bin/sh\necho new\n").expect("bin");
+        let sum = sha256_file(&dir.join("trader")).expect("sum");
+        let manifest = json!({"id": id, "files": {"trader": sum}});
         std::fs::write(dir.join("manifest.json"), manifest.to_string()).expect("manifest");
         let ok = Command::new("ssh-keygen")
             .args(["-Y", "sign", "-q", "-n", NAMESPACE, "-f"])
@@ -743,7 +741,7 @@ mod tests {
             .success();
         assert!(ok);
         if tamper {
-            std::fs::write(dir.join("oqp-live"), b"#!/bin/sh\necho evil\n").expect("tamper");
+            std::fs::write(dir.join("trader"), b"#!/bin/sh\necho evil\n").expect("tamper");
         }
     }
 
@@ -755,7 +753,7 @@ mod tests {
         stage(root.path(), "r1", true, false);
         let m = verify(&c, "r1").expect("verifies");
         let dest = install(&c, "r1", &m).expect("installs");
-        assert!(dest.join("oqp-live").exists());
+        assert!(dest.join("trader").exists());
         let listed = list(&c, &Progress::default());
         assert_eq!(listed["staged"][0]["verified"], true, "{listed}");
         assert_eq!(listed["installed"], json!(["r1"]));

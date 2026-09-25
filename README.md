@@ -211,9 +211,10 @@ reference deployment is:
 |---|---|---|
 | `OQ_AGENT_SOCKET` | `$RUNTIME_DIRECTORY/agent.sock` | Where the deck reaches it |
 | `OQ_AGENT_PEERS` | `oq-deck` | Users allowed to connect |
-| `OQ_AGENT_UNITS` | the trader, watcher, deck, agent and proxy | Units shown and recorded |
-| `OQ_AGENT_MANAGEABLE` | `oqp-live.service,oq-recon.service` | Units it may start and stop |
-| `OQ_AGENT_TRADER_UNIT` | `oqp-live.service` | The trader |
+| `OQ_AGENT_UNITS` | the trader, watcher, deck and agent | Units shown and recorded |
+| `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | Units it may start and stop |
+| `OQ_AGENT_TRADER_UNIT` | `trader.service` | The trader |
+| `OQ_AGENT_RELEASE_BINARIES` | the trader's binary, `oq-recon` | The binaries a signed release may carry |
 | `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | The trader's control socket directory |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | Log files |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | Audit trail, alerts, black box, gate state |
@@ -222,7 +223,7 @@ reference deployment is:
 | `OQ_AGENT_CONFIG_DIR` | `/var/lib/oq/config` | Strategy configuration it may change |
 | `OQ_AGENT_JOURNALS` | `/var/lib/oq/journals` | Journals, for the promotion gate's evidence |
 | `OQ_AGENT_HOST` | `host` | The host's name in alerts |
-| `OQ_AGENT_DISCORD_GUILD`, `OQ_AGENT_DISCORD_CHANNEL` | —, `监控告警` | Where alerts go; the bot token comes as a systemd credential |
+| `OQ_AGENT_DISCORD_GUILD`, `OQ_AGENT_DISCORD_CHANNEL` | —, `alerts` | Where alerts go; the bot token comes as a systemd credential |
 | `OQ_AGENT_PROXY` | — | An HTTP proxy for the alert channel |
 
 ## Docs
