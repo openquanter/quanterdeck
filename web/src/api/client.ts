@@ -225,6 +225,18 @@ export interface TraderStatus {
   reconcile: { at_ns: number | null; agreed: boolean | null; mismatches: number; unread: number };
   waiting_on: Record<string, number>;
   counters: Record<string, number>;
+  /** Since the process started; absent from traders built before it was reported. */
+  pnl?: { since_ms: number; realized: string; fees: string; funding: string; net: string; equity: string };
+  /** The risk limits in force; quantities in lots. */
+  limits?: {
+    max_order_qty: number;
+    max_position_qty: number;
+    max_order_notional: string;
+    price_band_ppb: number;
+    max_working: number;
+    max_rate: number;
+    rate_window_ns: number;
+  };
 }
 
 export interface RestingOrder {
@@ -322,7 +334,7 @@ export interface HostSample {
 }
 
 /** The trader's status as the black box keeps it: a subset, possibly from an older build. */
-export type TraderSample = Partial<Pick<TraderStatus, "halted" | "halt_reason" | "journal_lost" | "resting" | "ticks" | "positions" | "feed" | "reconcile" | "pid">>;
+export type TraderSample = Partial<Pick<TraderStatus, "halted" | "halt_reason" | "journal_lost" | "resting" | "ticks" | "positions" | "feed" | "reconcile" | "pid" | "pnl">>;
 
 export interface BlackboxEvent {
   at: number;
