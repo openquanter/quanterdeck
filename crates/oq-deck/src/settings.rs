@@ -14,6 +14,10 @@ pub struct Settings {
     pub journals_dir: Option<PathBuf>,
     /// Tick files (`.oqtk`) to price fills against, for markouts.
     pub ticks_dir: Option<PathBuf>,
+    /// The host agent's socket; with it, the operations pages.
+    pub agent_socket: Option<PathBuf>,
+    /// The venue reading `oq-recon --watch --latest` keeps.
+    pub venue_record: Option<PathBuf>,
     /// Argon2id hash of the operator's password.
     ///
     /// `None` means setup has not been done. It does **not** mean the
@@ -40,6 +44,8 @@ impl Default for Settings {
             runs_dir: None,
             journals_dir: None,
             ticks_dir: None,
+            agent_socket: None,
+            venue_record: None,
             password_hash: None,
             totp_secret: None,
             extra_hosts: Vec::new(),
@@ -165,6 +171,12 @@ impl Settings {
             .ok()
             .map(PathBuf::from);
         settings.ticks_dir = std::env::var("OQ_DECK_TICKS_DIR").ok().map(PathBuf::from);
+        settings.agent_socket = std::env::var("OQ_DECK_AGENT_SOCKET")
+            .ok()
+            .map(PathBuf::from);
+        settings.venue_record = std::env::var("OQ_DECK_VENUE_RECORD")
+            .ok()
+            .map(PathBuf::from);
         // An empty variable is an unset one: `OQ_DECK_TOTP_SECRET=` in an
         // environment file read as a second factor with an empty key.
         let set = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());

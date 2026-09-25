@@ -11,9 +11,14 @@ import { api, type CapabilityName } from "@/api/client";
  */
 const SECTIONS: { to: string; label: string; capability: CapabilityName | null }[] = [
   { to: "/", label: "总览", capability: null },
+  { to: "/ops", label: "运维", capability: "ops" },
+  { to: "/ops/orders", label: "挂单", capability: "ops" },
+  { to: "/live", label: "实盘对账", capability: "live" },
+  { to: "/ops/logs", label: "日志", capability: "ops" },
+  { to: "/ops/deploy", label: "部署", capability: "ops" },
+  { to: "/ops/audit", label: "审计", capability: "ops" },
   { to: "/runs", label: "运行记录", capability: "runs" },
   { to: "/attribution", label: "归因", capability: "attribution" },
-  { to: "/live", label: "实盘对账", capability: "live" },
   { to: "/journal", label: "Journal", capability: "live" },
   { to: "/sweeps", label: "参数扫描", capability: "runs" },
   { to: "/data", label: "数据质量", capability: null },

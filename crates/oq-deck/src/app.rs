@@ -23,7 +23,7 @@ use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use oq_deck_core::{attribution, auth, capabilities, live, markout, runs};
+use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, runs};
 use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -181,7 +181,6 @@ fn guard_read(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
 }
 
 /// Every check a write endpoint must pass.
-#[allow(dead_code)]
 fn guard_write(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     check_host(deck, headers)?;
     check_origin(deck, headers)?;
@@ -427,6 +426,7 @@ async fn caps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         deck.settings.runs_dir.as_deref(),
         deck.settings.journals_dir.as_deref(),
         deck.settings.ticks_dir.as_deref(),
+        deck.settings.agent_socket.as_deref(),
         deck.settings.allow_writes,
     ))
     .into_response()
@@ -696,6 +696,268 @@ async fn reconcile(
     }
 }
 
+/// The newest journal against the newest venue reading, with no pasting.
+///
+/// The reading is the file `oq-recon --watch --latest` keeps; its age is
+/// returned beside the verdict, because a comparison against a reading an
+/// hour old is a statement about an hour ago.
+async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let Some(record_path) = deck.settings.venue_record.clone() else {
+        return Refusal::not_found("尚未配置交易所最新记录（OQ_DECK_VENUE_RECORD）")
+            .into_response();
+    };
+    let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
+        Ok(d) => d,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let newest = std::fs::read_dir(&dir).ok().and_then(|rd| {
+        rd.filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|x| x == "oqj"))
+            .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+            .max_by_key(|(t, _)| *t)
+            .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+    });
+    let Some(id) = newest else {
+        return Refusal::not_found("日志目录里还没有交易日志").into_response();
+    };
+    let text = match std::fs::read_to_string(&record_path) {
+        Ok(t) => t,
+        Err(e) => {
+            return Refusal::not_found(format!("读不到交易所记录 {}：{e}", record_path.display()))
+                .into_response();
+        }
+    };
+    match live::reconcile(&dir, &id, &text) {
+        Ok(result) => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
+            let age_ms = now_ms - result.venue.read_at_ms;
+            axum::Json(serde_json::json!({"reconciliation": result, "record_age_ms": age_ms}))
+                .into_response()
+        }
+        Err(e) => Refusal::bad_request(e).into_response(),
+    }
+}
+
+// -- operations, through the host agent ------------------------------------
+//
+// The deck authenticates the person; the agent decides what is allowed and
+// verifies the step-up code for anything risky. These handlers only carry
+// requests across and name who asked.
+
+async fn ask_agent(
+    deck: &Deck,
+    op: ops::Op,
+    reason: Option<String>,
+    step_up: Option<String>,
+    actor: String,
+) -> Response {
+    let Some(sock) = deck.settings.agent_socket.clone() else {
+        return Refusal::not_found("尚未配置主机代理（OQ_DECK_AGENT_SOCKET）").into_response();
+    };
+    let nonce = match auth::new_token() {
+        Ok(n) => n,
+        Err(e) => return misconfigured(&format!("无法生成请求编号：{e}。")).into_response(),
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
+    let req = ops::AgentRequest {
+        op,
+        actor,
+        nonce,
+        expires_ms: now_ms + 30_000,
+        reason,
+        step_up,
+    };
+    match agent_call(&sock, &req).await {
+        Ok(resp) if resp.ok => axum::Json(resp.data).into_response(),
+        Ok(resp) => Refusal::new(
+            StatusCode::CONFLICT,
+            resp.error.unwrap_or_else(|| "主机代理拒绝了请求".into()),
+        )
+        .into_response(),
+        Err(e) => {
+            Refusal::new(StatusCode::BAD_GATEWAY, format!("主机代理无应答：{e}")).into_response()
+        }
+    }
+}
+
+async fn agent_call(
+    sock: &std::path::Path,
+    req: &ops::AgentRequest,
+) -> Result<ops::AgentResponse, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+    let work = async {
+        let stream = tokio::net::UnixStream::connect(sock)
+            .await
+            .map_err(|e| e.to_string())?;
+        let (read, mut write) = stream.into_split();
+        let mut line = serde_json::to_string(req).map_err(|e| e.to_string())?;
+        line.push('\n');
+        write
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut answer = String::new();
+        tokio::io::BufReader::new(read.take(8 << 20))
+            .read_line(&mut answer)
+            .await
+            .map_err(|e| e.to_string())?;
+        serde_json::from_str::<ops::AgentResponse>(&answer)
+            .map_err(|e| format!("无法读取应答：{e}"))
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(60), work)
+        .await
+        .map_err(|_| "超时".to_string())?
+}
+
+/// Who is asking, for the agent's audit trail: the deck's one operator,
+/// and where from.
+fn actor_of(
+    peer: Option<&axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: &HeaderMap,
+) -> String {
+    // Behind the proxy the socket peer is the proxy; the address it
+    // forwards is the person's.
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    format!(
+        "deck:operator@{}",
+        forwarded.map_or_else(|| source_of(peer), str::to_owned)
+    )
+}
+
+macro_rules! ops_read {
+    ($name:ident, $op:expr) => {
+        async fn $name(
+            State(deck): State<Deck>,
+            peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+            headers: HeaderMap,
+        ) -> Response {
+            if let Err(refusal) = guard_read(&deck, &headers) {
+                return refusal.into_response();
+            }
+            let actor = actor_of(peer.as_ref(), &headers);
+            ask_agent(&deck, $op, None, None, actor).await
+        }
+    };
+}
+
+ops_read!(ops_host, ops::Op::Host);
+ops_read!(ops_units, ops::Op::Units);
+ops_read!(ops_status, ops::Op::Status);
+ops_read!(ops_orders, ops::Op::Orders);
+ops_read!(ops_alerts, ops::Op::Alerts);
+ops_read!(ops_logs, ops::Op::Logs);
+ops_read!(ops_releases, ops::Op::Releases);
+
+#[derive(Deserialize)]
+struct LogQuery {
+    name: String,
+    #[serde(default = "default_lines")]
+    lines: usize,
+    #[serde(default)]
+    grep: Option<String>,
+}
+
+const fn default_lines() -> usize {
+    200
+}
+
+async fn ops_log(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<LogQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    let op = ops::Op::LogTail {
+        name: q.name,
+        lines: q.lines,
+        grep: q.grep.filter(|g| !g.is_empty()),
+    };
+    ask_agent(&deck, op, None, None, actor).await
+}
+
+#[derive(Deserialize)]
+struct AuditQuery {
+    #[serde(default = "default_lines")]
+    lines: usize,
+}
+
+async fn ops_audit(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<AuditQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    ask_agent(&deck, ops::Op::Audit { lines: q.lines }, None, None, actor).await
+}
+
+#[derive(Deserialize)]
+struct ActionBody {
+    action: String,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    verb: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    reason: String,
+    #[serde(default)]
+    step_up: Option<String>,
+}
+
+/// Every state change: halt, shutdown, resume, a unit action, a deploy or
+/// a rollback. A write, so it needs writes on, a session and our own
+/// origin; the reason is required here and again by the agent.
+async fn ops_action(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<ActionBody>,
+) -> Response {
+    if let Err(refusal) = guard_write(&deck, &headers) {
+        return refusal.into_response();
+    }
+    if body.reason.trim().is_empty() {
+        return Refusal::bad_request("请填写原因").into_response();
+    }
+    let op = match body.action.as_str() {
+        "halt" => ops::Op::Halt,
+        "shutdown" => ops::Op::Shutdown,
+        "resume" => ops::Op::Resume,
+        "rollback" => ops::Op::Rollback,
+        "unit" => match (body.unit, body.verb) {
+            (Some(unit), Some(verb)) => ops::Op::Unit { unit, verb },
+            _ => return Refusal::bad_request("缺少单元或动作").into_response(),
+        },
+        "deploy" => match body.id {
+            Some(id) => ops::Op::Deploy { id },
+            None => return Refusal::bad_request("缺少发布编号").into_response(),
+        },
+        other => return Refusal::bad_request(format!("未知操作 {other}")).into_response(),
+    };
+    let actor = actor_of(peer.as_ref(), &headers);
+    ask_agent(&deck, op, Some(body.reason), body.step_up, actor).await
+}
+
 // -- assembly -------------------------------------------------------------
 
 /// Build the router.
@@ -731,6 +993,17 @@ pub fn router(
         .route("/journals", get(list_journals))
         .route("/journals/{id}/belief", get(journal_belief))
         .route("/journals/{id}/reconcile", post(reconcile))
+        .route("/live/latest", get(reconcile_latest))
+        .route("/ops/host", get(ops_host))
+        .route("/ops/units", get(ops_units))
+        .route("/ops/status", get(ops_status))
+        .route("/ops/orders", get(ops_orders))
+        .route("/ops/alerts", get(ops_alerts))
+        .route("/ops/logs", get(ops_logs))
+        .route("/ops/log", get(ops_log))
+        .route("/ops/audit", get(ops_audit))
+        .route("/ops/releases", get(ops_releases))
+        .route("/ops/action", post(ops_action))
         // An API path that does not exist is a 404 in the API's own
         // shape, not the interface's index page with a 200 — which told a
         // client asking for a mistyped route that it had succeeded.

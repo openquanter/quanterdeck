@@ -7,6 +7,8 @@ import { Login } from "@/features/auth/Login";
 import { Setup } from "@/features/auth/Setup";
 
 import { Compare } from "./Compare";
+import { Ops } from "./Ops";
+import { Live, OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
 import { Overview } from "./Overview";
 import { RunDetail } from "./RunDetail";
 import { Runs } from "./Runs";
@@ -43,16 +45,12 @@ export const router = createBrowserRouter([
           />
         ),
       },
-      {
-        path: "live",
-        element: (
-          <Placeholder
-            title="实盘对账"
-            milestone="M2"
-            note="接口已可用（/api/v1/journals），界面在 M2。进程以为持有的（journal）与交易所实际持有的（venue）之间的差别；仍为 stale 的订单是边沿触发的告警。"
-          />
-        ),
-      },
+      { path: "live", element: <Live /> },
+      { path: "ops", element: <Ops /> },
+      { path: "ops/orders", element: <OpsOrders /> },
+      { path: "ops/logs", element: <OpsLogs /> },
+      { path: "ops/deploy", element: <OpsDeploy /> },
+      { path: "ops/audit", element: <OpsAudit /> },
       { path: "journal", element: <Placeholder title="Journal 回放" milestone="M1" /> },
       {
         path: "sweeps",

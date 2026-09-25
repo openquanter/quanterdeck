@@ -53,6 +53,9 @@ pub struct Capabilities {
     /// Needs both directories: the fills are in run files and the prices
     /// they are marked against are in tick files.
     pub markout: Capability,
+    /// Host operations through the agent: units, the trader's status and
+    /// control, logs, releases, alerts, the audit trail.
+    pub ops: Capability,
     /// Whether this deck may change anything at all.
     pub writes: Capability,
 }
@@ -77,8 +80,20 @@ pub fn detect(
     runs_dir: Option<&Path>,
     journals_dir: Option<&Path>,
     ticks_dir: Option<&Path>,
+    agent_socket: Option<&Path>,
     writes_allowed: bool,
 ) -> Capabilities {
+    let ops = match agent_socket {
+        Some(sock) => {
+            use std::os::unix::fs::FileTypeExt;
+            match std::fs::metadata(sock) {
+                Ok(m) if m.file_type().is_socket() => Capability::on(),
+                Ok(_) => Capability::off(format!("{} 不是 socket", sock.display())),
+                Err(e) => Capability::off(format!("连不上主机代理 {}：{e}", sock.display())),
+            }
+        }
+        None => Capability::off("尚未配置主机代理；请设置 OQ_DECK_AGENT_SOCKET"),
+    };
     let runs = directory(runs_dir, "OQ_DECK_RUNS_DIR");
     let live = directory(journals_dir, "OQ_DECK_JOURNALS_DIR");
     let ticks = directory(ticks_dir, "OQ_DECK_TICKS_DIR");
@@ -102,14 +117,18 @@ pub fn detect(
         },
         runs,
         live,
-        // Off until there is a write route to use. Reported on when the
-        // variable was set, the capability promised what no route
-        // delivers — the one thing a capability must not do.
-        writes: if writes_allowed {
-            Capability::off("已设置 OQ_DECK_ALLOW_WRITES，但本版本还没有任何写入功能")
-        } else {
-            Capability::off("本 deck 处于只读模式；要修改任何东西，请先在设置中开启写入")
+        // Writes go through the agent: allowed but with no agent is
+        // still nothing to write with.
+        writes: match (writes_allowed, ops.available) {
+            (true, true) => Capability::on(),
+            (true, false) => {
+                Capability::off(format!("已设置 OQ_DECK_ALLOW_WRITES，但{}", ops.reason))
+            }
+            (false, _) => {
+                Capability::off("本 deck 处于只读模式；设置 OQ_DECK_ALLOW_WRITES=1 才能操作")
+            }
         },
+        ops,
     }
 }
 
@@ -117,12 +136,18 @@ pub fn detect(
 mod writes {
     use super::detect;
 
-    /// Allowed is not available: there is no write route yet, and a
-    /// capability reported on is a promise that a route delivers.
+    /// Allowed is not available without an agent: every write goes
+    /// through it, and a capability reported on is a promise that a route
+    /// delivers.
     #[test]
     fn writes_are_not_offered_before_there_is_anything_to_write_with() {
-        let caps = detect(None, None, None, true);
+        let caps = detect(None, None, None, None, true);
         assert!(!caps.writes.available);
-        assert!(caps.writes.reason.contains("还没有"));
+        assert!(
+            caps.writes.reason.contains("主机代理"),
+            "{}",
+            caps.writes.reason
+        );
+        assert!(!caps.ops.available);
     }
 }
