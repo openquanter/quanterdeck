@@ -147,6 +147,10 @@ export const GLOSSARY: Record<string, string> = {
   halt: "停止开新仓、撤掉开仓挂单，保留止盈等平仓单。",
   tick: "价格的最小变动单位；这里的价格都是整数个 tick。",
   lots: "数量的最小单位；这里的数量都是整数个 lot。",
+  dsr: "折减夏普（Deflated Sharpe）：考虑到试了多少组参数之后，最好那组的夏普仍然大于 0 的概率。试得越多，偶然跑出好结果越容易，这个概率就越低。",
+  pbo: "回测过拟合概率（PBO）：把历史切成若干段，样本内最好的参数在样本外排到后一半的比例。越高，说明「最好」越可能只是碰巧。",
+  logit: "每次切分里，样本内最优参数在样本外的相对排名（对数几率）。小于 0 表示它在样本外落到了后一半。",
+  degradation: "样本内夏普每高 1，样本外夏普跟着变多少。为负说明样本内越好、样本外越差，是典型的过拟合。",
 };
 
 export function Term({ name, children }: { name: keyof typeof GLOSSARY | string; children?: ReactNode }) {

@@ -368,6 +368,41 @@ export interface JournaldTail {
   lines: string[];
 }
 
+export type Stat<T> = { state: "value"; value: T } | { state: "missing"; reason: string };
+
+export type SweepEntry =
+  | { state: "read"; id: string; label: string; configs: number; refused: boolean; modified_ms: number | null }
+  | { state: "unreadable"; id: string; error: string };
+
+export interface Sweep {
+  id: string;
+  label: string;
+  equity_every: number;
+  thresholds: { max_pbo: number; min_deflated_sharpe: number; min_degradation_slope: number };
+  deflated_sharpe: Stat<number>;
+  pbo: Stat<{
+    pbo: number;
+    splits: number;
+    probability_of_loss: number;
+    median_oos_sharpe: number;
+    degradation: number;
+    logits: number[];
+  }>;
+  refusals: string[];
+  configs: {
+    label: string;
+    fills: number;
+    realized: number;
+    fees: number;
+    final_equity: number;
+    min_equity: number;
+    liquidations: number;
+    sharpe: number | null;
+  }[];
+  unscorable: string[];
+  lookahead: [string, string] | null;
+}
+
 export interface LogFile {
   name: string;
   mtime: number;
@@ -547,6 +582,8 @@ export const api = {
         `&candidate=${encodeURIComponent(candidate)}&tolerance=${tolerance}`,
     ),
   ticks: () => request<string[]>("/ticks"),
+  sweeps: () => request<SweepEntry[]>("/sweeps"),
+  sweep: (id: string) => request<Sweep>(`/sweeps/${encodeURIComponent(id)}`),
   markout: (baseline: string, candidate: string, ticks: string) =>
     request<MarkoutComparison>(
       `/runs/markout?baseline=${encodeURIComponent(baseline)}` +

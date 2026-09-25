@@ -23,7 +23,7 @@ use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, runs};
+use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, runs, sweeps};
 use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -482,6 +482,36 @@ async fn run_detail(
     }
     match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR")
         .and_then(|dir| runs::detail(&dir, &id).map_err(Refusal::not_found))
+    {
+        Ok(detail) => axum::Json(detail).into_response(),
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+/// The sweeps a caller's program wrote beside its runs.
+async fn list_sweeps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => match sweeps::list(&dir) {
+            Ok(entries) => axum::Json(entries).into_response(),
+            Err(why) => unreadable_dir(why).into_response(),
+        },
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+async fn sweep_detail(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR")
+        .and_then(|dir| sweeps::detail(&dir, &id).map_err(Refusal::not_found))
     {
         Ok(detail) => axum::Json(detail).into_response(),
         Err(refusal) => refusal.into_response(),
@@ -1253,6 +1283,8 @@ pub fn router(
         .route("/runs/markout", get(markout_runs))
         .route("/ticks", get(list_ticks))
         .route("/runs/{id}", get(run_detail))
+        .route("/sweeps", get(list_sweeps))
+        .route("/sweeps/{id}", get(sweep_detail))
         .route("/attribution", get(attribution_report))
         .route("/journals", get(list_journals))
         .route("/journals/{id}/belief", get(journal_belief))

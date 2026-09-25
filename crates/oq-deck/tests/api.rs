@@ -407,3 +407,32 @@ async fn two_runs_are_compared_by_markout_against_a_chosen_tick_file() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[tokio::test]
+async fn a_sweep_is_served_with_the_reasons_it_may_not_be_deployed() {
+    let dir = std::env::temp_dir().join(format!("oq-deck-sweeps-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("ma.sweep"),
+        "openquanter-sweep 1\nlabel ma\nequity-every 50\nthresholds 0.35 0.95 0\n\
+         deflated-sharpe - fewer than two configurations scored\npbo - fewer than two configurations scored\n\
+         refusal the deflated Sharpe could not be computed\nconfig fast=5\t3\t1\t0.1\t1001\t999\t0\t-\n",
+    )
+    .unwrap();
+    let client = Client::new(Settings {
+        runs_dir: Some(dir.clone()),
+        ..settings()
+    })
+    .await;
+    let (status, list) = client.get("/api/v1/sweeps").await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list[0]["id"], "ma");
+    assert_eq!(list[0]["refused"], true);
+    let (status, sweep) = client.get("/api/v1/sweeps/ma").await;
+    assert_eq!(status, StatusCode::OK, "{sweep}");
+    assert_eq!(sweep["deflated_sharpe"]["state"], "missing");
+    assert_eq!(sweep["configs"][0]["sharpe"], serde_json::Value::Null);
+    let (status, _) = client.get("/api/v1/sweeps/..%2Fma").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    std::fs::remove_dir_all(&dir).ok();
+}
