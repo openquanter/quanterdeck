@@ -288,6 +288,86 @@ export interface Accounts {
   same_account: boolean;
 }
 
+export interface ResourceStats {
+  min: number;
+  max: number;
+  avg: number;
+  p95: number;
+  n: number;
+}
+
+export interface ResourceSummary {
+  unit: string;
+  since_ms: number;
+  samples: number;
+  first_ms: number | null;
+  memory: ResourceStats | null;
+  cpu_percent: ResourceStats | null;
+  restarts: number;
+  process_changes: number;
+  samples_down: number;
+  curve: { at: number; mem: number | null; cpu: number | null; active: boolean }[];
+}
+
+export interface HostSample {
+  load: number[] | null;
+  mem_total: number | null;
+  mem_available: number | null;
+  swap_total: number | null;
+  swap_free: number | null;
+  psi_cpu: number | null;
+  psi_memory: number | null;
+  psi_io: number | null;
+  clock_synced: boolean;
+}
+
+/** The trader's status as the black box keeps it: a subset, possibly from an older build. */
+export type TraderSample = Partial<Pick<TraderStatus, "halted" | "halt_reason" | "journal_lost" | "resting" | "ticks" | "positions" | "feed" | "reconcile" | "pid">>;
+
+export interface BlackboxEvent {
+  at: number;
+  what: string;
+  unit?: string;
+  key?: string;
+  message?: string;
+  reason?: string | null;
+  result?: string | null;
+  exit_status?: string | null;
+  state?: string;
+}
+
+export interface BlackboxWindow {
+  from_ms: number;
+  to_ms: number;
+  every_s: number;
+  units: Record<
+    string,
+    {
+      samples: number;
+      first_ms: number | null;
+      memory: ResourceStats | null;
+      cpu_percent: ResourceStats | null;
+      samples_down: number;
+      curve: { at: number; mem: number | null; cpu: number | null; tasks: number | null; active: boolean }[];
+    }
+  >;
+  host: { at: number; host: HostSample }[];
+  trader: { at: number; trader: TraderSample }[];
+  events: BlackboxEvent[];
+}
+
+export interface BlackboxMoment {
+  at_ms: number;
+  host: { at: number; host: HostSample } | null;
+  trader: { at: number; trader: TraderSample } | null;
+  units: Record<string, { at: number; active: boolean; mem: number | null; peak: number | null; tasks: number | null }>;
+}
+
+export interface JournaldTail {
+  unit: string;
+  lines: string[];
+}
+
 export interface LogFile {
   name: string;
   mtime: number;
@@ -484,6 +564,17 @@ export const api = {
   alerts: async () => (await request<AlertsView>("/ops/alerts")).active,
   alertsView: () => request<AlertsView>("/ops/alerts"),
   accounts: () => request<Accounts>("/ops/accounts"),
+  resources: (hours: number) => request<ResourceSummary[]>(`/ops/resources?hours=${hours}`),
+  blackbox: (from: number, to: number, points: number) =>
+    request<BlackboxWindow>(`/ops/blackbox?from=${from}&to=${to}&points=${points}`),
+  blackboxAt: (at: number) => request<BlackboxMoment>(`/ops/blackbox/at?at=${at}`),
+  journalLog: (unit: string, since: number | null, until: number | null, lines: number, grep = "") =>
+    request<JournaldTail>(
+      `/ops/journal?unit=${encodeURIComponent(unit)}&lines=${lines}` +
+        (since !== null ? `&since=${since}` : "") +
+        (until !== null ? `&until=${until}` : "") +
+        (grep ? `&grep=${encodeURIComponent(grep)}` : ""),
+    ),
   configs: () => request<ConfigFile[]>("/ops/configs"),
   config: (name: string, backup?: string) =>
     request<ConfigDoc>(`/ops/config?name=${encodeURIComponent(name)}${backup ? `&backup=${encodeURIComponent(backup)}` : ""}`),
@@ -525,6 +616,11 @@ export const api = {
     request<RecordsPage>(
       `/journals/${encodeURIComponent(id)}/records?kinds=${kinds.join(",")}&limit=${limit}` +
         (before ? `&before=${before}` : ""),
+    ),
+  recordsBetween: (id: string, kinds: string[], limit: number, fromNs: number, toNs: number) =>
+    request<RecordsPage>(
+      `/journals/${encodeURIComponent(id)}/records?kinds=${kinds.join(",")}&limit=${limit}` +
+        `&from_ns=${Math.round(fromNs)}&to_ns=${Math.round(toNs)}`,
     ),
   reconcile: (id: string, venueRecord: string) =>
     post<LiveReconciliation["reconciliation"]>(`/journals/${encodeURIComponent(id)}/reconcile`, {

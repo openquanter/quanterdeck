@@ -11,6 +11,8 @@ import {
 import { ActionDialog } from "@/components/ActionDialog";
 import { ErrorState, Skeleton, Term } from "@/components/States";
 
+import { ResourcesPanel } from "./Resources";
+
 const REFRESH = 10_000;
 
 type Pending = { title: string; consequence: string; action: OpsAction; highRisk: boolean };
@@ -124,6 +126,8 @@ export function Ops() {
           <UnitsTable units={units.data ?? []} writable={writable} onAct={setPending} />
         )}
       </section>
+
+      <ResourcesPanel />
 
       <section>
         <h2 className="mb-2 text-sm text-ink-muted">主机</h2>

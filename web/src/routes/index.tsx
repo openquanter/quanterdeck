@@ -11,6 +11,7 @@ import { Ops } from "./Ops";
 import { OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
 import { Live } from "./Live";
 import { Attribution } from "./Attribution";
+import { Blackbox } from "./Blackbox";
 import { Journal } from "./Journal";
 import { Settings } from "./Settings";
 import { Config } from "./Config";
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       { path: "ops/logs", element: <OpsLogs /> },
       { path: "ops/deploy", element: <OpsDeploy /> },
       { path: "ops/audit", element: <OpsAudit /> },
+      { path: "blackbox", element: <Blackbox /> },
       { path: "journal", element: <Journal /> },
       {
         path: "sweeps",

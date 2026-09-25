@@ -865,6 +865,122 @@ ops_read!(ops_configs, ops::Op::ConfigList);
 ops_read!(ops_strategies, ops::Op::Strategies);
 
 #[derive(Deserialize)]
+struct ResourcesQuery {
+    #[serde(default = "default_hours")]
+    hours: i64,
+}
+
+const fn default_hours() -> i64 {
+    24
+}
+
+async fn ops_resources(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Query(q): Query<ResourcesQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    ask_agent(
+        &deck,
+        ops::Op::Resources { hours: q.hours },
+        None,
+        None,
+        actor,
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+struct BlackboxQuery {
+    from: i64,
+    to: i64,
+    #[serde(default = "default_points")]
+    points: usize,
+}
+
+const fn default_points() -> usize {
+    400
+}
+
+async fn ops_blackbox(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Query(q): Query<BlackboxQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    let op = ops::Op::Blackbox {
+        from_ms: q.from,
+        to_ms: q.to,
+        points: q.points,
+    };
+    ask_agent(&deck, op, None, None, actor).await
+}
+
+#[derive(Deserialize)]
+struct AtQuery {
+    at: i64,
+}
+
+async fn ops_blackbox_at(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Query(q): Query<AtQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    ask_agent(
+        &deck,
+        ops::Op::BlackboxAt { at_ms: q.at },
+        None,
+        None,
+        actor,
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+struct JournalLogQuery {
+    unit: String,
+    since: Option<i64>,
+    until: Option<i64>,
+    #[serde(default = "default_lines")]
+    lines: usize,
+    #[serde(default)]
+    grep: Option<String>,
+}
+
+async fn ops_journal(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Query(q): Query<JournalLogQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    let op = ops::Op::JournalLog {
+        unit: q.unit,
+        since_ms: q.since,
+        until_ms: q.until,
+        lines: q.lines,
+        grep: q.grep.filter(|g| !g.is_empty()),
+    };
+    ask_agent(&deck, op, None, None, actor).await
+}
+
+#[derive(Deserialize)]
 struct ConfigQuery {
     name: String,
     backup: Option<String>,
@@ -895,6 +1011,9 @@ struct RecordsQuery {
     #[serde(default = "default_lines")]
     limit: usize,
     before: Option<u64>,
+    /// Only records at or after / before these, in nanoseconds.
+    from_ns: Option<i64>,
+    to_ns: Option<i64>,
 }
 
 async fn journal_records(
@@ -918,9 +1037,10 @@ async fn journal_records(
         Err(refusal) => return refusal.into_response(),
     };
     // Reading a journal is file work, off the async workers.
-    let result =
-        tokio::task::spawn_blocking(move || live::records(&dir, &id, &kinds, q.limit, q.before))
-            .await;
+    let result = tokio::task::spawn_blocking(move || {
+        live::records_between(&dir, &id, &kinds, q.limit, q.before, q.from_ns, q.to_ns)
+    })
+    .await;
     match result {
         Ok(Ok(page)) => axum::Json(page).into_response(),
         Ok(Err(e)) => Refusal::not_found(e).into_response(),
@@ -1142,6 +1262,10 @@ pub fn router(
         .route("/runtime/settings", get(runtime_settings))
         .route("/ops/attribution", get(ops_attribution))
         .route("/ops/accounts", get(ops_accounts))
+        .route("/ops/resources", get(ops_resources))
+        .route("/ops/blackbox", get(ops_blackbox))
+        .route("/ops/blackbox/at", get(ops_blackbox_at))
+        .route("/ops/journal", get(ops_journal))
         .route("/ops/configs", get(ops_configs))
         .route("/ops/config", get(ops_config))
         .route("/ops/strategies", get(ops_strategies))
