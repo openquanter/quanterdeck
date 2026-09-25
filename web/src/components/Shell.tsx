@@ -1,11 +1,10 @@
-import { Suspense, useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   BarChart3,
   Bell,
-  Boxes,
   ChevronDown,
   FileCog,
   FlaskConical,
@@ -26,7 +25,8 @@ import {
 
 import { api, type CapabilityName } from "@/api/client";
 import { Skeleton } from "@/components/States";
-import { Badge, StatusDot, cx } from "@/ui/kit";
+import { Badge, IconTile, StatusDot, cx, type Hue } from "@/ui/kit";
+import { ThemeToggle } from "@/ui/theme";
 
 type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; capability: CapabilityName | null };
 
@@ -36,10 +36,11 @@ type Item = { to: string; label: string; icon: ComponentType<{ className?: strin
  * capabilities: an item the deck cannot back has no link, and a group
  * with nothing in it has no heading.
  */
-const NAV: { group: string | null; items: Item[] }[] = [
-  { group: null, items: [{ to: "/", label: "总览", icon: LayoutDashboard, capability: null }] },
+const NAV: { group: string | null; hue: Hue; items: Item[] }[] = [
+  { group: null, hue: "blue", items: [{ to: "/", label: "总览", icon: LayoutDashboard, capability: null }] },
   {
     group: "交易",
+    hue: "blue",
     items: [
       { to: "/live", label: "实盘", icon: Activity, capability: "ops" },
       { to: "/reconcile", label: "对账与归因", icon: GitCompareArrows, capability: "live" },
@@ -47,6 +48,7 @@ const NAV: { group: string | null; items: Item[] }[] = [
   },
   {
     group: "诊断",
+    hue: "red",
     items: [
       { to: "/alerts", label: "告警", icon: Bell, capability: "ops" },
       { to: "/blackbox", label: "黑匣子复盘", icon: History, capability: "ops" },
@@ -56,6 +58,7 @@ const NAV: { group: string | null; items: Item[] }[] = [
   },
   {
     group: "变更",
+    hue: "purple",
     items: [
       { to: "/strategies", label: "策略与上线", icon: Target, capability: "ops" },
       { to: "/config", label: "配置", icon: FileCog, capability: "ops" },
@@ -64,6 +67,7 @@ const NAV: { group: string | null; items: Item[] }[] = [
   },
   {
     group: "研究",
+    hue: "teal",
     items: [
       { to: "/runs", label: "回测记录", icon: BarChart3, capability: "runs" },
       { to: "/sweeps", label: "参数扫描", icon: FlaskConical, capability: "runs" },
@@ -71,6 +75,7 @@ const NAV: { group: string | null; items: Item[] }[] = [
   },
   {
     group: "系统",
+    hue: "green",
     items: [
       { to: "/host", label: "主机与服务", icon: Server, capability: "ops" },
       { to: "/accounts", label: "交易所账户", icon: KeyRound, capability: "ops" },
@@ -80,28 +85,42 @@ const NAV: { group: string | null; items: Item[] }[] = [
   },
 ];
 
+/** Each group's icons in its own colour: where on the map a page is. */
+const NAV_ICON: Record<Hue, string> = {
+  blue: "text-hue-blue",
+  red: "text-hue-red",
+  purple: "text-hue-purple",
+  teal: "text-hue-teal",
+  green: "text-hue-green",
+  yellow: "text-hue-yellow",
+  pink: "text-hue-pink",
+  orange: "text-hue-orange",
+};
+
 export function Shell() {
   const { data: caps } = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
   const allowed = (i: Item) => i.capability === null || caps?.[i.capability]?.available === true;
   const location = useLocation();
-  const current = NAV.flatMap((g) => g.items).find((i) => (i.to === "/" ? location.pathname === "/" : location.pathname.startsWith(i.to)));
+  const current = NAV.flatMap((g) => g.items.map((i) => ({ ...i, hue: g.hue }))).find((i) =>
+    i.to === "/" ? location.pathname === "/" : location.pathname.startsWith(i.to),
+  );
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-surface">
-        <Link to="/" className="flex items-center gap-2.5 px-5 py-4">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15 text-accent">
-            <Boxes className="h-4 w-4" />
+      <nav className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
+        <Link to="/" className="flex items-center gap-3 px-5 py-5">
+          <Logo />
+          <span className="text-[17px] font-medium tracking-tight text-ink">
+            quanter<span className="text-accent">deck</span>
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-ink">quanterdeck</span>
         </Link>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          {NAV.map(({ group, items }) => {
+          {NAV.map(({ group, hue, items }) => {
             const visible = items.filter(allowed);
             if (visible.length === 0) return null;
             return (
               <div key={group ?? "top"} className="mt-3 first:mt-1">
-                {group && <div className="px-2.5 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">{group}</div>}
+                {group && <div className="px-4 pb-1.5 pt-2 text-[11px] font-medium tracking-wider text-ink-faint">{group}</div>}
                 <ul className="space-y-0.5">
                   {visible.map((item) => (
                     <li key={item.to}>
@@ -110,14 +129,14 @@ export function Shell() {
                         end={item.to === "/"}
                         className={({ isActive }) =>
                           cx(
-                            "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                            isActive ? "bg-accent/12 text-ink" : "text-ink-muted hover:bg-surface-hover hover:text-ink",
+                            "flex items-center gap-3 rounded-full px-4 py-2 text-sm transition-colors",
+                            isActive ? "bg-accent-soft font-medium text-accent" : "text-ink-muted hover:bg-surface-hover hover:text-ink",
                           )
                         }
                       >
                         {({ isActive }) => (
                           <>
-                            <item.icon className={cx("h-4 w-4", isActive ? "text-accent" : "text-ink-faint")} />
+                            <item.icon className={cx("h-[18px] w-[18px]", isActive ? "text-accent" : NAV_ICON[hue])} />
                             {item.label}
                           </>
                         )}
@@ -134,7 +153,20 @@ export function Shell() {
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title={current?.label ?? ""} ops={caps?.ops?.available === true} writable={caps?.writes.available === true} />
+        <TopBar
+          title={
+            current ? (
+              <span className="flex items-center gap-2.5">
+                <IconTile icon={<current.icon />} hue={current.hue} size="sm" />
+                {current.label}
+              </span>
+            ) : (
+              ""
+            )
+          }
+          ops={caps?.ops?.available === true}
+          writable={caps?.writes.available === true}
+        />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1440px] px-6 py-6">
             <Suspense fallback={<Skeleton tiles={4} rows={6} />}>
@@ -152,7 +184,7 @@ export function Shell() {
  * running, how many alerts. None of these should need a trip to the
  * overview to confirm.
  */
-function TopBar({ title, ops, writable }: { title: string; ops: boolean; writable: boolean }) {
+function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writable: boolean }) {
   const status = useQuery({ queryKey: ["ops", "status"], queryFn: api.traderStatus, refetchInterval: 10_000, retry: false, enabled: ops });
   const host = useQuery({ queryKey: ["ops", "host"], queryFn: api.host, refetchInterval: 60_000, enabled: ops });
   const alerts = useQuery({ queryKey: ["ops", "alerts"], queryFn: api.alerts, refetchInterval: 10_000, enabled: ops });
@@ -161,8 +193,8 @@ function TopBar({ title, ops, writable }: { title: string; ops: boolean; writabl
   const active = (alerts.data ?? []).filter((a) => !("silenced_until_ms" in a && (a as { silenced_until_ms?: number | null }).silenced_until_ms));
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface/60 px-6 backdrop-blur">
-      <div className="text-sm font-medium text-ink">{title}</div>
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-surface/80 px-6 backdrop-blur">
+      <div className="text-base font-medium text-ink">{title}</div>
       <div className="ml-auto flex items-center gap-2.5">
         {ops && (s || host.data) && (
           <Badge tone={live ? "bad" : "accent"}>
@@ -204,6 +236,7 @@ function TopBar({ title, ops, writable }: { title: string; ops: boolean; writabl
           </Link>
         )}
         {!writable && <Badge>只读</Badge>}
+        <ThemeToggle />
         <UserMenu />
       </div>
     </header>
@@ -228,7 +261,7 @@ function UserMenu() {
   return (
     <div className="relative" ref={ref}>
       <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-raised text-xs text-ink">操</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-hue-purple text-xs font-medium text-white">操</span>
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
       {open && (
@@ -246,5 +279,17 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Four tiles in Google's colours: the mark, without an image to load. */
+function Logo() {
+  return (
+    <span className="grid h-8 w-8 grid-cols-2 gap-[3px] rounded-lg p-[3px]" aria-hidden>
+      <span className="rounded-[4px] bg-hue-blue" />
+      <span className="rounded-[4px] bg-hue-red" />
+      <span className="rounded-[4px] bg-hue-yellow" />
+      <span className="rounded-[4px] bg-hue-green" />
+    </span>
   );
 }

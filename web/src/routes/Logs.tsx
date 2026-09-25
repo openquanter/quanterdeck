@@ -147,8 +147,8 @@ export function Logs() {
       {tail.isError ? (
         <ErrorState error={tail.error} what="日志内容" />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-line bg-[#07090c]">
-          <div className="flex items-center gap-3 border-b border-line px-3 py-1.5 font-mono text-[11px] text-ink-faint">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-line bg-term text-term-ink">
+          <div className="flex items-center gap-3 border-b border-white/10 px-3 py-1.5 font-mono text-[11px] text-term-ink/60">
             <span className="truncate">{tail.data?.name ?? name?.slice(2) ?? "—"}</span>
             <span>{shown.length} 行</span>
             {grep && <span>过滤「{grep}」</span>}
@@ -156,11 +156,11 @@ export function Logs() {
           </div>
           {/* Rendered as text, never as markup: these lines come from a
               venue and a strategy, and are not ours to trust. */}
-          <pre ref={pane} className="flex-1 overflow-auto p-3 font-mono text-[12px] leading-5 text-ink">
+          <pre ref={pane} className="flex-1 overflow-auto p-3 font-mono text-[12px] leading-5 text-term-ink">
             {tail.isLoading ? (
-              <span className="text-ink-faint">读取中…</span>
+              <span className="text-term-ink/60">读取中…</span>
             ) : shown.length === 0 ? (
-              <span className="text-ink-faint">{grep ? `没有包含「${grep}」的行。` : "这个来源还没有输出。"}</span>
+              <span className="text-term-ink/60">{grep ? `没有包含「${grep}」的行。` : "这个来源还没有输出。"}</span>
             ) : (
               shown.map((line, i) => (
                 <div key={i} className={WARN.test(line) ? "bg-warn/8 text-warn" : undefined}>
@@ -179,5 +179,5 @@ export function Logs() {
 function highlight(line: string, needle: string) {
   if (!needle) return line;
   const parts = line.split(needle);
-  return parts.flatMap((p, i) => (i === 0 ? [p] : [<mark key={i} className="rounded-sm bg-accent/30 text-ink">{needle}</mark>, p]));
+  return parts.flatMap((p, i) => (i === 0 ? [p] : [<mark key={i} className="rounded-sm bg-hue-yellow/40 text-term-ink">{needle}</mark>, p]));
 }

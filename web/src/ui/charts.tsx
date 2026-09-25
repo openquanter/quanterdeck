@@ -10,10 +10,39 @@ echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZo
 /** The instance type echarts-for-react hands to `onChartReady`. */
 type ChartInstance = Parameters<NonNullable<React.ComponentProps<typeof ReactEChartsCore>["onChartReady"]>>[0];
 
-/** Series colours, in order. Distinct from the state colours on purpose. */
-export const SERIES = ["#5b9bff", "#a78bfa", "#2dd4bf", "#f472b6", "#fbbf24", "#94a3b8"];
-const AXIS = "#6b7383";
-const GRID = "#232833";
+import { useThemeColors } from "./theme";
+
+/**
+ * A theme colour with the alpha given, as `rgba()`.
+ *
+ * Not `color-mix()`: a canvas can paint it, but the chart library
+ * animates between colours by parsing them, and a colour it cannot parse
+ * crashed the page the first time a chart redrew with animation on.
+ */
+function fade(color: string, alpha: number) {
+  const hex = color.trim().replace("#", "");
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const n = Number.parseInt(full, 16);
+  if (full.length !== 6 || Number.isNaN(n)) return color;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** A gradient from the line's colour down to nothing. */
+function areaFill(color: string) {
+  return {
+    color: {
+      type: "linear",
+      x: 0,
+      y: 0,
+      x2: 0,
+      y2: 1,
+      colorStops: [
+        { offset: 0, color: fade(color, 0.28) },
+        { offset: 1, color: fade(color, 0.02) },
+      ],
+    },
+  };
+}
 
 export type Point = [number, number | null];
 
@@ -33,8 +62,14 @@ export function TimeSeries({
   onPick,
   zoom,
   decimals = 2,
+  levels,
+  step,
 }: {
   series: { name: string; points: Point[]; color?: string; area?: boolean }[];
+  /** Horizontal lines: prices, limits. */
+  levels?: { value: number; label?: string; color?: string; dashed?: boolean }[];
+  /** Draw as steps: a value that holds until it changes. */
+  step?: boolean;
   height?: number;
   unit?: string;
   from?: number;
@@ -47,56 +82,88 @@ export function TimeSeries({
   zoom?: boolean;
   decimals?: number;
 }) {
+  const c = useThemeColors();
   const option = useMemo(() => {
     const fmt = (v: number) => `${Number(v.toFixed(decimals))}${unit ?? ""}`;
+    const lines = [
+      ...(marks ?? []).map((m) => ({ xAxis: m.at, lineStyle: { color: m.color ?? c.warn, type: "dashed", width: 1, opacity: 0.8 } })),
+      ...(levels ?? []).map((l) => ({
+        yAxis: l.value,
+        label: { show: Boolean(l.label), formatter: l.label ?? "", position: "insideEndTop", color: l.color ?? c.muted, fontSize: 10 },
+        lineStyle: { color: l.color ?? c.faint, type: l.dashed === false ? "solid" : "dashed", width: 1, opacity: 0.9 },
+      })),
+    ];
     return {
-      animation: false,
-      grid: { left: 8, right: 12, top: series.length > 1 ? 30 : 12, bottom: zoom ? 44 : 8, containLabel: true },
-      legend: series.length > 1 ? { top: 0, left: 0, icon: "roundRect", itemWidth: 10, itemHeight: 3, textStyle: { color: "#9aa3b2", fontSize: 11 } } : undefined,
+      animation: true,
+      animationDuration: 300,
+      grid: { left: 8, right: 16, top: series.length > 1 ? 34 : 14, bottom: zoom ? 44 : 8, containLabel: true },
+      legend:
+        series.length > 1
+          ? { top: 0, left: 0, icon: "circle", itemWidth: 8, itemHeight: 8, itemGap: 14, textStyle: { color: c.muted, fontSize: 11 } }
+          : undefined,
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#191d25",
-        borderColor: "#2e3542",
-        textStyle: { color: "#e8ebf0", fontSize: 12 },
+        backgroundColor: c.surface,
+        borderColor: c.lineStrong,
+        borderWidth: 1,
+        padding: [8, 12],
+        extraCssText: "border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);",
+        textStyle: { color: c.ink, fontSize: 12 },
         valueFormatter: (v: number | null) => (v == null ? "—" : fmt(v)),
-        axisPointer: { lineStyle: { color: "#6b7383" } },
+        axisPointer: { type: "line", lineStyle: { color: c.faint, type: "dashed" } },
       },
       xAxis: {
         type: "time",
         min: from,
         max: to,
-        axisLine: { lineStyle: { color: GRID } },
-        axisLabel: { color: AXIS, fontSize: 11, hideOverlap: true },
+        axisLine: { lineStyle: { color: c.line } },
+        axisTick: { show: false },
+        axisLabel: { color: c.faint, fontSize: 11, hideOverlap: true },
         splitLine: { show: false },
       },
       yAxis: {
         type: "value",
         scale: true,
-        axisLabel: { color: AXIS, fontSize: 11, formatter: (v: number) => fmt(v) },
-        splitLine: { lineStyle: { color: GRID } },
+        // Levels are part of what the chart shows: widen the axis to
+        // them, or a price line drawn off the axis is silently absent.
+        ...(levels?.length
+          ? {
+              min: (v: { min: number }) => Math.min(v.min, ...levels.map((l) => l.value)),
+              max: (v: { max: number }) => Math.max(v.max, ...levels.map((l) => l.value)),
+            }
+          : {}),
+        axisLabel: { color: c.faint, fontSize: 11, formatter: (v: number) => fmt(v) },
+        splitLine: { lineStyle: { color: c.line, type: "dashed" } },
       },
-      dataZoom: zoom ? [{ type: "inside" }, { type: "slider", height: 18, bottom: 8, borderColor: GRID, textStyle: { color: AXIS } }] : undefined,
-      series: series.map((s, i) => ({
-        name: s.name,
-        type: "line",
-        showSymbol: false,
-        connectNulls: false,
-        sampling: "lttb",
-        lineStyle: { width: 1.5 },
-        color: s.color ?? SERIES[i % SERIES.length],
-        areaStyle: s.area ? { opacity: 0.12 } : undefined,
-        data: withGaps(s.points),
-        markLine:
-          i === 0 && marks?.length
-            ? { silent: true, symbol: "none", label: { show: false }, data: marks.map((m) => ({ xAxis: m.at, lineStyle: { color: m.color ?? "#e8a83e", type: "dashed", width: 1, opacity: 0.7 } })) }
-            : undefined,
-        markArea:
-          i === 0 && bands?.length
-            ? { silent: true, itemStyle: { color: "rgba(239,90,95,0.10)" }, data: bands.map(([a, b]) => [{ xAxis: a }, { xAxis: b }]) }
-            : undefined,
-      })),
+      dataZoom: zoom
+        ? [
+            { type: "inside" },
+            { type: "slider", height: 18, bottom: 8, borderColor: c.line, fillerColor: fade(c.accent, 0.12), textStyle: { color: c.faint }, handleStyle: { color: c.accent } },
+          ]
+        : undefined,
+      series: series.map((s, i) => {
+        const color = s.color ?? c.series[i % c.series.length];
+        return {
+          name: s.name,
+          type: "line",
+          showSymbol: false,
+          smooth: !step && series.length === 1 ? 0.25 : false,
+          step: step ? "end" : undefined,
+          connectNulls: false,
+          sampling: "lttb",
+          lineStyle: { width: 2 },
+          color,
+          areaStyle: s.area ? areaFill(color) : undefined,
+          data: withGaps(s.points),
+          markLine: i === 0 && lines.length ? { silent: true, symbol: "none", label: { show: false }, data: lines } : undefined,
+          markArea:
+            i === 0 && bands?.length
+              ? { silent: true, itemStyle: { color: fade(c.bad, 0.1) }, data: bands.map(([a, b]) => [{ xAxis: a }, { xAxis: b }]) }
+              : undefined,
+        };
+      }),
     };
-  }, [series, from, to, marks, bands, unit, zoom, decimals]);
+  }, [series, from, to, marks, bands, levels, step, unit, zoom, decimals, c]);
 
   // A click anywhere in the plot picks the time under it, not only a
   // click that lands on a data point: the moment wanted is often between
@@ -142,16 +209,18 @@ function withGaps(points: Point[]): Point[] {
 }
 
 /** A tiny trend line for a stat. */
-export function Sparkline({ points, color = SERIES[0], height = 36 }: { points: Point[]; color?: string; height?: number }) {
+export function Sparkline({ points, color, height = 36 }: { points: Point[]; color?: string; height?: number }) {
+  const c = useThemeColors();
+  const line = color ?? c.accent;
   const option = useMemo(
     () => ({
       animation: false,
       grid: { left: 0, right: 0, top: 2, bottom: 2 },
       xAxis: { type: "time", show: false },
       yAxis: { type: "value", show: false, scale: true },
-      series: [{ type: "line", showSymbol: false, data: withGaps(points), color, lineStyle: { width: 1.5 }, areaStyle: { opacity: 0.12 } }],
+      series: [{ type: "line", showSymbol: false, smooth: 0.3, data: withGaps(points), color: line, lineStyle: { width: 2 }, areaStyle: areaFill(line) }],
     }),
-    [points, color],
+    [points, line],
   );
   return <ReactEChartsCore echarts={echarts} option={option} notMerge style={{ height }} />;
 }

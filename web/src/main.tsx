@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router-dom";
 
 import "./design/tokens.css";
 import { router } from "./routes";
+import { ThemeProvider, applyStoredTheme } from "./ui/theme";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,10 +19,14 @@ const queryClient = new QueryClient({
   },
 });
 
+applyStoredTheme();
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

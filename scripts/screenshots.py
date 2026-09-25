@@ -28,6 +28,8 @@ import json
 import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import Route, sync_playwright
@@ -54,6 +56,7 @@ def main() -> int:
     ap.add_argument("--redact", type=Path, help="JSON file: {\"replace\": [[pattern, replacement], …]}")
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--only", nargs="*", help="take only these screens, by name")
+    ap.add_argument("--theme", choices=["light", "dark"], default="light")
     args = ap.parse_args()
 
     password = os.environ.get("OQ_DECK_SCREENSHOT_PASSWORD")
@@ -79,17 +82,31 @@ def main() -> int:
         return url
 
     def redact(route: Route) -> None:
-        response = route.fetch(url=original(route.request.url))
-        body = response.text()
+        # Sent from here rather than with route.fetch: the overview asks
+        # for a dozen things at once, and fetches issued from inside the
+        # browser's own event loop waited on each other until they all
+        # timed out.
+        req = route.request
+        headers = {k: v for k, v in req.headers.items() if k.lower() not in ("host", "content-length", "accept-encoding")}
+        request = urllib.request.Request(original(req.url), data=req.post_data_buffer, headers=headers, method=req.method)
+        try:
+            with urllib.request.urlopen(request, timeout=30) as r:
+                status, got, raw = r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            status, got, raw = e.code, dict(e.headers), e.read()
+        body = raw.decode("utf-8", "replace")
         for pattern, replacement in rules:
             body = pattern.sub(replacement, body)
-        route.fulfill(response=response, body=body)
+        got.pop("Content-Length", None)
+        route.fulfill(status=status, headers=got, body=body)
 
     args.out.mkdir(parents=True, exist_ok=True)
     screens = [s for s in SCREENS if not args.only or s[0] in args.only]
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
+        # The theme the pictures are taken in; light is the console's default.
+        page.add_init_script(f"try {{ localStorage.setItem('oq-deck-theme', '{args.theme}') }} catch (e) {{}}")
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         if rules:
@@ -106,7 +123,7 @@ def main() -> int:
         for name, path, action in screens:
             page.goto(args.url + path)
             page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(5000)
             if action == "open-moment":
                 # A click on the first chart, near its right edge, opens
                 # that moment in the drawer.

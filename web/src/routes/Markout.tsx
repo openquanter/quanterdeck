@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 
 import { api, type Horizon, type MarkoutComparison } from "@/api/client";
 import { ErrorState, Skeleton, Term } from "@/components/States";
-import { SERIES } from "@/ui/charts";
+import { useThemeColors } from "@/ui/theme";
 import { Card, Table, cx } from "@/ui/kit";
 
 // Only what this chart draws. The full build is a megabyte, most of it
@@ -97,6 +97,7 @@ export function MarkoutPanel({ baseline, candidate }: { baseline: string; candid
 }
 
 function MarkoutResult({ data }: { data: MarkoutComparison }) {
+  const theme = useThemeColors();
   const option = useMemo(() => {
     const labels = data.baseline.horizons.map((h) => `${h.seconds}s`);
     const series = (name: string, horizons: Horizon[], colour: string) => ({
@@ -152,13 +153,13 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
       },
       series: [
         // Series colours, not state colours: amber would read as a warning.
-        series(`基准 ${data.baseline.id}`, data.baseline.horizons, SERIES[0]),
-        series(`待测 ${data.candidate.id}`, data.candidate.horizons, SERIES[1]),
+        series(`基准 ${data.baseline.id}`, data.baseline.horizons, theme.series[0]),
+        series(`待测 ${data.candidate.id}`, data.candidate.horizons, theme.series[1]),
         band(data.baseline.horizons, -1),
         band(data.candidate.horizons, 1),
       ],
     };
-  }, [data]);
+  }, [data, theme]);
 
   return (
     <div className="mt-4 space-y-4">
