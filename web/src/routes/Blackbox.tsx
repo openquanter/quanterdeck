@@ -5,6 +5,7 @@ import { Activity, Cpu, History, RotateCcw, Server, Terminal } from "lucide-reac
 import { api, type BlackboxEvent, type BlackboxWindow } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { type Point, TimeSeries } from "@/ui/charts";
+import { useThemeColors } from "@/ui/theme";
 import { Badge, Button, Card, Drawer, Freshness, KV, PageHeader, Segmented, StatusDot, Table, fmtBytes, fmtTime, type Tone } from "@/ui/kit";
 
 import { RecordRows } from "./Trading";
@@ -36,9 +37,6 @@ function eventTone(what: string): Tone {
   return "neutral";
 }
 
-const WARN_MARK = "#e8a83e";
-const PLAIN_MARK = "#6b7383";
-const MOMENT_MARK = "#5b9bff";
 
 const toLocalInput = (ms: number) => {
   const d = new Date(ms - new Date().getTimezoneOffset() * 60_000);
@@ -107,6 +105,8 @@ export function Blackbox() {
 }
 
 function Window({ w, onPick, moment }: { w: BlackboxWindow; onPick: (t: number) => void; moment: number | null }) {
+  // Drawn on a canvas, so the colours come from the theme rather than CSS.
+  const tc = useThemeColors();
   const units = Object.entries(w.units);
   const events = w.events;
   const halts = useMemo(() => {
@@ -125,10 +125,10 @@ function Window({ w, onPick, moment }: { w: BlackboxWindow; onPick: (t: number) 
   }, [w]);
   const marks = useMemo(
     () => [
-      ...events.map((e) => ({ at: e.at, label: EVENT_NAMES[e.what] ?? e.what, color: eventTone(e.what) === "warn" ? WARN_MARK : PLAIN_MARK })),
-      ...(moment !== null ? [{ at: moment, label: "打开的时刻", color: MOMENT_MARK }] : []),
+      ...events.map((e) => ({ at: e.at, label: EVENT_NAMES[e.what] ?? e.what, color: eventTone(e.what) === "warn" ? tc.warn : tc.faint })),
+      ...(moment !== null ? [{ at: moment, label: "打开的时刻", color: tc.accent }] : []),
     ],
-    [events, moment],
+    [events, moment, tc],
   );
   const mib = (b: number | null | undefined) => (b == null ? null : b / 1_048_576);
 
@@ -424,7 +424,7 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
             <p className="px-4 py-6 text-center text-sm text-ink-faint">这 4 分钟没有输出；输出改写进 systemd journal 之前的时段只有不带时间的日志文件，在「日志」页查看。</p>
           ) : (
             // Text, never markup: the trader's output carries venue strings.
-            <pre className="max-h-96 overflow-auto rounded-b-[var(--radius-card)] bg-[#07090c] p-3 font-mono text-[12px] leading-5 text-ink">{logs.data!.lines.join("\n")}</pre>
+            <pre className="max-h-96 overflow-auto rounded-b-[var(--radius-card)] bg-term p-3 font-mono text-[12px] leading-5 text-term-ink">{logs.data!.lines.join("\n")}</pre>
           )}
         </Card>
       </div>

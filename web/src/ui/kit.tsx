@@ -66,10 +66,40 @@ export function PageHeader({
   );
 }
 
+/** Colours for icons and chart series: they tell things apart and mean nothing. */
+export type Hue = "blue" | "green" | "yellow" | "red" | "purple" | "teal" | "pink" | "orange";
+
+const HUE: Record<Hue, string> = {
+  blue: "bg-hue-blue/12 text-hue-blue",
+  green: "bg-hue-green/12 text-hue-green",
+  yellow: "bg-hue-yellow/15 text-hue-yellow",
+  red: "bg-hue-red/12 text-hue-red",
+  purple: "bg-hue-purple/12 text-hue-purple",
+  teal: "bg-hue-teal/12 text-hue-teal",
+  pink: "bg-hue-pink/12 text-hue-pink",
+  orange: "bg-hue-orange/12 text-hue-orange",
+};
+
+/** An icon on a soft tile of its colour. */
+export function IconTile({ icon, hue = "blue", size = "md" }: { icon: ReactNode; hue?: Hue; size?: "sm" | "md" | "lg" }) {
+  return (
+    <span
+      className={cx(
+        "inline-flex shrink-0 items-center justify-center",
+        size === "sm" ? "h-6 w-6 rounded-lg [&>svg]:h-3.5 [&>svg]:w-3.5" : size === "lg" ? "h-11 w-11 rounded-2xl [&>svg]:h-5.5 [&>svg]:w-5.5" : "h-8 w-8 rounded-xl [&>svg]:h-4 [&>svg]:w-4",
+        HUE[hue],
+      )}
+    >
+      {icon}
+    </span>
+  );
+}
+
 /** A titled panel. */
 export function Card({
   title,
   icon,
+  hue,
   extra,
   children,
   className,
@@ -78,6 +108,8 @@ export function Card({
 }: {
   title?: ReactNode;
   icon?: ReactNode;
+  /** With an icon: its colour tile. */
+  hue?: Hue;
   extra?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -87,20 +119,48 @@ export function Card({
   return (
     <section
       className={cx(
-        "rounded-[var(--radius-card)] border bg-surface",
+        "rounded-[var(--radius-card)] border bg-surface shadow-[var(--shadow-card)]",
         tone === "bad" ? "border-bad/40" : tone === "warn" ? "border-warn/40" : "border-line",
         className,
       )}
     >
       {(title || extra) && (
-        <header className="flex items-center gap-2 border-b border-line px-4 py-3">
-          {icon && <span className="text-ink-muted">{icon}</span>}
-          <h2 className="text-sm font-medium text-ink">{title}</h2>
+        <header className="flex items-center gap-2.5 border-b border-line/70 px-5 py-3.5">
+          {icon && (hue ? <IconTile icon={icon} hue={hue} size="sm" /> : <span className="text-ink-muted">{icon}</span>)}
+          <h2 className="text-[15px] font-medium text-ink">{title}</h2>
           <div className="ml-auto flex items-center gap-2 text-xs text-ink-muted">{extra}</div>
         </header>
       )}
-      <div className={cx("p-4", bodyClassName)}>{children}</div>
+      <div className={cx("p-5", bodyClassName)}>{children}</div>
     </section>
+  );
+}
+
+/** A value as a ring: how full something is, at a glance. */
+export function Ring({ value, max = 100, tone = "accent", size = 72, label }: { value: number | null; max?: number; tone?: Tone | Hue; size?: number; label?: ReactNode }) {
+  const pct = value === null ? 0 : Math.max(0, Math.min(1, value / max));
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  const color =
+    tone === "good" || tone === "warn" || tone === "bad" || tone === "accent" ? `var(--color-${tone})` : tone === "neutral" ? "var(--color-ink-faint)" : `var(--color-hue-${tone})`;
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg viewBox="0 0 72 72" className="h-full w-full -rotate-90">
+        <circle cx="36" cy="36" r={r} fill="none" stroke="var(--color-line)" strokeWidth="7" />
+        <circle
+          cx="36"
+          cy="36"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeDasharray={`${c * pct} ${c}`}
+          style={{ transition: "stroke-dasharray 0.6s ease" }}
+        />
+      </svg>
+      <div className="absolute text-center text-sm font-semibold text-ink">{label ?? (value === null ? "—" : `${Math.round(pct * 100)}%`)}</div>
+    </div>
   );
 }
 
@@ -112,6 +172,8 @@ export function Stat({
   tone,
   help,
   icon,
+  hue = "blue",
+  trend,
 }: {
   label: ReactNode;
   value: ReactNode;
@@ -119,16 +181,20 @@ export function Stat({
   tone?: Tone;
   help?: string;
   icon?: ReactNode;
+  hue?: Hue;
+  /** A small chart under the number: how it got here. */
+  trend?: ReactNode;
 }) {
   return (
-    <div className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3.5">
-      <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-        {icon}
+    <div className="flex flex-col rounded-[var(--radius-card)] border border-line bg-surface px-5 py-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2.5 text-[13px] text-ink-muted">
+        {icon && <IconTile icon={icon} hue={hue} />}
         <span>{label}</span>
         {help && <Help term={help} />}
       </div>
-      <div className={cx("mt-1.5 truncate text-2xl font-semibold tracking-tight", TONE_TEXT[tone ?? "neutral"])}>{value}</div>
+      <div className={cx("mt-3 truncate text-[26px] font-medium leading-tight tracking-tight", TONE_TEXT[tone ?? "neutral"])}>{value}</div>
       {sub && <div className="mt-1 truncate text-xs text-ink-muted">{sub}</div>}
+      {trend && <div className="-mx-1 mt-2">{trend}</div>}
     </div>
   );
 }
@@ -153,8 +219,8 @@ export function Badge({ tone = "neutral", children, dot }: { tone?: Tone; childr
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 const BUTTON: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white hover:bg-accent/90",
-  secondary: "border border-line-strong bg-surface-raised text-ink hover:bg-surface-hover",
+  primary: "bg-accent text-white shadow-sm hover:bg-accent/90",
+  secondary: "border border-line-strong bg-surface text-accent hover:bg-accent-soft",
   danger: "border border-bad/40 bg-bad/10 text-bad hover:bg-bad/20",
   ghost: "text-ink-muted hover:bg-surface-hover hover:text-ink",
 };
@@ -185,8 +251,8 @@ export function Button({
       disabled={disabled}
       onClick={onClick}
       className={cx(
-        "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        size === "sm" ? "h-7 px-2.5 text-xs" : "h-8 px-3 text-sm",
+        "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        size === "sm" ? "h-7 px-3 text-xs" : "h-9 px-4 text-sm",
         BUTTON[variant],
       )}
     >

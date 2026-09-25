@@ -8,7 +8,7 @@ import { KIND_NAMES, TraderActions, lotsText, recordText, useCaps, useNewestJour
 import { TimeSeries } from "@/ui/charts";
 import { Badge, Button, Card, Freshness, KV, PageHeader, Segmented, Stat, TabBar, Table, cx, fmtDuration, fmtTime, useTab } from "@/ui/kit";
 
-import { Kpis } from "./Overview";
+import { Kpis, PnlChart, PriceAndOrders, useDay } from "./Overview";
 
 const TABS = ["positions", "fills", "market", "risk"] as const;
 
@@ -23,6 +23,7 @@ export function Trading() {
   const status = useTrader();
   const tab = useTab(TABS);
   const s = status.data;
+  const day = useDay();
 
   return (
     <div>
@@ -47,7 +48,7 @@ export function Trading() {
               {!s.resume_allowed && <span className="text-ink-muted">（这个进程不允许从控制台解除停机）</span>}
             </div>
           )}
-          <Kpis s={s} />
+          <Kpis s={s} day={day.data} />
           <div>
             <TabBar
               tabs={[
@@ -57,7 +58,15 @@ export function Trading() {
                 { key: "risk", label: "风控与计数" },
               ]}
             />
-            {tab === "positions" && <Positions s={s} />}
+            {tab === "positions" && (
+              <div className="space-y-5">
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <PriceAndOrders s={s} />
+                  <PnlChart day={day.data} from={day.from} to={day.to} />
+                </div>
+                <Positions s={s} />
+              </div>
+            )}
             {tab === "fills" && <Fills />}
             {tab === "market" && <Market s={s} />}
             {tab === "risk" && <Risk s={s} />}
