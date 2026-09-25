@@ -26,6 +26,9 @@ const EVENT_NAMES: Record<string, string> = {
   recording_started: "主机代理启动，开始记录（此前的空白没有记录）",
 };
 
+/** A tick label: the time of day for a window within a day, the date and hour beyond. */
+const axisTime = (ms: number, span: number) =>
+  new Date(ms).toLocaleString("zh-CN", span > 86_400_000 ? { month: "numeric", day: "numeric", hour: "2-digit", hour12: false } : { hour: "2-digit", minute: "2-digit", hour12: false });
 const fmtTime = (ms: number) => new Date(ms).toLocaleString("zh-CN", { hour12: false });
 const toLocalInput = (ms: number) => {
   const d = new Date(ms - new Date().getTimezoneOffset() * 60_000);
@@ -112,49 +115,45 @@ function Window({ w, onPick, moment }: { w: BlackboxWindow; onPick: (t: number) 
 
   return (
     <div className="space-y-4">
-      <Chart
-        title="系统：负载（1 分钟）与可用内存 %"
-        axis={axis}
-        onPick={onPick}
-        series={[
-          { name: "负载", points: w.host.map((h) => [h.at, h.host.load?.[0] ?? null]) },
-          {
-            name: "可用内存 %",
-            points: w.host.map((h) => [h.at, h.host.mem_total ? ((h.host.mem_available ?? 0) / h.host.mem_total) * 100 : null]),
-          },
-        ]}
-      />
-      <Chart
-        title="系统：资源压力（等待 CPU / 内存 / IO 的时间占比，10 秒平均 %）"
-        axis={axis}
-        onPick={onPick}
-        series={[
-          { name: "CPU", points: w.host.map((h) => [h.at, h.host.psi_cpu ?? null]) },
-          { name: "内存", points: w.host.map((h) => [h.at, h.host.psi_memory ?? null]) },
-          { name: "IO", points: w.host.map((h) => [h.at, h.host.psi_io ?? null]) },
-        ]}
-      />
-      <Chart
-        title="各服务内存（MiB）"
-        axis={axis}
-        onPick={onPick}
-        series={units.map(([u, v]) => ({ name: u.replace(".service", ""), points: v.curve.map((p) => [p.at, mib(p.mem)] as [number, number | null]) }))}
-      />
-      <Chart
-        title="各服务 CPU（单核 %）"
-        axis={axis}
-        onPick={onPick}
-        series={units.map(([u, v]) => ({ name: u.replace(".service", ""), points: v.curve.map((p) => [p.at, p.cpu] as [number, number | null]) }))}
-      />
-      <Chart
-        title="交易进程：挂单数与累计 tick（灰底为停机）"
-        axis={axis}
-        onPick={onPick}
-        series={[
-          { name: "挂单", points: w.trader.map((t) => [t.at, t.trader.resting ?? null]) },
-          { name: "tick", points: w.trader.map((t) => [t.at, t.trader.ticks ?? null]) },
-        ]}
-      />
+      {/* One unit per chart: a load of 0.3 drawn against 91 % memory is a flat line. */}
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Chart title="系统负载（1 分钟平均）" axis={axis} onPick={onPick} series={[{ name: "负载", points: w.host.map((h) => [h.at, h.host.load?.[0] ?? null]) }]} />
+        <Chart
+          title="系统可用内存（%）"
+          axis={axis}
+          onPick={onPick}
+          series={[
+            {
+              name: "可用内存",
+              points: w.host.map((h) => [h.at, h.host.mem_total ? ((h.host.mem_available ?? 0) / h.host.mem_total) * 100 : null]),
+            },
+          ]}
+        />
+        <Chart
+          title="资源压力（等待 CPU / 内存 / IO 的时间占比，10 秒平均 %）"
+          axis={axis}
+          onPick={onPick}
+          series={[
+            { name: "CPU", points: w.host.map((h) => [h.at, h.host.psi_cpu ?? null]) },
+            { name: "内存", points: w.host.map((h) => [h.at, h.host.psi_memory ?? null]) },
+            { name: "IO", points: w.host.map((h) => [h.at, h.host.psi_io ?? null]) },
+          ]}
+        />
+        <Chart
+          title="各服务内存（MiB）"
+          axis={axis}
+          onPick={onPick}
+          series={units.map(([u, v]) => ({ name: u.replace(".service", ""), points: v.curve.map((p) => [p.at, mib(p.mem)] as [number, number | null]) }))}
+        />
+        <Chart
+          title="各服务 CPU（单核 %）"
+          axis={axis}
+          onPick={onPick}
+          series={units.map(([u, v]) => ({ name: u.replace(".service", ""), points: v.curve.map((p) => [p.at, p.cpu] as [number, number | null]) }))}
+        />
+        <Chart title="交易进程挂单数（灰底为停机）" axis={axis} onPick={onPick} series={[{ name: "挂单", points: w.trader.map((t) => [t.at, t.trader.resting ?? null]) }]} />
+        <Chart title="交易进程收到的行情（tick / 分钟）" axis={axis} onPick={onPick} series={[{ name: "tick", points: tickRate(w.trader) }]} />
+      </div>
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-ink-muted">
@@ -199,6 +198,21 @@ function Window({ w, onPick, moment }: { w: BlackboxWindow; onPick: (t: number) 
       </section>
     </div>
   );
+}
+
+/**
+ * Ticks per minute from the cumulative counter. The counter restarts with
+ * the process, so a drop is a restart and has no rate, not a negative one.
+ */
+function tickRate(samples: BlackboxWindow["trader"]): [number, number | null][] {
+  const out: [number, number | null][] = [];
+  for (let k = 1; k < samples.length; k++) {
+    const [a, b] = [samples[k - 1], samples[k]];
+    const dt = (b.at - a.at) / 60_000;
+    const dn = (b.trader.ticks ?? NaN) - (a.trader.ticks ?? NaN);
+    out.push([b.at, dt > 0 && dn >= 0 ? dn / dt : null]);
+  }
+  return out;
 }
 
 const COLORS = ["var(--color-accent)", "var(--color-ink)", "var(--color-warn)", "var(--color-ink-muted)", "#8b5cf6"];
@@ -289,6 +303,11 @@ function Chart({
         {axis.moment !== null && <line x1={x(axis.moment)} x2={x(axis.moment)} y1={0} y2={H} stroke="var(--color-accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
         {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={0} y2={H} stroke="var(--color-ink-muted)" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />}
       </svg>
+      <div className="flex justify-between font-mono text-[10px] text-ink-muted">
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+          <span key={f}>{axisTime(axis.from + f * (axis.to - axis.from), axis.to - axis.from)}</span>
+        ))}
+      </div>
     </div>
   );
 }
