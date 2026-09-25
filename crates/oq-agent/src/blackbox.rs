@@ -131,7 +131,7 @@ fn trader(status: &Value) -> Value {
         "ticks": status["ticks"], "positions": status["positions"],
         "last_tick": status["last_tick"], "feed": status["feed"],
         "reconcile": status["reconcile"], "counters": status["counters"],
-        "pid": status["pid"],
+        "pid": status["pid"], "pnl": status["pnl"],
     })
 }
 

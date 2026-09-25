@@ -143,6 +143,43 @@ export function Ops() {
   );
 }
 
+/**
+ * What this run has made and the limits it trades under (blueprint:
+ * 当日盈亏、风控状态). The P&L is the process's own books since it
+ * started, not a calendar day: that is what it knows, and saying "today"
+ * would be a claim it cannot back.
+ */
+function MoneyAndLimits({ s }: { s: TraderStatus }) {
+  const lots = (n: number) => (s.qty_scale === undefined ? `${n} lot` : (n / 10 ** s.qty_scale).toString());
+  if (!s.pnl || !s.limits) {
+    return <p className="text-xs text-ink-muted">这个交易进程的版本还不报告盈亏和风控限额；发布新版本后这里会显示。</p>;
+  }
+  const net = Number(s.pnl.net);
+  const l = s.limits;
+  return (
+    <div className="grid gap-3 sm:grid-cols-4">
+      <Tile
+        label="本次运行已实现盈亏"
+        value={s.pnl.net}
+        tone={net < 0 ? "bad" : undefined}
+        sub={`自 ${new Date(s.pnl.since_ms).toLocaleString("zh-CN", { hour12: false })} · 已实现 ${s.pnl.realized} · 手续费 ${s.pnl.fees} · 资金费 ${s.pnl.funding}`}
+      />
+      <Tile label="权益（按最近标记价）" value={s.pnl.equity} />
+      <Tile
+        label="风控限额"
+        value={`持仓 ≤ ${lots(l.max_position_qty)}`}
+        sub={`单笔 ≤ ${lots(l.max_order_qty)} 且名义 ≤ ${l.max_order_notional} · 价格偏离 ≤ ${(l.price_band_ppb / 1e7).toFixed(2)}% · 挂单 ≤ ${l.max_working} · ${l.max_rate} 单 / ${(l.rate_window_ns / 1e9).toFixed(0)} 秒`}
+      />
+      <Tile
+        label="本次运行发单"
+        value={`${s.counters.sent ?? 0} 单 · 成交 ${s.counters.fills ?? 0}`}
+        sub={`断线 ${s.counters.disconnects ?? 0} · 外来订单 ${s.counters.foreign_orders ?? 0}`}
+        tone={(s.counters.foreign_orders ?? 0) > 0 ? "bad" : undefined}
+      />
+    </div>
+  );
+}
+
 function TraderPanel({ s }: { s: TraderStatus }) {
   const lastTickAge = s.last_tick ? (s.now_ns - s.last_tick.local_ns) / 1e9 : null;
   return (
@@ -187,6 +224,7 @@ function TraderPanel({ s }: { s: TraderStatus }) {
         />
         <Tile label="进程" value={`pid ${s.pid}`} sub={`tick ${s.ticks} · 前缀 ${s.prefix}`} />
       </div>
+      <MoneyAndLimits s={s} />
       {Object.keys(s.waiting_on).length > 0 && (
         <div className="rounded border border-line bg-surface p-3 text-xs text-ink-muted">
           <span className="mr-2 text-ink">策略在等：</span>
