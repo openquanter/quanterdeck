@@ -23,6 +23,24 @@ pub struct Raised {
     /// Set when an operator stopped the trader on purpose, so its absence
     /// is not alarming; cleared when it is started again.
     pub trader_stopped_on_purpose: bool,
+    /// Raised and cleared, newest last, the most recent few hundred.
+    pub history: std::collections::VecDeque<(i64, String, String, bool)>,
+    /// Keys not to notify about until the given time.
+    pub silenced: BTreeMap<String, i64>,
+}
+
+impl Raised {
+    fn note(&mut self, at: i64, key: &str, msg: &str, raised: bool) {
+        self.history
+            .push_back((at, key.to_string(), msg.to_string(), raised));
+        while self.history.len() > 300 {
+            self.history.pop_front();
+        }
+    }
+
+    fn quiet(&self, key: &str, now: i64) -> bool {
+        self.silenced.get(key).is_some_and(|until| *until > now)
+    }
 }
 
 /// What one look found: keys and messages of the conditions that hold.
@@ -126,6 +144,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
         }
         let now = system::now_ms();
         if let Ok(mut r) = raised.lock() {
+            r.silenced.retain(|_, until| *until > now);
             let cleared: Vec<String> = r
                 .active
                 .keys()
@@ -134,21 +153,27 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
                 .collect();
             for key in cleared {
                 if let Some((_, msg)) = r.active.remove(&key) {
-                    let _ = notify.send(Message {
-                        title: "已恢复".into(),
-                        body: msg,
-                        color: GREEN,
-                    });
+                    r.note(now, &key, &msg, false);
+                    if !r.quiet(&key, now) {
+                        let _ = notify.send(Message {
+                            title: "已恢复".into(),
+                            body: msg,
+                            color: GREEN,
+                        });
+                    }
                 }
             }
             for (key, msg) in found {
-                if let std::collections::btree_map::Entry::Vacant(slot) = r.active.entry(key) {
-                    let _ = notify.send(Message {
-                        title: "告警".into(),
-                        body: msg.clone(),
-                        color: RED,
-                    });
-                    slot.insert((now, msg));
+                if !r.active.contains_key(&key) {
+                    r.note(now, &key, &msg, true);
+                    if !r.quiet(&key, now) {
+                        let _ = notify.send(Message {
+                            title: "告警".into(),
+                            body: msg.clone(),
+                            color: RED,
+                        });
+                    }
+                    r.active.insert(key, (now, msg));
                 }
             }
         }
@@ -163,7 +188,23 @@ pub fn list(raised: &Raised) -> Value {
         raised
             .active
             .iter()
-            .map(|(k, (since, msg))| json!({"key": k, "since_ms": since, "message": msg}))
+            .map(
+                |(k, (since, msg))| json!({"key": k, "since_ms": since, "message": msg,
+                "silenced_until_ms": raised.silenced.get(k)})
+            )
+            .collect::<Vec<_>>()
+    )
+}
+
+/// What has been raised and cleared lately, newest first.
+#[must_use]
+pub fn history(raised: &Raised) -> Value {
+    json!(
+        raised
+            .history
+            .iter()
+            .rev()
+            .map(|(at, k, msg, up)| json!({"at_ms": at, "key": k, "message": msg, "raised": up}))
             .collect::<Vec<_>>()
     )
 }

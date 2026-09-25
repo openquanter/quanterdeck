@@ -28,6 +28,10 @@ pub struct Config {
     pub releases: PathBuf,
     /// Where signed releases are staged.
     pub incoming: PathBuf,
+    /// Strategy config files the agent manages.
+    pub config_dir: PathBuf,
+    /// The trader's journals, run files and tick files.
+    pub journals: PathBuf,
     /// `ssh-keygen -Y verify`'s allowed-signers file.
     pub signers: PathBuf,
     /// Credentials handed over by systemd.
@@ -97,6 +101,8 @@ impl Config {
             state_dir: PathBuf::from(var("OQ_AGENT_STATE", "/var/lib/oq-agent")),
             releases: PathBuf::from(var("OQ_AGENT_RELEASES", "/opt/oq/releases")),
             incoming: PathBuf::from(var("OQ_AGENT_INCOMING", "/var/lib/oq/incoming")),
+            config_dir: PathBuf::from(var("OQ_AGENT_CONFIG_DIR", "/var/lib/oq/config")),
+            journals: PathBuf::from(var("OQ_AGENT_JOURNALS", "/var/lib/oq/journals")),
             signers: PathBuf::from(var("OQ_AGENT_SIGNERS", "/etc/oq/allowed_signers")),
             credentials: std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from),
             host: var("OQ_AGENT_HOST", "host"),

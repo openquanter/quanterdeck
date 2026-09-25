@@ -19,11 +19,15 @@ const SECTIONS: { to: string; label: string; capability: CapabilityName | null }
   { to: "/journal", label: "Journal 回放", capability: "live" },
   { to: "/ops/logs", label: "日志", capability: "ops" },
   { to: "/ops/deploy", label: "部署", capability: "ops" },
+  { to: "/config", label: "配置", capability: "ops" },
+  { to: "/strategies", label: "策略与门控", capability: "ops" },
+  { to: "/alerts", label: "告警", capability: "ops" },
+  { to: "/accounts", label: "账户", capability: "ops" },
   { to: "/ops/audit", label: "审计", capability: "ops" },
   { to: "/runs", label: "运行记录", capability: "runs" },
 
   { to: "/sweeps", label: "参数扫描", capability: "runs" },
-  { to: "/data", label: "数据质量", capability: null },
+  { to: "/data", label: "数据质量", capability: "live" },
   { to: "/settings", label: "设置", capability: null },
 ];
 

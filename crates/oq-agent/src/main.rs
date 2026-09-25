@@ -14,10 +14,12 @@
 mod alerts;
 mod audit;
 mod config;
+mod configs;
 mod control;
 mod deploy;
 mod guard;
 mod notify;
+mod strategies;
 mod system;
 
 use std::sync::{Arc, Mutex};
@@ -35,6 +37,7 @@ struct State {
     step_up: Mutex<guard::StepUp>,
     audit: Mutex<audit::Audit>,
     raised: Arc<Mutex<alerts::Raised>>,
+    strategies: Mutex<strategies::Strategies>,
     progress: Arc<Mutex<deploy::Progress>>,
     notify: std::sync::mpsc::Sender<Message>,
 }
@@ -84,7 +87,15 @@ fn main() {
         let (cfg, raised, notify) = (cfg.clone(), Arc::clone(&raised), notify.clone());
         std::thread::spawn(move || alerts::watch(cfg, raised, notify));
     }
+    let strategies = match strategies::Strategies::open(&cfg.state_dir) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("oq-agent: refusing to start: {e}");
+            std::process::exit(3);
+        }
+    };
     let state = Arc::new(State {
+        strategies: Mutex::new(strategies),
         cfg,
         replay: Mutex::new(guard::Replay::default()),
         step_up: Mutex::new(step_up),
@@ -233,13 +244,32 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         Op::Alerts => state
             .raised
             .lock()
-            .map(|r| alerts::list(&r))
+            .map(|r| json!({"active": alerts::list(&r), "history": alerts::history(&r)}))
             .map_err(|_| "alert state poisoned".to_string()),
         Op::Releases => state
             .progress
             .lock()
             .map(|p| deploy::list(cfg, &p))
             .map_err(|_| "deploy state poisoned".to_string()),
+        Op::Accounts => Ok(accounts(&cfg.log_dir)),
+        Op::ConfigList => Ok(configs::list(&cfg.config_dir)),
+        Op::ConfigGet { name, backup } => configs::get(&cfg.config_dir, name, backup.as_deref()),
+        Op::Strategies => {
+            let mut s = match state.strategies.lock() {
+                Ok(s) => s,
+                Err(_) => return AgentResponse::refused("strategy state poisoned"),
+            };
+            for (id, why) in s.void_changed(&cfg.config_dir, now) {
+                let _ = record(
+                    state,
+                    "oq-agent",
+                    &format!("strategy {id} back to draft"),
+                    &why,
+                    "voided",
+                );
+            }
+            Ok(s.list(&cfg.config_dir, &cfg.journals, now))
+        }
         // State-changing requests are written down before they are done,
         // and not done if they cannot be written down.
         mutating => {
@@ -302,6 +332,52 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
         }
         Op::Rollback => deploy::start_rollback(cfg, &state.progress, &state.notify, &state.raised)
             .map(|()| json!({"started": "rollback"})),
+        Op::AlertTest => {
+            let _ = state.notify.send(Message {
+                title: "测试消息".into(),
+                body: format!("来自 deck 的告警渠道测试：{reason}"),
+                color: BLUE,
+            });
+            Ok(json!({"sent": true}))
+        }
+        Op::AlertSilence { key, minutes } => {
+            let until = system::now_ms() + minutes.clamp(&1, &(7 * 24 * 60)) * 60_000;
+            state
+                .raised
+                .lock()
+                .map(|mut r| {
+                    r.silenced.insert(key.clone(), until);
+                    json!({"key": key, "silenced_until_ms": until})
+                })
+                .map_err(|_| "alert state poisoned".to_string())
+        }
+        Op::ConfigPut {
+            name,
+            content,
+            base_sha,
+        } => configs::put(&cfg.config_dir, name, content, base_sha, system::now_ms()),
+        Op::ConfigRollback {
+            name,
+            backup,
+            base_sha,
+        } => configs::rollback(&cfg.config_dir, name, backup, base_sha, system::now_ms()),
+        Op::StrategyCreate { name, config } => state
+            .strategies
+            .lock()
+            .map_err(|_| "strategy state poisoned".to_string())
+            .and_then(|mut s| s.create(name, config, &cfg.config_dir, origin, system::now_ms())),
+        Op::StrategyBacktest { id, run, passed } => state
+            .strategies
+            .lock()
+            .map_err(|_| "strategy state poisoned".to_string())
+            .and_then(|mut s| {
+                s.evidence_backtest(id, run, *passed, &cfg.config_dir, &cfg.journals)
+            }),
+        Op::StrategyAdvance { id } => state
+            .strategies
+            .lock()
+            .map_err(|_| "strategy state poisoned".to_string())
+            .and_then(|mut s| s.advance(id, origin, reason, &cfg.journals, system::now_ms())),
         other => Err(format!("{} is not an action", other.describe())),
     }
 }
@@ -328,4 +404,44 @@ fn record(state: &State, actor: &str, op: &str, reason: &str, result: &str) -> R
         color: BLUE,
     });
     Ok(())
+}
+
+/// Which venue account each process uses, from the fingerprint it writes
+/// as the first line of every log. Two processes on different accounts —
+/// a watcher reading a key that is not the trader's — is the failure this
+/// exists to show.
+fn accounts(log_dir: &std::path::Path) -> serde_json::Value {
+    let files = system::log_files(log_dir);
+    let mut latest: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    for f in files.as_array().cloned().unwrap_or_default() {
+        let name = f["name"].as_str().unwrap_or_default().to_string();
+        let Some(process) = name
+            .rsplit_once('-')
+            .and_then(|(a, _)| a.rsplit_once('-'))
+            .map(|(p, _)| p.to_string())
+        else {
+            continue;
+        };
+        if latest.contains_key(&process) {
+            continue;
+        }
+        let line = system::first_line(log_dir, &name).unwrap_or_default();
+        let line = line.as_str();
+        let fingerprint = line.strip_prefix("account key").map(|rest| {
+            rest.split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        });
+        latest.insert(
+            process,
+            json!({"log": name, "fingerprint": fingerprint, "line": line}),
+        );
+    }
+    let prints: std::collections::BTreeSet<String> = latest
+        .values()
+        .filter_map(|v| v["fingerprint"].as_str().map(str::to_string))
+        .collect();
+    json!({"processes": latest, "same_account": prints.len() <= 1})
 }

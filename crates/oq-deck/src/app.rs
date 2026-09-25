@@ -860,6 +860,32 @@ ops_read!(ops_alerts, ops::Op::Alerts);
 ops_read!(ops_logs, ops::Op::Logs);
 ops_read!(ops_releases, ops::Op::Releases);
 ops_read!(ops_attribution, ops::Op::Attribution);
+ops_read!(ops_accounts, ops::Op::Accounts);
+ops_read!(ops_configs, ops::Op::ConfigList);
+ops_read!(ops_strategies, ops::Op::Strategies);
+
+#[derive(Deserialize)]
+struct ConfigQuery {
+    name: String,
+    backup: Option<String>,
+}
+
+async fn ops_config(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Query(q): Query<ConfigQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let actor = actor_of(peer.as_ref(), &headers);
+    let op = ops::Op::ConfigGet {
+        name: q.name,
+        backup: q.backup.filter(|b| !b.is_empty()),
+    };
+    ask_agent(&deck, op, None, None, actor).await
+}
 
 #[derive(Deserialize)]
 struct RecordsQuery {
@@ -986,6 +1012,24 @@ struct ActionBody {
     verb: Option<String>,
     #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    base_sha: Option<String>,
+    #[serde(default)]
+    backup: Option<String>,
+    #[serde(default)]
+    config: Option<String>,
+    #[serde(default)]
+    run: Option<String>,
+    #[serde(default)]
+    passed: Option<bool>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    minutes: Option<i64>,
     reason: String,
     #[serde(default)]
     step_up: Option<String>,
@@ -1018,6 +1062,39 @@ async fn ops_action(
         "deploy" => match body.id {
             Some(id) => ops::Op::Deploy { id },
             None => return Refusal::bad_request("缺少发布编号").into_response(),
+        },
+        "config_put" => match (body.name, body.content, body.base_sha) {
+            (Some(name), Some(content), Some(base_sha)) => ops::Op::ConfigPut {
+                name,
+                content,
+                base_sha,
+            },
+            _ => return Refusal::bad_request("缺少文件名、内容或读取时的版本").into_response(),
+        },
+        "config_rollback" => match (body.name, body.backup, body.base_sha) {
+            (Some(name), Some(backup), Some(base_sha)) => ops::Op::ConfigRollback {
+                name,
+                backup,
+                base_sha,
+            },
+            _ => return Refusal::bad_request("缺少文件名、备份或当前版本").into_response(),
+        },
+        "strategy_create" => match (body.name, body.config) {
+            (Some(name), Some(config)) => ops::Op::StrategyCreate { name, config },
+            _ => return Refusal::bad_request("缺少名称或配置文件").into_response(),
+        },
+        "strategy_backtest" => match (body.id, body.run, body.passed) {
+            (Some(id), Some(run), Some(passed)) => ops::Op::StrategyBacktest { id, run, passed },
+            _ => return Refusal::bad_request("缺少实例、回测 run 或是否通过").into_response(),
+        },
+        "strategy_advance" => match body.id {
+            Some(id) => ops::Op::StrategyAdvance { id },
+            None => return Refusal::bad_request("缺少实例").into_response(),
+        },
+        "alert_test" => ops::Op::AlertTest,
+        "alert_silence" => match (body.key, body.minutes) {
+            (Some(key), Some(minutes)) => ops::Op::AlertSilence { key, minutes },
+            _ => return Refusal::bad_request("缺少告警或时长").into_response(),
         },
         other => return Refusal::bad_request(format!("未知操作 {other}")).into_response(),
     };
@@ -1064,6 +1141,10 @@ pub fn router(
         .route("/journals/{id}/records", get(journal_records))
         .route("/runtime/settings", get(runtime_settings))
         .route("/ops/attribution", get(ops_attribution))
+        .route("/ops/accounts", get(ops_accounts))
+        .route("/ops/configs", get(ops_configs))
+        .route("/ops/config", get(ops_config))
+        .route("/ops/strategies", get(ops_strategies))
         .route("/ops/host", get(ops_host))
         .route("/ops/units", get(ops_units))
         .route("/ops/status", get(ops_status))

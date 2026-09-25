@@ -492,6 +492,8 @@ mod tests {
             state_dir: root.join("state"),
             releases: root.join("releases"),
             incoming: root.join("incoming"),
+            config_dir: root.join("config"),
+            journals: root.join("journals"),
             signers: root.join("allowed_signers"),
             credentials: None,
             host: "test".into(),
