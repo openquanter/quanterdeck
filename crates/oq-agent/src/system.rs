@@ -10,13 +10,18 @@ use serde_json::{Value, json};
 /// `systemctl show` for one unit, as a JSON object.
 #[must_use]
 pub fn unit_state(unit: &str) -> Value {
+    unit_state_with(
+        unit,
+        "ActiveState,SubState,Result,NRestarts,ExecMainStartTimestamp,\
+         ExecMainPID,ExecMainStatus,UnitFileState,LoadState,MemoryCurrent,MemoryPeak,CPUUsageNSec",
+    )
+}
+
+/// `systemctl show` for the properties named, comma-separated.
+#[must_use]
+pub fn unit_state_with(unit: &str, properties: &str) -> Value {
     let out = Command::new("systemctl")
-        .args([
-            "show",
-            unit,
-            "--property=ActiveState,SubState,Result,NRestarts,ExecMainStartTimestamp,\
-             ExecMainPID,ExecMainStatus,UnitFileState,LoadState",
-        ])
+        .args(["show", unit, &format!("--property={properties}")])
         .output();
     let mut obj = serde_json::Map::new();
     obj.insert("unit".into(), json!(unit));
@@ -122,6 +127,54 @@ fn parse_df(text: &str) -> Vec<Value> {
                 json!({"mount": f[0], "size": f[1].parse::<u64>().ok(),
                        "used": f[2].parse::<u64>().ok(), "avail": f[3].parse::<u64>().ok()})
             })
+        })
+        .collect()
+}
+
+/// A unit's output from the systemd journal, each line with the time
+/// journald stamped it: between two times, the last `lines` of it,
+/// optionally only lines containing `grep`. Started only when asked.
+///
+/// # Errors
+/// journalctl failed — usually this user is not in `systemd-journal`.
+pub fn journal(
+    unit: &str,
+    since_ms: Option<i64>,
+    until_ms: Option<i64>,
+    lines: usize,
+    grep: Option<&str>,
+) -> Result<Value, String> {
+    let mut cmd = Command::new("journalctl");
+    cmd.args(["--no-pager", "-o", "short-iso-precise", "-u", unit, "-n"])
+        .arg(lines.clamp(1, MAX_LINES).to_string());
+    if let Some(s) = since_ms {
+        cmd.arg(format!("--since=@{}", s / 1000));
+    }
+    if let Some(u) = until_ms {
+        cmd.arg(format!("--until=@{}", u / 1000 + 1));
+    }
+    if let Some(g) = grep.filter(|g| !g.is_empty()) {
+        // Fixed string, not a pattern: what the operator typed is what is
+        // looked for.
+        cmd.args(["--grep", &regex_escape(g)]);
+    }
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    if !out.status.success() && out.stdout.is_empty() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with("-- ")).collect();
+    Ok(json!({"unit": unit, "lines": lines}))
+}
+
+fn regex_escape(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            if "\\.^$|?*+()[]{}".contains(c) {
+                vec!['\\', c]
+            } else {
+                vec![c]
+            }
         })
         .collect()
 }

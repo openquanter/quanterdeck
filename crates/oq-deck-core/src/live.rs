@@ -409,6 +409,24 @@ pub fn records(
     limit: usize,
     before: Option<u64>,
 ) -> Result<RecordsPage, String> {
+    records_between(dir, id, kinds, limit, before, None, None)
+}
+
+/// [`records`], only those whose time falls between `from_ns` and
+/// `to_ns` when given — the minutes around a moment under review.
+/// Records without a time (the session start) are kept.
+///
+/// # Errors
+/// The journal is missing or will not read.
+pub fn records_between(
+    dir: &Path,
+    id: &str,
+    kinds: &[String],
+    limit: usize,
+    before: Option<u64>,
+    from_ns: Option<i64>,
+    to_ns: Option<i64>,
+) -> Result<RecordsPage, String> {
     let path = resolve(dir, id).ok_or_else(|| format!("no journal named {id}"))?;
     let replay = oq_journal::Reader::open(&path)
         .and_then(|r| r.replay())
@@ -428,7 +446,10 @@ pub fn records(
                     (price_scale, qty_scale) = (*p, *q);
                 }
                 let v = view(frame.seq, record);
-                if kinds.is_empty() || kinds.iter().any(|k| k == v.kind) {
+                let in_time = v.at.is_none_or(|at| {
+                    from_ns.is_none_or(|f| at >= f) && to_ns.is_none_or(|t| at <= t)
+                });
+                if in_time && (kinds.is_empty() || kinds.iter().any(|k| k == v.kind)) {
                     all.push(v);
                 }
             }

@@ -60,19 +60,34 @@ export function OpsOrders() {
 
 const QUICK = ["HALT", "MISMATCH", "FAIL", "operator", "heartbeat"];
 
-/** A log file's tail, filtered, refreshed while watched. */
+/**
+ * A process's output, filtered, refreshed while watched: from the systemd
+ * journal (every line timestamped) for each managed service, or from a
+ * log file for what was written before output went there.
+ */
 export function OpsLogs() {
   const files = useQuery({ queryKey: ["ops", "logs"], queryFn: api.logs, refetchInterval: 60_000 });
+  const units = useQuery({ queryKey: ["ops", "units"], queryFn: api.units, refetchInterval: 60_000 });
+  // "j:<unit>" for a service's journal, "f:<name>" for a file.
   const [name, setName] = useState<string | null>(null);
   const [lines, setLines] = useState(200);
   const [grep, setGrep] = useState("");
   const [follow, setFollow] = useState(true);
   useEffect(() => {
-    if (!name && files.data && files.data.length > 0) setName(files.data[0].name);
-  }, [files.data, name]);
+    if (name) return;
+    if (units.data && units.data.length > 0) setName(`j:${units.data[0].unit}`);
+    else if (files.data && files.data.length > 0) setName(`f:${files.data[0].name}`);
+  }, [files.data, units.data, name]);
   const tail = useQuery({
     queryKey: ["ops", "log", name, lines, grep],
-    queryFn: () => api.log(name as string, lines, grep),
+    queryFn: async () => {
+      const source = name as string;
+      if (source.startsWith("j:")) {
+        const t = await api.journalLog(source.slice(2), null, null, lines, grep);
+        return { name: t.unit, size: 0, truncated: false, lines: t.lines };
+      }
+      return api.log(source.slice(2), lines, grep);
+    },
     enabled: name !== null,
     refetchInterval: follow ? 5_000 : false,
   });
@@ -86,11 +101,24 @@ export function OpsLogs() {
           value={name ?? ""}
           onChange={(e) => setName(e.target.value)}
         >
-          {files.data?.map((f) => (
-            <option key={f.name} value={f.name}>
-              {f.name} ({(f.size / 1024).toFixed(0)} KiB)
-            </option>
-          ))}
+          {units.data && units.data.length > 0 && (
+            <optgroup label="服务输出（systemd journal）">
+              {units.data.map((u) => (
+                <option key={u.unit} value={`j:${u.unit}`}>
+                  {u.unit}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {files.data && files.data.length > 0 && (
+            <optgroup label="日志文件">
+              {files.data.map((f) => (
+                <option key={f.name} value={`f:${f.name}`}>
+                  {f.name} ({(f.size / 1024).toFixed(0)} KiB)
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <input
           className="w-40 rounded border border-line bg-ground p-1.5 text-xs"
