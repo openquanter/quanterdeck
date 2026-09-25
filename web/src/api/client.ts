@@ -170,6 +170,8 @@ export interface Disk {
 }
 
 export interface HostHealth {
+  /** The host's name as the agent's alerts carry it. */
+  name?: string;
   load: number[];
   mem_total: number | null;
   mem_available: number | null;
@@ -188,6 +190,8 @@ export interface UnitState {
   Result?: string;
   NRestarts?: string;
   ExecMainStartTimestamp?: string;
+  /** When the unit's main process started, from systemd's unix timestamp. */
+  started_ms?: number;
   ExecMainPID?: string;
   ExecMainStatus?: string;
   UnitFileState?: string;
