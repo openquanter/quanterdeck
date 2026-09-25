@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { Boxes } from "lucide-react";
-
 import { api } from "@/api/client";
-import { tr } from "@/i18n";
+import { LanguageToggle, tr } from "@/i18n";
+import { BrandMark } from "@/ui/kit";
+import { ThemeToggle } from "@/ui/theme";
 
 import { LoginForm } from "./LoginForm";
 
@@ -35,19 +35,27 @@ function safeNext(next: string | null): string {
 
 /**
  * The sign-in screens' frame: the product mark as the sidebar draws it,
- * then one card. Nothing else on the page, since nothing else is reachable
- * before signing in.
+ * then one card, and the language and theme switches — the only two things
+ * on the page besides the form, because they are the only two that mean
+ * anything before signing in.
  */
 export function Centered({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-ground p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/15 text-accent">
-          <Boxes className="h-5 w-5" />
-        </span>
-        <span className="text-xl font-semibold tracking-tight text-ink">quanterdeck</span>
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-ground p-6">
+      {/* The console's own two switches, reachable before signing in: which
+          language and which theme you read in is not a decision to make
+          after you are already through the door. */}
+      <div className="absolute right-6 top-6 flex items-center gap-2">
+        <LanguageToggle />
+        <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-line bg-surface shadow-2xl shadow-black/40">
+      <div className="mb-6 flex items-center gap-3">
+        <BrandMark className="h-10 w-10" />
+        <span className="text-xl font-medium tracking-tight text-ink">
+          quanter<span className="text-accent">deck</span>
+        </span>
+      </div>
+      <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)]">
         <div className="border-b border-line px-6 py-4">
           <h1 className="text-base font-semibold text-ink">{title}</h1>
           {subtitle && <p className="mt-0.5 text-xs text-ink-muted">{subtitle}</p>}

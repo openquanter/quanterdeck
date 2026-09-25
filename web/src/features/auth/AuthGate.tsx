@@ -40,7 +40,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       {children}
       {expired && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-line-strong bg-surface shadow-2xl">
+          <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-line-strong bg-surface shadow-[var(--shadow-card)]">
             <div className="flex gap-3 border-b border-line px-5 py-4">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warn/15 text-warn">
                 <LockKeyhole className="h-4.5 w-4.5" />
