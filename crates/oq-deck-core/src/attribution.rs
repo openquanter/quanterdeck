@@ -224,6 +224,12 @@ fn evidence_from(model_fills: &[Fill], differences: &[Difference]) -> Evidence {
         matched,
         unmatched,
         funding: None,
+        // Replaced below when the operator supplies both figures.
+        funding_unavailable: Some(
+            "run files carry no funding; enter what the venue charged and what the model \
+             computed to measure it"
+                .to_string(),
+        ),
         fees: None,
     }
 }
@@ -261,6 +267,9 @@ pub fn from_runs(
 
     let mut evidence = evidence_from(&model.output.fills, &report.differences);
     evidence.funding = inputs.funding.map(VenueVsModel::to_cash);
+    if evidence.funding.is_some() {
+        evidence.funding_unavailable = None;
+    }
     evidence.fees = inputs.fees.map(VenueVsModel::to_cash);
 
     let matched_fills = evidence.matched.len();
