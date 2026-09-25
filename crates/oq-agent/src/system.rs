@@ -163,6 +163,38 @@ pub fn log_files(dir: &Path) -> Value {
     )
 }
 
+/// The first line of `name` in `dir`, under the same rules as [`tail`].
+///
+/// # Errors
+/// As [`tail`].
+pub fn first_line(dir: &Path, name: &str) -> Result<String, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+        return Err(format!("{name:?} is not a file name"));
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(dir.join(name))
+        .map_err(|e| format!("{name}: {e}"))?;
+    if !file
+        .metadata()
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_file()
+    {
+        return Err(format!("{name} is not a regular file"));
+    }
+    let mut buf = Vec::new();
+    file.take(1024)
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&buf)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string())
+}
+
 /// Longest tail read, in bytes, whatever was asked.
 pub const MAX_TAIL_BYTES: u64 = 4 << 20;
 /// Most lines returned.

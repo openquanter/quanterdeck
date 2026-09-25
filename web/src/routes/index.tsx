@@ -13,6 +13,9 @@ import { Live } from "./Live";
 import { Attribution } from "./Attribution";
 import { Journal } from "./Journal";
 import { Settings } from "./Settings";
+import { Config } from "./Config";
+import { Strategies } from "./Strategies";
+import { Accounts, Alerts, DataQuality } from "./Watch";
 import { Overview } from "./Overview";
 import { RunDetail } from "./RunDetail";
 import { Runs } from "./Runs";
@@ -53,13 +56,11 @@ export const router = createBrowserRouter([
           <Placeholder title="参数扫描" milestone="M3" note="结果表一并给出 DSR / PBO 过拟合提示。" />
         ),
       },
-      {
-        path: "data",
-        element: (
-          <Placeholder title="数据质量" milestone="M3" note="capture → ingest → 特征化；book-check 与 trade-check 的 break。" />
-        ),
-      },
-      { path: "strategies", element: <Placeholder title="策略" milestone="M4" /> },
+      { path: "data", element: <DataQuality /> },
+      { path: "strategies", element: <Strategies /> },
+      { path: "config", element: <Config /> },
+      { path: "alerts", element: <Alerts /> },
+      { path: "accounts", element: <Accounts /> },
       { path: "settings", element: <Settings /> },
     ],
   },

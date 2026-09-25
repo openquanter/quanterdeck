@@ -242,3 +242,42 @@ async fn no_agent_is_a_named_absence() {
             .contains("OQ_DECK_AGENT_SOCKET")
     );
 }
+
+#[tokio::test]
+async fn a_config_change_carries_its_content_and_the_version_it_was_made_against() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!({"backup": "s.json.1"})));
+    let app = router(settings(sock, true), None, None);
+    let cookie = login(&app).await;
+    let (status, _) = call(
+        &app,
+        &cookie,
+        "POST",
+        "/api/v1/ops/action",
+        Some(
+            json!({"action": "config_put", "name": "s.json", "content": "{\"a\":2}",
+                    "base_sha": "abc", "reason": "tighter ladder", "step_up": "123456"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &app,
+        &cookie,
+        "POST",
+        "/api/v1/ops/action",
+        Some(json!({"action": "config_put", "name": "s.json", "reason": "missing fields"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let seen = seen.lock().expect("lock");
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].op,
+        Op::ConfigPut {
+            name: "s.json".into(),
+            content: "{\"a\":2}".into(),
+            base_sha: "abc".into()
+        }
+    );
+}
