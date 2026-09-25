@@ -385,6 +385,22 @@ fn view(seq: u64, record: oq_live::record::Record) -> JournalRecord {
             Some(at.0),
             json!({"command": command, "reason": reason, "origin": origin, "outcome": outcome}),
         ),
+        R::Funding {
+            at,
+            settled_ms,
+            rate,
+            mark,
+            venue,
+            model,
+            verified,
+        } => (
+            "funding",
+            Some(at.0),
+            json!({
+                "settled_ms": settled_ms, "rate": rate, "mark": mark,
+                "venue": cash_text(venue), "model": cash_text(model), "verified": verified,
+            }),
+        ),
     };
     JournalRecord {
         seq,
@@ -476,4 +492,12 @@ pub fn records_between(
         qty_scale,
         undecodable,
     })
+}
+
+/// Cash to its last place, as the venue writes it: a funding line is
+/// compared to the venue's own figure, and a float would not match it.
+fn cash_text(c: oq_types::Cash) -> String {
+    let sign = if c.0 < 0 { "-" } else { "" };
+    let v = c.0.unsigned_abs();
+    format!("{sign}{}.{:08}", v / 100_000_000, v % 100_000_000)
 }

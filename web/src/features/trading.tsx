@@ -43,6 +43,7 @@ export const KIND_NAMES: Record<string, string> = {
   reconciled: "接管仓位",
   waiting: "策略等待",
   operator: "操作者",
+  funding: "资金费",
 };
 
 /** One journal record as a line of text. Text, never markup: these fields come from a venue. */
@@ -60,6 +61,8 @@ export function recordText(r: RecordsPage["records"][number], ps: number, qs: nu
       return "撤单";
     case "refused":
       return `风控拒绝：${f.breach}`;
+    case "funding":
+      return `结算 ${new Date(Number(f.settled_ms)).toLocaleString("zh-CN", { hour12: false })} · 费率 ${f.rate} · 标记价 ${f.mark} · 实盘 ${f.venue} · 模型 ${f.model}${f.verified ? "" : " · 实盘持仓复现不出交易所金额"}`;
     case "operator":
       return `${f.command}：${f.reason} → ${f.outcome}（${f.origin}）`;
     case "tick":
