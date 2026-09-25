@@ -224,6 +224,9 @@ fn handle(state: &State, line: &str) -> AgentResponse {
             // machine it is operating rather than leaving that implicit.
             let mut h = system::host_health();
             h["name"] = json!(cfg.host);
+            // Which unit is the trader, so a page asking for its output
+            // does not have to assume a deployment's naming.
+            h["trader_unit"] = json!(cfg.trader_unit);
             Ok(h)
         }
         Op::Units => Ok(json!(

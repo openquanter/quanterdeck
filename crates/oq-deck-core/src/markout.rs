@@ -174,16 +174,12 @@ mod tests {
 
     const S: i64 = 1_000_000_000;
 
-    fn dir() -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "deck-markout-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos())
-        ));
-        std::fs::create_dir_all(&d).expect("dir");
-        d
+    /// A directory of its own, removed when the guard drops. A name built
+    /// from the pid and the clock was not unique: two tests in one process
+    /// read the same microsecond, shared the directory, and the first to
+    /// finish removed it under the other.
+    fn dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("dir")
     }
 
     fn ticks_file(dir: &Path) {
@@ -210,12 +206,13 @@ mod tests {
 
     #[test]
     fn two_runs_are_priced_against_one_tick_file_and_contrasted() {
-        let d = dir();
-        ticks_file(&d);
-        run_file(&d, "model", 0);
-        run_file(&d, "live", 5);
-        assert_eq!(list_ticks(&d).expect("listed"), vec!["day".to_string()]);
-        let c = compare(&d, &d, "model", "live", "day").expect("compared");
+        let guard = dir();
+        let d = guard.path();
+        ticks_file(d);
+        run_file(d, "model", 0);
+        run_file(d, "live", 5);
+        assert_eq!(list_ticks(d).expect("listed"), vec!["day".to_string()]);
+        let c = compare(d, d, "model", "live", "day").expect("compared");
         assert_eq!(c.baseline.horizons.len(), 3);
         assert!(
             c.baseline
@@ -229,14 +226,13 @@ mod tests {
             (one.difference_bps.expect("measured") + 5.0).abs() < 0.01,
             "{one:?}"
         );
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
     fn a_tick_file_is_resolved_inside_its_directory_only() {
-        let d = dir();
-        assert!(resolve_ticks(&d, "../etc/passwd").is_none());
-        assert!(compare(&d, &d, "a", "b", "missing").is_err());
-        let _ = std::fs::remove_dir_all(&d);
+        let guard = dir();
+        let d = guard.path();
+        assert!(resolve_ticks(d, "../etc/passwd").is_none());
+        assert!(compare(d, d, "a", "b", "missing").is_err());
     }
 }

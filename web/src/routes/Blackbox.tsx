@@ -293,7 +293,14 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
       api.recordsBetween(journalId as string, ["submitted", "outcome", "fill", "cancelled", "refused", "operator", "reconciled"], 300, (at - AROUND_MS) * 1e6, (at + AROUND_MS) * 1e6),
     enabled: Boolean(journalId),
   });
-  const logs = useQuery({ queryKey: ["journal-log", "trader", at], queryFn: () => api.journalLog("trader.service", at - AROUND_MS, at + AROUND_MS, 400) });
+  // The trader's unit as the agent names it; no guess at a deployment's naming.
+  const host = useQuery({ queryKey: ["ops", "host"], queryFn: api.host, staleTime: 60_000 });
+  const unit = host.data?.trader_unit;
+  const logs = useQuery({
+    queryKey: ["journal-log", unit, at],
+    queryFn: () => api.journalLog(unit as string, at - AROUND_MS, at + AROUND_MS, 400),
+    enabled: Boolean(unit),
+  });
   const s = snap.data;
   const t = s?.trader?.trader;
   const h = s?.host?.host;
@@ -402,8 +409,10 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
           )}
         </Card>
 
-        <Card title="前后 2 分钟交易进程的输出" icon={<Terminal className="h-4 w-4" />} bodyClassName="p-0" extra={<span>trader.service · systemd journal</span>}>
-          {logs.isLoading ? (
+        <Card title="前后 2 分钟交易进程的输出" icon={<Terminal className="h-4 w-4" />} bodyClassName="p-0" extra={<span>{unit ?? "交易进程"} · systemd journal</span>}>
+          {!unit ? (
+            <p className="px-4 py-6 text-center text-sm text-ink-faint">{host.isPending ? "读取中…" : "主机代理没有报告交易进程是哪个服务，无法取它的输出。"}</p>
+          ) : logs.isLoading ? (
             <div className="p-4">
               <Skeleton rows={3} />
             </div>
