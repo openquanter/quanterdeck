@@ -1,25 +1,22 @@
-import { createBrowserRouter } from "react-router-dom";
+import { lazy, type ComponentType } from "react";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { Shell } from "@/components/Shell";
 import { AuthGate } from "@/features/auth/AuthGate";
 import { Login } from "@/features/auth/Login";
 import { Setup } from "@/features/auth/Setup";
 
-import { Compare } from "./Compare";
-import { Ops } from "./Ops";
-import { OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
-import { Live } from "./Live";
-import { Attribution } from "./Attribution";
-import { Blackbox } from "./Blackbox";
-import { Journal } from "./Journal";
-import { Settings } from "./Settings";
-import { Config } from "./Config";
-import { Strategies } from "./Strategies";
-import { Sweeps } from "./Sweeps";
-import { Accounts, Alerts, DataQuality } from "./Watch";
 import { Overview } from "./Overview";
-import { RunDetail } from "./RunDetail";
-import { Runs } from "./Runs";
+
+/**
+ * Each screen is its own chunk, loaded when first visited: the overview
+ * opens without first downloading the chart library every research
+ * screen needs.
+ */
+function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  const Lazy = lazy<ComponentType>(() => load().then((m) => ({ default: m[name] as ComponentType })));
+  return <Lazy />;
+}
 
 /**
  * Every screen in the plan, one entry each. The navigation is drawn from
@@ -38,25 +35,37 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Overview /> },
-      { path: "runs", element: <Runs /> },
-      { path: "runs/compare", element: <Compare /> },
-      { path: "runs/:id", element: <RunDetail /> },
-      { path: "attribution", element: <Attribution /> },
-      { path: "live", element: <Live /> },
-      { path: "ops", element: <Ops /> },
-      { path: "ops/orders", element: <OpsOrders /> },
-      { path: "ops/logs", element: <OpsLogs /> },
-      { path: "ops/deploy", element: <OpsDeploy /> },
-      { path: "ops/audit", element: <OpsAudit /> },
-      { path: "blackbox", element: <Blackbox /> },
-      { path: "journal", element: <Journal /> },
-      { path: "sweeps", element: <Sweeps /> },
-      { path: "data", element: <DataQuality /> },
-      { path: "strategies", element: <Strategies /> },
-      { path: "config", element: <Config /> },
-      { path: "alerts", element: <Alerts /> },
-      { path: "accounts", element: <Accounts /> },
-      { path: "settings", element: <Settings /> },
+      // 交易
+      { path: "live", element: page(() => import("./Trading"), "Trading") },
+      { path: "reconcile", element: page(() => import("./Reconcile"), "Reconcile") },
+      // 诊断
+      { path: "alerts", element: page(() => import("./Alerts"), "Alerts") },
+      { path: "blackbox", element: page(() => import("./Blackbox"), "Blackbox") },
+      { path: "logs", element: page(() => import("./Logs"), "Logs") },
+      { path: "journal", element: page(() => import("./Journal"), "Journal") },
+      // 变更
+      { path: "strategies", element: page(() => import("./Strategies"), "Strategies") },
+      { path: "config", element: page(() => import("./Config"), "Config") },
+      { path: "deploy", element: page(() => import("./Deploy"), "Deploy") },
+      // 研究
+      { path: "runs", element: page(() => import("./Runs"), "Runs") },
+      { path: "runs/compare", element: page(() => import("./Compare"), "Compare") },
+      { path: "runs/:id", element: page(() => import("./RunDetail"), "RunDetail") },
+      { path: "sweeps", element: page(() => import("./Sweeps"), "Sweeps") },
+      // 系统
+      { path: "host", element: page(() => import("./Host"), "Host") },
+      { path: "accounts", element: page(() => import("./Accounts"), "Accounts") },
+      { path: "audit", element: page(() => import("./Audit"), "Audit") },
+      { path: "settings", element: page(() => import("./Settings"), "Settings") },
+      // Where things were before docs/UI-V4, so bookmarks still land.
+      { path: "ops", element: <Navigate to="/host" replace /> },
+      { path: "ops/orders", element: <Navigate to="/live?tab=positions" replace /> },
+      { path: "ops/logs", element: <Navigate to="/logs" replace /> },
+      { path: "ops/deploy", element: <Navigate to="/deploy" replace /> },
+      { path: "ops/audit", element: <Navigate to="/audit" replace /> },
+      { path: "attribution", element: <Navigate to="/reconcile?tab=attribution" replace /> },
+      { path: "data", element: <Navigate to="/live?tab=market" replace /> },
+      { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
 ]);

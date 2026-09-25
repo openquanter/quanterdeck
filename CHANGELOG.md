@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### v4 interface — organised by task, and a console rather than a list
+
+- **Navigation grouped by what the operator does** (交易 / 诊断 / 变更 /
+  研究 / 系统), with icons, instead of nineteen flat entries. Old paths
+  redirect to their new places.
+- **A top bar that is always in view:** environment (testnet / mainnet)
+  and host, the trader's state, the alert count, the user menu.
+- **The overview answers "is everything all right":** a status banner
+  with halt beside it, the run's P&L, equity, positions and orders, a
+  health checklist where each line links to where it is dealt with,
+  alerts, recent activity, and the last day's resources.
+- **One page for the live trader** (positions, orders, fills, market,
+  risk limits), and one for reconciliation and attribution.
+- **Every screen rebuilt on one component kit** (cards, stats, tables,
+  tabs, drawers, charts on ECharts), each screen loaded when first
+  visited. The novice/expert switch is gone: terms explain themselves
+  on hover, and detail folds away.
+- The black box reads its files a line at a time and judges memory
+  growth every ten minutes in one pass, instead of parsing a day of
+  samples every thirty seconds for each service; a week's window reads
+  in under 200 ms. The last deployment's steps survive the agent
+  restarting, and unit start times come from systemd as timestamps.
+
 ### M2 — operating the host, and every screen of the brief
 
 - **A host agent, `oq-agent`,** runs on the trading host as its own user

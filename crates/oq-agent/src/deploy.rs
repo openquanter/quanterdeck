@@ -42,6 +42,58 @@ pub struct Progress {
     pub outcome: Option<String>,
 }
 
+impl Progress {
+    fn file(state: &Path) -> PathBuf {
+        state.join("last-deploy.json")
+    }
+
+    /// Kept on disk as it changes, so the last deployment's steps survive
+    /// the agent restarting — which a deployment of the agent itself does.
+    fn save(&self, state: &Path) {
+        let v = json!({
+            "running": self.running, "id": self.id, "outcome": self.outcome,
+            "steps": self.steps.iter().map(|(t, s)| json!([t, s])).collect::<Vec<_>>(),
+        });
+        let tmp = Self::file(state).with_extension("tmp");
+        if std::fs::write(&tmp, v.to_string())
+            .and_then(|()| std::fs::rename(&tmp, Self::file(state)))
+            .is_err()
+        {
+            eprintln!("oq-agent: last deployment not saved");
+        }
+    }
+
+    /// The last deployment, as saved. One still marked running was cut
+    /// short by this agent stopping, and says so rather than claiming to
+    /// be in progress.
+    #[must_use]
+    pub fn load(state: &Path) -> Self {
+        let Some(v) = std::fs::read_to_string(Self::file(state))
+            .ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        else {
+            return Self::default();
+        };
+        let mut p = Self {
+            running: false,
+            id: v["id"].as_str().unwrap_or_default().to_string(),
+            steps: v["steps"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| Some((x[0].as_i64()?, x[1].as_str()?.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            outcome: v["outcome"].as_str().map(str::to_string),
+        };
+        if v["running"] == true {
+            p.outcome = Some("interrupted: the agent stopped during this deployment".to_string());
+        }
+        p
+    }
+}
+
 fn sha256_file(path: &Path) -> Result<String, String> {
     let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut h = Sha256::new();
@@ -303,12 +355,14 @@ pub fn switch(
         eprintln!("deploy: {s}");
         if let Ok(mut p) = progress.lock() {
             p.steps.push((system::now_ms(), s));
+            p.save(&cfg.state_dir);
         }
     };
     let finish = |outcome: String, ok: bool| {
         if let Ok(mut p) = progress.lock() {
             p.running = false;
             p.outcome = Some(outcome.clone());
+            p.save(&cfg.state_dir);
         }
         let _ = notify.send(Message {
             title: if ok {
@@ -408,6 +462,7 @@ pub fn start_deploy(
         if let Ok(mut p) = progress.lock() {
             p.running = false;
             p.outcome = Some(e.clone());
+            p.save(&cfg.state_dir);
         }
         return Err(e);
     }
@@ -478,6 +533,31 @@ fn claim(progress: &Arc<Mutex<Progress>>, id: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_last_deployment_outlives_the_agent_and_one_cut_short_says_so() {
+        let d = tempfile::tempdir().expect("dir");
+        let mut p = super::Progress {
+            running: true,
+            id: "r1".into(),
+            steps: vec![(1, "stopping the trader".into())],
+            outcome: None,
+        };
+        p.save(d.path());
+        let back = super::Progress::load(d.path());
+        assert!(!back.running, "nothing is running after a restart");
+        assert_eq!(back.steps, p.steps);
+        assert!(
+            back.outcome
+                .as_deref()
+                .is_some_and(|o| o.starts_with("interrupted"))
+        );
+        p.running = false;
+        p.outcome = Some("r1 is running and healthy".into());
+        p.save(d.path());
+        assert_eq!(super::Progress::load(d.path()).outcome, p.outcome);
+        assert!(super::Progress::load(&d.path().join("none")).id.is_empty());
+    }
+
     use super::*;
 
     fn cfg(root: &Path) -> Config {

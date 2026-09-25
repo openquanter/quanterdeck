@@ -126,8 +126,11 @@ Anything risky needs a reason and a one-time code **the agent**
 verifies, so a compromised deck cannot act alone. Every action goes
 into a hash-chained audit trail and to the alert channel.
 
-The interface has a novice mode that explains each term in a sentence,
-and an expert mode that does not. It is Chinese-only for now.
+The interface is organised by what an operator does — trading,
+diagnosis, change, research, system — with the environment, the
+trader's state and the alert count always in the top bar, and every
+term's meaning a hover away (see [docs/UI-V4.zh-CN.md](docs/UI-V4.zh-CN.md)).
+It is Chinese-only for now.
 
 ## Getting started
 

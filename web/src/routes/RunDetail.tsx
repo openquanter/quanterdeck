@@ -1,11 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Fingerprint } from "lucide-react";
 
 import { api } from "@/api/client";
-import { Copy } from "@/components/States";
+import { Copy, ErrorState, Skeleton } from "@/components/States";
+import { Card, PageHeader, Stat, Table } from "@/ui/kit";
 
-import { Failure, Skeleton } from "./Runs";
-
+/**
+ * One run file (docs/UI-V4 §3 研究): its identity in full, the numbers
+ * it adds up to, and every fill it recorded.
+ */
 export function RunDetail() {
   const { id = "" } = useParams();
   const { data, isLoading, error } = useQuery({
@@ -13,63 +17,102 @@ export function RunDetail() {
     queryFn: () => api.run(id),
   });
 
-  if (isLoading) return <Skeleton />;
-  if (error) return <Failure error={error} />;
+  const back = (
+    <Link to="/runs" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink">
+      <ArrowLeft className="h-4 w-4" />
+      回测记录
+    </Link>
+  );
+
+  if (isLoading)
+    return (
+      <div>
+        <PageHeader title={<span className="font-mono">{id}</span>} actions={back} />
+        <Skeleton tiles={3} rows={8} />
+      </div>
+    );
+  if (error)
+    return (
+      <div>
+        <PageHeader title={<span className="font-mono">{id}</span>} actions={back} />
+        <ErrorState error={error} what={`run ${id}`} />
+      </div>
+    );
   if (!data) return null;
 
+  const symbols = [...new Set(data.fills.map((f) => f.symbol))];
+
   return (
-    <div>
-      <h1 className="mb-4 font-mono text-lg text-ink">{data.id}</h1>
+    <div className="space-y-5">
+      <PageHeader title={<span className="font-mono">{data.id}</span>} description={<span className="font-mono text-xs">{data.path}</span>} actions={back} />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label="已实现盈亏" value={data.pnl.toFixed(6)} />
+        <Stat label="成交" value={String(data.fills.length)} sub={symbols.length ? symbols.join(" · ") : undefined} />
+        <Stat label="档位" value={data.identity.label || "—"} />
+      </div>
 
       {/* The identity triple is shown together and in full. Truncated to
           eight characters it reads as decoration; at full length it is
           the thing a third party checks a claim against. */}
-      <dl className="mb-6 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
-        <dt className="text-ink-muted">code-commit</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.code_commit}<Copy text={data.identity.code_commit} /></dd>
-        <dt className="text-ink-muted">data-sha256</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.data_hash}<Copy text={data.identity.data_hash} /></dd>
-        <dt className="text-ink-muted">config-sha256</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.config_hash}<Copy text={data.identity.config_hash} /></dd>
-        <dt className="text-ink-muted">档位</dt>
-        <dd>{data.identity.label}</dd>
-        <dt className="text-ink-muted">已实现盈亏</dt>
-        <dd>{data.pnl.toFixed(6)}</dd>
-      </dl>
+      <Card title="身份" icon={<Fingerprint className="h-4 w-4" />} extra="代码、数据、配置的指纹：同样三者跑出的结果应当一致">
+        <dl className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
+          {(
+            [
+              ["code-commit", data.identity.code_commit],
+              ["data-sha256", data.identity.data_hash],
+              ["config-sha256", data.identity.config_hash],
+            ] as const
+          ).map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-ink-muted">{k}</dt>
+              <dd className="flex items-baseline break-all font-mono text-xs text-ink">
+                <span className="min-w-0">{v}</span>
+                <Copy text={v} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
 
-      <h2 className="mb-2 text-sm text-ink-muted">成交 {data.fills.length}</h2>
-      <div className="overflow-x-auto rounded border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-surface text-left text-xs text-ink-muted">
-            <tr>
-              <th className="px-3 py-2 font-normal">时间 (ns)</th>
-              <th className="px-3 py-2 font-normal">品种</th>
-              <th className="px-3 py-2 font-normal">方向</th>
-              <th className="px-3 py-2 text-right font-normal">价格 (ticks)</th>
-              <th className="px-3 py-2 text-right font-normal">数量 (lots)</th>
-              <th className="px-3 py-2 font-normal">tag</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.fills.map((fill, index) => (
-              <tr key={index} className="border-t border-line">
-                <td className="px-3 py-2 font-mono text-xs">{fill.ts}</td>
-                <td className="px-3 py-2 font-mono">{fill.symbol}</td>
-                {/* Neutral: green and red mean a conclusion held or
-                    failed (UI-BRIEF §8), and a sell is neither. */}
-                <td className="px-3 py-2 text-ink">{fill.side}</td>
-                <td className="px-3 py-2 text-right font-mono">{fill.price_ticks}</td>
-                <td className="px-3 py-2 text-right font-mono">{fill.qty_lots}</td>
-                {/* No tag and an empty tag are different things in the
-                    run format, so they look different here too. */}
-                <td className="px-3 py-2 text-xs text-ink-muted">
-                  {fill.tag === null ? "—" : fill.tag || '""'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Card title={`成交（${data.fills.length}）`} bodyClassName="p-0">
+        {data.fills.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-ink-faint">这次运行没有成交。</p>
+        ) : (
+          <div className="max-h-[40rem] overflow-auto">
+            <Table
+              dense
+              head={[
+                "时间 (ns)",
+                "品种",
+                "方向",
+                <span key="p" className="block text-right">
+                  价格 (ticks)
+                </span>,
+                <span key="q" className="block text-right">
+                  数量 (lots)
+                </span>,
+                "tag",
+              ]}
+            >
+              {data.fills.map((fill, index) => (
+                <tr key={index}>
+                  <td className="font-mono text-xs text-ink-muted">{fill.ts}</td>
+                  <td className="font-mono">{fill.symbol}</td>
+                  {/* Neutral: green and red mean a conclusion held or
+                      failed (UI-BRIEF §8), and a sell is neither. */}
+                  <td className="text-ink">{fill.side}</td>
+                  <td className="text-right font-mono tabular-nums">{fill.price_ticks}</td>
+                  <td className="text-right font-mono tabular-nums">{fill.qty_lots}</td>
+                  {/* No tag and an empty tag are different things in the
+                      run format, so they look different here too. */}
+                  <td className="text-xs text-ink-muted">{fill.tag === null ? "—" : fill.tag || '""'}</td>
+                </tr>
+              ))}
+            </Table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

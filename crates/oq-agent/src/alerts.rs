@@ -116,10 +116,14 @@ pub fn assess(
     found
 }
 
+/// How often memory growth is judged.
+const GROWTH_EVERY_MS: i64 = 10 * 60_000;
+
 /// Run the watch forever on this thread.
 pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::Sender<Message>) {
     let mut last_unreadable: Option<u64> = None;
     let mut recorder = crate::blackbox::Recorder::new(&cfg.state_dir);
+    let (mut grown, mut grown_at): (Vec<(String, String)>, i64) = (Vec::new(), 0);
     loop {
         // Whether each unit runs, from its cgroup: no process started.
         let units: Vec<(String, bool)> = cfg
@@ -153,10 +157,15 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             last_unreadable,
         );
         let mut found = found;
-        for unit in &cfg.manageable {
-            if let Some(msg) = crate::blackbox::growing(&cfg.state_dir, unit, system::now_ms()) {
-                found.insert(format!("mem:{unit}"), msg);
-            }
+        // Growth is judged over hours; asked every ten minutes, and the
+        // last verdict stands in between.
+        let now = system::now_ms();
+        if now - grown_at >= GROWTH_EVERY_MS {
+            grown = crate::blackbox::growing(&cfg.state_dir, &cfg.manageable, now);
+            grown_at = now;
+        }
+        for (unit, msg) in &grown {
+            found.insert(format!("mem:{unit}"), msg.clone());
         }
         if let Ok(s) = &status {
             last_unreadable = s["feed"]["unreadable"].as_u64();

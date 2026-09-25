@@ -283,9 +283,14 @@ impl Recorder {
     }
 }
 
-/// Every line between two times, oldest first.
-#[must_use]
-pub fn read(state: &Path, from_ms: i64, to_ms: i64) -> Vec<Value> {
+/// Every line between two times, oldest first, handed to `f` one at a
+/// time. Nothing holds more than the line in hand: a week of samples is
+/// tens of megabytes of text, and the host this runs on is trading.
+///
+/// With `needle`, a line not containing it is skipped before it is
+/// parsed — most of the cost of a scan is parsing lines nobody asked for.
+fn scan(state: &Path, from_ms: i64, to_ms: i64, needle: Option<&str>, mut f: impl FnMut(Value)) {
+    use std::io::BufRead;
     let d = dir(state);
     let mut days: Vec<i64> = std::fs::read_dir(&d)
         .map(|rd| {
@@ -301,28 +306,61 @@ pub fn read(state: &Path, from_ms: i64, to_ms: i64) -> Vec<Value> {
         })
         .unwrap_or_default();
     days.sort_unstable();
-    let mut out = Vec::new();
     for n in days {
-        let text = std::fs::read_to_string(d.join(format!("{n}.jsonl"))).unwrap_or_default();
-        out.extend(
-            text.lines()
-                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-                .filter(|v| {
-                    let at = v["at"].as_i64().unwrap_or(0);
-                    at >= from_ms && at <= to_ms
-                }),
-        );
+        let Ok(file) = std::fs::File::open(d.join(format!("{n}.jsonl"))) else {
+            continue;
+        };
+        for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+            if needle.is_some_and(|n| !line.contains(n)) {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            let at = v["at"].as_i64().unwrap_or(0);
+            if at >= from_ms && at <= to_ms {
+                f(v);
+            }
+        }
     }
+}
+
+/// Every line between two times, oldest first. For short spans only.
+#[must_use]
+pub fn read(state: &Path, from_ms: i64, to_ms: i64) -> Vec<Value> {
+    let mut out = Vec::new();
+    scan(state, from_ms, to_ms, None, |v| out.push(v));
     out
+}
+
+/// One sample of a unit, without the JSON around it.
+#[derive(Debug, Clone, Copy)]
+struct UnitSample {
+    at: i64,
+    mem: Option<u64>,
+    cpu_usec: Option<u64>,
+    tasks: Option<u64>,
+    active: bool,
+}
+
+impl UnitSample {
+    fn of(v: &Value) -> Option<Self> {
+        Some(Self {
+            at: v["at"].as_i64()?,
+            mem: v["mem"].as_u64(),
+            cpu_usec: v["cpu_usec"].as_u64(),
+            tasks: v["tasks"].as_u64(),
+            active: v["active"] == true,
+        })
+    }
 }
 
 /// CPU between two samples of a unit, as a percentage of one core.
 /// `None` across a restart, where the counter starts again.
-fn cpu_pct(a: &Value, b: &Value) -> Option<f64> {
-    let (ca, cb) = (a["cpu_usec"].as_u64()?, b["cpu_usec"].as_u64()?);
-    let (ta, tb) = (a["at"].as_i64()?, b["at"].as_i64()?);
+fn cpu_pct(a: &UnitSample, b: &UnitSample) -> Option<f64> {
+    let (ca, cb) = (a.cpu_usec?, b.cpu_usec?);
     #[allow(clippy::cast_precision_loss)]
-    (cb >= ca && tb > ta).then(|| (cb - ca) as f64 / ((tb - ta) as f64 * 1000.0) * 100.0)
+    (cb >= ca && b.at > a.at).then(|| (cb - ca) as f64 / ((b.at - a.at) as f64 * 1000.0) * 100.0)
 }
 
 fn stats(mut values: Vec<f64>) -> Value {
@@ -343,38 +381,54 @@ fn stats(mut values: Vec<f64>) -> Value {
 
 /// A window, for review: every event, and each series thinned to about
 /// `points` samples with CPU worked out from consecutive samples.
+///
+/// Read in one pass. Host and trader samples are thinned as they are
+/// read, at the stride the recording interval implies, so a week costs
+/// about as much memory as an hour; unit samples are kept whole but
+/// compact, because their statistics need every one.
 #[must_use]
 pub fn window(state: &Path, from_ms: i64, to_ms: i64, points: usize) -> Value {
-    let lines = read(state, from_ms, to_ms);
-    let mut units: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let expected = ((to_ms - from_ms).max(0) as u64 / (EVERY.as_millis() as u64).max(1)) as usize;
+    let stride = (expected / points.max(1)).max(1);
+    let mut units: BTreeMap<String, Vec<UnitSample>> = BTreeMap::new();
     let (mut hosts, mut traders, mut events) = (Vec::new(), Vec::new(), Vec::new());
-    for l in &lines {
-        match l["k"].as_str() {
-            Some("unit") => units
-                .entry(l["unit"].as_str().unwrap_or("").to_string())
-                .or_default()
-                .push(l),
-            Some("host") => hosts.push(l),
-            Some("trader") => traders.push(l),
-            Some("event") => events.push(l.clone()),
-            _ => {}
+    let (mut host_n, mut trader_n) = (0usize, 0usize);
+    scan(state, from_ms, to_ms, None, |l| match l["k"].as_str() {
+        Some("unit") => {
+            if let (Some(u), Some(sample)) = (l["unit"].as_str(), UnitSample::of(&l)) {
+                units.entry(u.to_string()).or_default().push(sample);
+            }
         }
-    }
-    let thin = |n: usize| (n / points.max(1)).max(1);
+        Some("host") => {
+            if host_n % stride == 0 {
+                hosts.push(json!({"at": l["at"], "host": l["host"]}));
+            }
+            host_n += 1;
+        }
+        Some("trader") => {
+            if trader_n % stride == 0 {
+                traders.push(json!({"at": l["at"], "trader": l["trader"]}));
+            }
+            trader_n += 1;
+        }
+        Some("event") => events.push(l),
+        _ => {}
+    });
     let unit_views: BTreeMap<String, Value> = units
         .iter()
         .map(|(u, s)| {
             #[allow(clippy::cast_precision_loss)]
-            let mem: Vec<f64> = s.iter().filter_map(|v| v["mem"].as_u64().map(|m| m as f64)).collect();
-            let cpu: Vec<f64> = s.windows(2).filter_map(|w| cpu_pct(w[0], w[1])).collect();
+            let mem: Vec<f64> = s.iter().filter_map(|v| v.mem.map(|m| m as f64)).collect();
+            let cpu: Vec<f64> = s.windows(2).filter_map(|w| cpu_pct(&w[0], &w[1])).collect();
             let curve: Vec<Value> = s
                 .windows(2)
-                .step_by(thin(s.len()))
-                .map(|w| json!({"at": w[1]["at"], "mem": w[1]["mem"], "cpu": cpu_pct(w[0], w[1]), "tasks": w[1]["tasks"], "active": w[1]["active"]}))
+                .step_by((s.len() / points.max(1)).max(1))
+                .map(|w| json!({"at": w[1].at, "mem": w[1].mem, "cpu": cpu_pct(&w[0], &w[1]), "tasks": w[1].tasks, "active": w[1].active}))
                 .collect();
-            let down = s.iter().filter(|v| v["active"] != true).count();
+            let down = s.iter().filter(|v| !v.active).count();
             (u.clone(), json!({
-                "samples": s.len(), "first_ms": s.first().map(|v| v["at"].clone()),
+                "samples": s.len(), "first_ms": s.first().map(|v| v.at),
                 "memory": stats(mem), "cpu_percent": stats(cpu),
                 "samples_down": down, "curve": curve,
             }))
@@ -382,10 +436,7 @@ pub fn window(state: &Path, from_ms: i64, to_ms: i64, points: usize) -> Value {
         .collect();
     json!({
         "from_ms": from_ms, "to_ms": to_ms, "every_s": EVERY.as_secs(),
-        "units": unit_views,
-        "host": hosts.iter().step_by(thin(hosts.len())).map(|v| json!({"at": v["at"], "host": v["host"]})).collect::<Vec<_>>(),
-        "trader": traders.iter().step_by(thin(traders.len())).map(|v| json!({"at": v["at"], "trader": v["trader"]})).collect::<Vec<_>>(),
-        "events": events,
+        "units": unit_views, "host": hosts, "trader": traders, "events": events,
     })
 }
 
@@ -429,31 +480,50 @@ pub fn resources(state: &Path, now_ms: i64, hours: i64, units: &[String]) -> Val
     }).collect::<Vec<_>>())
 }
 
-/// Whether a unit's memory has kept climbing: the last hour's average at
-/// least twice its first hour in the last day, and 32 MiB more, without a
-/// stop in between. A spike does not trip it; a leak does.
+/// Which units' memory has kept climbing: the last hour's average at
+/// least twice the first hour's in the last day, and 32 MiB more, without
+/// a stop in between. A spike does not trip it; a leak does.
+///
+/// One pass over the day for every unit, reading only unit lines. It is
+/// asked every few minutes, not every sample: a leak measured in hours
+/// does not need a verdict every 30 seconds, and a day of samples is not
+/// free to read.
 #[must_use]
-pub fn growing(state: &Path, unit: &str, now_ms: i64) -> Option<String> {
-    let lines = read(state, now_ms - 86_400_000, now_ms);
-    let s: Vec<&Value> = lines
-        .iter()
-        .filter(|v| v["k"] == "unit" && v["unit"] == unit)
-        .collect();
+pub fn growing(state: &Path, units: &[String], now_ms: i64) -> Vec<(String, String)> {
+    let mut samples: BTreeMap<&str, Vec<UnitSample>> =
+        units.iter().map(|u| (u.as_str(), Vec::new())).collect();
+    scan(
+        state,
+        now_ms - 86_400_000,
+        now_ms,
+        Some(r#""k":"unit""#),
+        |v| {
+            if let (Some(u), Some(sample)) = (v["unit"].as_str(), UnitSample::of(&v))
+                && let Some(list) = samples.get_mut(u)
+            {
+                list.push(sample);
+            }
+        },
+    );
+    samples
+        .into_iter()
+        .filter_map(|(unit, s)| grown(unit, &s, now_ms).map(|m| (unit.to_string(), m)))
+        .collect()
+}
+
+fn grown(unit: &str, s: &[UnitSample], now_ms: i64) -> Option<String> {
     // Only since it last started: a restart resets memory.
-    let start = s
-        .iter()
-        .rposition(|v| v["active"] != true)
-        .map_or(0, |i| i + 1);
+    let start = s.iter().rposition(|v| !v.active).map_or(0, |i| i + 1);
     let run = &s[start..];
-    let (first, last) = (run.first()?["at"].as_i64()?, run.last()?["at"].as_i64()?);
+    let (first, last) = (run.first()?.at, run.last()?.at);
     if last - first < 6 * 3_600_000 {
         return None;
     }
     let avg = |from: i64, to: i64| {
         let v: Vec<u64> = run
             .iter()
-            .filter(|x| x["at"].as_i64().is_some_and(|a| a >= from && a < to))
-            .filter_map(|x| x["mem"].as_u64())
+            .filter(|x| x.at >= from && x.at < to)
+            .filter_map(|x| x.mem)
             .collect();
         #[allow(clippy::cast_precision_loss)]
         (!v.is_empty()).then(|| v.iter().sum::<u64>() as f64 / v.len() as f64)
@@ -522,15 +592,17 @@ mod tests {
                 .map(|h| unit_line(base + h * hour, 10 << 20, 0, true))
                 .collect::<Vec<_>>(),
         );
-        assert!(growing(d.path(), "u", base + 8 * hour).is_none());
+        assert!(growing(d.path(), &["u".to_string()], base + 8 * hour).is_empty());
         let d = tempfile::tempdir().expect("dir");
         let leak: Vec<Value> = (0..=8)
             .map(|h| unit_line(base + h * hour, (10 + 10 * h as u64) << 20, 0, true))
             .collect();
         write(d.path(), &leak);
         assert!(
-            growing(d.path(), "u", base + 8 * hour)
+            growing(d.path(), &["u".to_string()], base + 8 * hour)
+                .first()
                 .expect("growth")
+                .1
                 .contains("持续上涨")
         );
         let d = tempfile::tempdir().expect("dir");
@@ -538,8 +610,72 @@ mod tests {
         restarted[7] = unit_line(base + 7 * hour, 0, 0, false);
         write(d.path(), &restarted);
         assert!(
-            growing(d.path(), "u", base + 8 * hour).is_none(),
+            growing(d.path(), &["u".to_string()], base + 8 * hour).is_empty(),
             "a restart starts it again"
+        );
+    }
+
+    /// A week recorded at the real rate and shape, read back the ways the
+    /// console reads it. Run by hand to see the cost:
+    /// `cargo test --release -p oq-agent week_of_samples -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a benchmark, not a check"]
+    fn week_of_samples() {
+        let d = tempfile::tempdir().expect("dir");
+        let base: i64 = 1_790_000_000_000;
+        let units = [
+            "trader.service",
+            "oq-recon.service",
+            "oq-deck.service",
+            "oq-agent.service",
+            "caddy.service",
+        ];
+        let dirp = dir(d.path());
+        std::fs::create_dir_all(&dirp).expect("dir");
+        let mut files: BTreeMap<i64, std::io::BufWriter<std::fs::File>> = BTreeMap::new();
+        let every = 30_000;
+        let n = 7 * 86_400_000 / every;
+        for k in 0..n {
+            let at = base + k * every;
+            let f = files.entry(day(at)).or_insert_with(|| {
+                std::io::BufWriter::new(
+                    std::fs::File::create(dirp.join(format!("{}.jsonl", day(at)))).expect("file"),
+                )
+            });
+            use std::io::Write;
+            let mut line = |v: Value| writeln!(f, "{v}").expect("write");
+            line(
+                json!({"at": at, "k": "host", "host": {"clock_synced": true, "disks": [{"avail": 418_632_335_360_u64, "mount": "/", "size": 501_809_635_328_u64, "used": 57_611_497_472_u64}], "load": [0.03, 0.02, 0.0], "mem_available": 14_926_151_680_u64, "mem_total": 16_542_121_984_u64, "psi_cpu": 0.0, "psi_io": 0.0, "psi_memory": 0.0, "swap_free": 4_292_681_728_u64, "swap_total": 4_294_963_200_u64}}),
+            );
+            for u in units {
+                line(
+                    json!({"active": true, "at": at, "cpu_usec": k * 1000, "k": "unit", "mem": 5_603_328 + (k % 100) * 1000, "peak": 5_873_664, "tasks": 1, "unit": u}),
+                );
+            }
+            line(
+                json!({"at": at, "k": "trader", "trader": {"counters": {"disconnects": 0, "fills": 0, "foreign_orders": 0, "sent": 0, "unbookable_reports": 0}, "feed": {"depth": k, "out_of_order": k, "quiet": 1, "resyncs": 0, "snapshots": 3, "trades": k, "unreadable": 0}, "halt_reason": null, "halted": false, "journal_lost": null, "last_tick": {"exch_ns": at * 1_000_000, "last": 8_443_710, "local_ns": at * 1_000_000}, "pid": 1553, "positions": [{"amount": "0.002", "side": "LONG"}, {"amount": "-0.008", "side": "SHORT"}], "reconcile": {"agreed": true, "at_ns": at * 1_000_000, "mismatches": 0, "unread": 0}, "resting": 14, "ticks": k * 60, "pnl": {"equity": "5006.5", "fees": "0", "funding": "0", "net": "1.4", "realized": "1.4", "since_ms": base}}}),
+            );
+        }
+        drop(files);
+        let bytes: u64 = std::fs::read_dir(&dirp)
+            .expect("dir")
+            .filter_map(Result::ok)
+            .map(|e| e.metadata().map_or(0, |m| m.len()))
+            .sum();
+        let end = base + 7 * 86_400_000;
+        let t = std::time::Instant::now();
+        let w = window(d.path(), base, end, 400);
+        let week = t.elapsed();
+        let t = std::time::Instant::now();
+        let g = growing(d.path(), &units.map(String::from), end);
+        let grow = t.elapsed();
+        println!(
+            "week: {} MiB on disk; window(7d) {:?}, {} host points; growing(24h, 5 units) {:?}, {} found",
+            bytes >> 20,
+            week,
+            w["host"].as_array().map_or(0, Vec::len),
+            grow,
+            g.len()
         );
     }
 }
