@@ -4,9 +4,56 @@
    A colour written inline in a component is a colour that will not
    follow the theme, so the lint rule and review both look for them.
 
-   Colour means state and nothing else: good, warn, bad, and accent for
-   what can be acted on or is selected. Buy and sell stay neutral. */
+   Colour means state: good, warn, bad, and accent for what can be acted
+   on or is selected. Buy and sell stay neutral. The `hue-*` colours are
+   for icons and chart series only — decoration that tells things apart,
+   never a verdict.
+
+   Two themes share these names. The values below are the light one,
+   modelled on Google's: a pale blue-grey ground, white cards, Google
+   blue for what is selected. `[data-theme="dark"]` swaps them. */
 @theme {
+  --color-ground: #f6f8fc;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f1f3f4;
+  --color-surface-hover: #eef2f8;
+  --color-line: #e3e7ee;
+  --color-line-strong: #d3d9e2;
+  --color-ink: #1f1f1f;
+  --color-ink-muted: #5f6368;
+  --color-ink-faint: #80868b;
+  --color-accent: #1a73e8;
+  --color-accent-soft: #e8f0fe;
+  --color-good: #188038;
+  --color-warn: #e37400;
+  --color-bad: #d93025;
+
+  --color-hue-blue: #1a73e8;
+  --color-hue-green: #1e8e3e;
+  --color-hue-yellow: #f9ab00;
+  --color-hue-red: #d93025;
+  --color-hue-purple: #9334e6;
+  --color-hue-teal: #12a4af;
+  --color-hue-pink: #e52592;
+  --color-hue-orange: #fa7b17;
+
+  --font-sans: "Google Sans", "Google Sans Text", Roboto, "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Roboto Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Terminal panes stay dark in both themes: output reads as output. */
+  --color-term: #0f1419;
+  --color-term-ink: #d7dde5;
+
+  --radius-card: 16px;
+  --shadow-card: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.06);
+}
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --color-ground: #0a0c10;
   --color-surface: #12151b;
   --color-surface-raised: #191d25;
@@ -16,19 +63,22 @@
   --color-ink: #e8ebf0;
   --color-ink-muted: #9aa3b2;
   --color-ink-faint: #6b7383;
-  --color-accent: #5b9bff;
+  --color-accent: #6ea8ff;
+  --color-accent-soft: #1b2a44;
   --color-good: #34c47c;
   --color-warn: #e8a83e;
   --color-bad: #ef5a5f;
 
-  --font-sans: "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --color-hue-blue: #6ea8ff;
+  --color-hue-green: #34c47c;
+  --color-hue-yellow: #f5c451;
+  --color-hue-red: #ef5a5f;
+  --color-hue-purple: #b38bff;
+  --color-hue-teal: #3cc8d0;
+  --color-hue-pink: #f472b6;
+  --color-hue-orange: #fb9d4b;
 
-  --radius-card: 10px;
-}
-
-:root {
-  color-scheme: dark;
+  --shadow-card: none;
 }
 
 html,
@@ -51,5 +101,19 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+@keyframes oq-flash {
+  from {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* A value that just changed, briefly highlighted. */
+.oq-flash {
+  animation: oq-flash 1.2s ease-out;
 }
