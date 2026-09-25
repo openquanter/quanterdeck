@@ -40,7 +40,9 @@ export function OpsOrders() {
             {orders.data?.orders.map((o) => (
               <tr key={o.client_id} className="border-t border-line">
                 <td className="py-1.5 font-mono text-xs">{o.client_id}</td>
-                <td className={o.side === "BUY" ? "text-good" : "text-bad"}>{o.side ?? "—"}</td>
+                {/* Neutral: green and red mean a conclusion held or failed
+                    (UI-BRIEF §8), and a sell is neither. */}
+                <td className="text-ink">{o.side === "BUY" ? "买" : o.side === "SELL" ? "卖" : "—"}</td>
                 <td className="font-mono">{scaled(o.price_ticks, ps)}</td>
                 <td className="font-mono">{scaled(o.qty_lots, qs)}</td>
                 <td className="text-xs text-ink-muted">{o.closing ? "平仓（停机时保留）" : "开仓"}</td>
@@ -128,7 +130,11 @@ export function OpsLogs() {
           {tail.data?.truncated && <span className="text-ink-muted">（只读取了文件最后 4 MiB）{"\n"}</span>}
           {/* Rendered as text, never as markup: these lines come from a
               venue and a strategy, and are not ours to trust. */}
-          {tail.data?.lines.join("\n")}
+          {tail.data?.lines.map((line, i) => (
+            <div key={i} className={/HALT|MISMATCH|FAIL|REFUSED|UNAVAILABLE/.test(line) ? "text-warn" : undefined}>
+              {highlight(line, grep)}
+            </div>
+          ))}
         </pre>
       )}
     </div>
@@ -280,82 +286,11 @@ export function OpsAudit() {
   );
 }
 
-/**
- * What the newest journal says the process holds, against what the venue
- * said at its last reading — no pasting. The verdict is one of three:
- * "cannot tell" is not agreement, and is not shown as such.
- */
-export function Live() {
-  const q = useQuery({ queryKey: ["live", "latest"], queryFn: api.liveLatest, refetchInterval: 30_000 });
-  const d = q.data;
-  const verdict = d?.reconciliation.verdict;
-  return (
-    <div className="space-y-4">
-      <h1 className="text-lg text-ink">实盘对账</h1>
-      {q.isError && <Unknown what="对账结果" error={q.error} />}
-      {d && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Tile
-              label="结论"
-              value={verdict === "agree" ? "一致" : verdict === "disagree" ? "不一致" : "无法判断"}
-              tone={verdict === "agree" ? "good" : "bad"}
-              sub={
-                verdict === "cannot_tell"
-                  ? "没有差异，但日志不完整（有读不出的帧，或没有接管持仓的记录），不能算一致"
-                  : undefined
-              }
-            />
-            <Tile label="交易日志" value={d.reconciliation.journal} />
-            <Tile
-              label="交易所读数"
-              value={`${Math.round(d.record_age_ms / 1000)} 秒前`}
-              tone={d.record_age_ms > 5 * 60_000 ? "bad" : undefined}
-              sub={d.record_age_ms > 5 * 60_000 ? "读数过旧：oq-recon 可能没在更新" : undefined}
-            />
-          </div>
-          {d.reconciliation.differences.length > 0 && (
-            <ul className="space-y-1 rounded border border-bad/50 bg-bad/10 p-3 text-sm">
-              {d.reconciliation.differences.map((x, i) => (
-                <li key={i}>{x}</li>
-              ))}
-            </ul>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Side title="进程认为（日志重建）" r={d.reconciliation.believed} />
-            <Side title="交易所实际" r={d.reconciliation.venue} />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Side({
-  title,
-  r,
-}: {
-  title: string;
-  r: { legs: [string, number, number][]; orders: string[] };
-}) {
-  return (
-    <div className="rounded border border-line bg-surface p-3 text-sm">
-      <div className="mb-2 text-xs text-ink-muted">{title}</div>
-      {r.legs.length === 0 ? (
-        <div>无持仓</div>
-      ) : (
-        r.legs.map(([side, qty, px]) => (
-          <div key={side} className="font-mono">
-            {side} {qty} @ {px}
-          </div>
-        ))
-      )}
-      <div className="mt-2 text-xs text-ink-muted">挂单 {r.orders.length}</div>
-      <ul className="mt-1 max-h-48 overflow-auto font-mono text-xs text-ink-muted">
-        {r.orders.map((o) => (
-          <li key={o}>{o}</li>
-        ))}
-      </ul>
-    </div>
+/** The filter's matches marked in the line, as text. */
+function highlight(line: string, needle: string) {
+  if (!needle) return line;
+  const parts = line.split(needle);
+  return parts.flatMap((p, i) =>
+    i === 0 ? [p] : [<mark key={i} className="bg-accent/30 text-ink">{needle}</mark>, p],
   );
 }

@@ -46,6 +46,9 @@ pub struct BeliefView {
     /// journal with undecodable frames is a belief with holes, and the
     /// number of holes is the only warning there is.
     pub undecodable: u64,
+    /// Each leg as `(name, signed lots, entry ticks)`. What a hedged
+    /// account must be shown as, instead of `position_lots`.
+    pub legs: Vec<(String, i64, i64)>,
 }
 
 impl From<&Belief> for BeliefView {
@@ -60,6 +63,7 @@ impl From<&Belief> for BeliefView {
             adopted: belief.adopted,
             hedged: belief.hedged,
             undecodable: belief.undecodable,
+            legs: belief.legs.clone(),
         }
     }
 }
@@ -250,5 +254,205 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
         differences,
         undecodable: belief.undecodable,
         hedged: belief.hedged,
+    })
+}
+
+/// One journal record, as the interface shows it.
+///
+/// `kind` names the variant; `at` is the process's own timestamp, in
+/// nanoseconds, where the record has one. Every other field is carried
+/// as the record holds it — prices and quantities in integer ticks and
+/// lots, the venue's own strings where the venue sent strings.
+#[derive(Debug, Clone, Serialize)]
+pub struct JournalRecord {
+    pub seq: u64,
+    pub kind: &'static str,
+    pub at: Option<i64>,
+    pub fields: serde_json::Value,
+}
+
+/// A page of records, newest first.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordsPage {
+    pub journal: String,
+    /// Records of the kinds asked for in the whole journal.
+    pub total: usize,
+    pub records: Vec<JournalRecord>,
+    /// Pass as `before` for the next, older page; `None` at the start.
+    pub next_before: Option<u64>,
+    pub price_scale: u8,
+    pub qty_scale: u8,
+    /// Frames that did not decode, anywhere in the journal. A replay with
+    /// holes is shown as one.
+    pub undecodable: u64,
+}
+
+fn view(seq: u64, record: oq_live::record::Record) -> JournalRecord {
+    use oq_live::record::Record as R;
+    use serde_json::json;
+    let side = |s: oq_types::Side| match s {
+        oq_types::Side::Buy => "buy",
+        oq_types::Side::Sell => "sell",
+    };
+    let (kind, at, fields) = match record {
+        R::SessionStart {
+            prefix,
+            symbol,
+            price_scale,
+            qty_scale,
+        } => (
+            "session_start",
+            None,
+            json!({"prefix": prefix, "symbol": symbol, "price_scale": price_scale, "qty_scale": qty_scale}),
+        ),
+        R::Tick {
+            at,
+            seen,
+            last,
+            bid,
+            ask,
+            volume,
+        } => (
+            "tick",
+            Some(at.0),
+            json!({"seen": seen.0, "last": last.0, "bid": bid.0, "ask": ask.0, "volume": volume.0}),
+        ),
+        R::Submitted {
+            at,
+            client_id,
+            side: s,
+            limit_price,
+            qty,
+            reduce_only,
+            leg,
+        } => (
+            "submitted",
+            Some(at.0),
+            json!({"client_id": client_id, "side": side(s), "limit_price": limit_price.0,
+                   "qty": qty.0, "reduce_only": reduce_only, "leg": leg}),
+        ),
+        R::Outcome {
+            at,
+            client_id,
+            tag,
+            detail,
+        } => (
+            "outcome",
+            Some(at.0),
+            json!({"client_id": client_id, "tag": format!("{tag:?}").to_lowercase(), "detail": detail}),
+        ),
+        R::Cancelled { at, client_id } => {
+            ("cancelled", Some(at.0), json!({"client_id": client_id}))
+        }
+        R::Fill {
+            at,
+            client_id,
+            trade_id,
+            qty,
+            price,
+            order,
+            side,
+        } => (
+            "fill",
+            Some(at.0),
+            json!({"client_id": client_id, "trade_id": trade_id, "qty": qty, "price": price,
+                   "order": order, "side": side}),
+        ),
+        R::Refused { at, breach } => ("refused", Some(at.0), json!({"breach": breach})),
+        R::Reconciled { at, legs } => (
+            "reconciled",
+            Some(at.0),
+            json!({"legs": legs.into_iter().map(|(sym, side, lots, entry)|
+                json!({"symbol": sym, "side": side, "lots": lots, "entry": entry})).collect::<Vec<_>>()}),
+        ),
+        R::Waiting { at, entries } => (
+            "waiting",
+            Some(at.0),
+            json!(
+                entries
+                    .into_iter()
+                    .collect::<std::collections::BTreeMap<_, _>>()
+            ),
+        ),
+        R::Operator {
+            at,
+            command,
+            reason,
+            origin,
+            outcome,
+        } => (
+            "operator",
+            Some(at.0),
+            json!({"command": command, "reason": reason, "origin": origin, "outcome": outcome}),
+        ),
+    };
+    JournalRecord {
+        seq,
+        kind,
+        at,
+        fields,
+    }
+}
+
+/// Most records one page returns.
+pub const MAX_PAGE: usize = 1000;
+
+/// A journal's records of the given kinds (all, when `kinds` is empty),
+/// newest first, `limit` at a time, older than `before` when given.
+///
+/// # Errors
+/// The journal is missing or will not read.
+pub fn records(
+    dir: &Path,
+    id: &str,
+    kinds: &[String],
+    limit: usize,
+    before: Option<u64>,
+) -> Result<RecordsPage, String> {
+    let path = resolve(dir, id).ok_or_else(|| format!("no journal named {id}"))?;
+    let replay = oq_journal::Reader::open(&path)
+        .and_then(|r| r.replay())
+        .map_err(|e| e.to_string())?;
+    let mut undecodable = 0;
+    let (mut price_scale, mut qty_scale) = (0, 0);
+    let mut all = Vec::new();
+    for frame in replay.since(0) {
+        match oq_live::record::Record::decode(frame.kind, &frame.payload) {
+            Some(record) => {
+                if let oq_live::record::Record::SessionStart {
+                    price_scale: p,
+                    qty_scale: q,
+                    ..
+                } = &record
+                {
+                    (price_scale, qty_scale) = (*p, *q);
+                }
+                let v = view(frame.seq, record);
+                if kinds.is_empty() || kinds.iter().any(|k| k == v.kind) {
+                    all.push(v);
+                }
+            }
+            None => undecodable += 1,
+        }
+    }
+    let total = all.len();
+    let limit = limit.clamp(1, MAX_PAGE);
+    let records: Vec<JournalRecord> = all
+        .into_iter()
+        .rev()
+        .filter(|r| before.is_none_or(|b| r.seq < b))
+        .take(limit)
+        .collect();
+    let next_before = (records.len() == limit)
+        .then(|| records.last().map(|r| r.seq))
+        .flatten();
+    Ok(RecordsPage {
+        journal: id.to_string(),
+        total,
+        records,
+        next_before,
+        price_scale,
+        qty_scale,
+        undecodable,
     })
 }

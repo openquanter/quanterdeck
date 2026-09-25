@@ -3,13 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   api,
-  ApiError,
   type HostHealth,
   type OpsAction,
   type TraderStatus,
   type UnitState,
 } from "@/api/client";
 import { ActionDialog } from "@/components/ActionDialog";
+import { ErrorState, Skeleton, Term } from "@/components/States";
 
 const REFRESH = 10_000;
 
@@ -112,7 +112,7 @@ export function Ops() {
         ) : status.data ? (
           <TraderPanel s={status.data} />
         ) : (
-          <p className="text-sm text-ink-muted">读取中…</p>
+          <Skeleton tiles={8} rows={0} />
         )}
       </section>
 
@@ -145,7 +145,7 @@ function TraderPanel({ s }: { s: TraderStatus }) {
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-4">
         <Tile
-          label="状态"
+          label={<Term name="halt">状态</Term>}
           value={s.halted ? "已停机" : "交易中"}
           tone={s.halted ? "bad" : "good"}
           sub={s.halted ? (s.halt_reason ?? undefined) : `${s.strategy} · ${s.symbol} · ${s.deployment}`}
@@ -176,7 +176,7 @@ function TraderPanel({ s }: { s: TraderStatus }) {
           sub={`深度 ${s.feed.depth} · 成交 ${s.feed.trades} · 重同步 ${s.feed.resyncs}`}
         />
         <Tile
-          label="日志"
+          label={<Term name="journal">日志</Term>}
           value={s.journal_lost ? "无法写入" : "正常"}
           tone={s.journal_lost ? "bad" : "good"}
           sub={s.journal_lost ?? undefined}
@@ -296,7 +296,7 @@ export function Tile({
   sub,
   tone,
 }: {
-  label: string;
+  label: React.ReactNode;
   value: string;
   sub?: string;
   tone?: "good" | "bad";
@@ -312,12 +312,7 @@ export function Tile({
 }
 
 export function Unknown({ what, error }: { what: string; error: unknown }) {
-  const detail = error instanceof ApiError ? error.detail : String(error);
-  return (
-    <p className="rounded border border-warn/50 bg-warn/10 px-3 py-2 text-sm text-ink">
-      无法获取{what}：{detail}
-    </p>
-  );
+  return <ErrorState error={error} what={what} />;
 }
 
 export function Button({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {

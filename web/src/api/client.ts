@@ -311,6 +311,99 @@ export interface LiveReconciliation {
   };
 }
 
+// -- attribution ----------------------------------------------------------
+
+export interface AttributionComponent {
+  name: string;
+  observed: boolean;
+  amount: number | null;
+  unavailable: string | null;
+}
+
+export interface AttributionReport {
+  live_run?: string;
+  model_run?: string;
+  live_pnl: number;
+  model_pnl: number;
+  gap: number;
+  components: AttributionComponent[];
+  residual: number | null;
+  residual_share: number | null;
+  method: string;
+  missing_inputs: string[];
+  matched_fills: number;
+  unmatched_fills: number;
+}
+
+/** The trader's shadow report, whose amounts arrive as decimal strings. */
+function fromShadow(raw: Record<string, unknown>): AttributionReport {
+  const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const components = (raw.components as Record<string, unknown>[]).map((c) => ({
+    name: String(c.name),
+    observed: Boolean(c.observed),
+    amount: n(c.amount),
+    unavailable: (c.unavailable as string | null) ?? null,
+  }));
+  return {
+    live_pnl: Number(raw.live_pnl),
+    model_pnl: Number(raw.model_pnl),
+    gap: Number(raw.gap),
+    components,
+    residual: n(raw.residual),
+    residual_share: n(raw.residual_share),
+    method: "shadow",
+    missing_inputs: components
+      .filter((c) => c.amount === null && c.unavailable)
+      .map((c) => `${c.name}：${c.unavailable}`),
+    matched_fills: Number(raw.matched_fills ?? 0),
+    unmatched_fills: Number(raw.unmatched_fills ?? 0),
+  };
+}
+
+export interface RecordsPage {
+  journal: string;
+  total: number;
+  records: { seq: number; kind: string; at: number | null; fields: Record<string, unknown> }[];
+  next_before: number | null;
+  price_scale: number;
+  qty_scale: number;
+  undecodable: number;
+}
+
+export interface JournalEntry {
+  state: "read" | "unreadable";
+  id: string;
+  path: string;
+  error?: string;
+  belief?: {
+    symbol: string | null;
+    position_lots: number;
+    entry_ticks: number;
+    resting: string[];
+    price_scale: number;
+    qty_scale: number;
+    adopted: boolean;
+    hedged: boolean;
+    undecodable: number;
+    legs: [string, number, number][];
+  };
+}
+
+export interface RuntimeSettings {
+  listen: string;
+  behind_tls: boolean;
+  extra_hosts: string[];
+  totp: boolean;
+  allow_writes: boolean;
+  runs_dir: string | null;
+  journals_dir: string | null;
+  ticks_dir: string | null;
+  agent_socket: string | null;
+  venue_record: string | null;
+  session: { idle_minutes: number; absolute_hours: number };
+  version: string;
+}
+
 export const api = {
   capabilities: () => request<Capabilities>("/runtime/capabilities"),
   runs: () => request<Listing>("/runs"),
@@ -346,4 +439,37 @@ export const api = {
   act: (action: OpsAction, reason: string, stepUp: string) =>
     post<unknown>("/ops/action", { ...action, reason, step_up: stepUp || null }),
   liveLatest: () => request<LiveReconciliation>("/live/latest"),
+  opsAttribution: async () => fromShadow(await request<Record<string, unknown>>("/ops/attribution")),
+  attribution: (q: {
+    live: string;
+    model: string;
+    price_scale: number;
+    qty_scale: number;
+    venue_fees: string;
+    model_fees: string;
+    venue_funding: string;
+    model_funding: string;
+  }) => {
+    const p = new URLSearchParams({
+      live: q.live,
+      model: q.model,
+      price_scale: String(q.price_scale),
+      qty_scale: String(q.qty_scale),
+    });
+    for (const k of ["venue_fees", "model_fees", "venue_funding", "model_funding"] as const) {
+      if (q[k] !== "") p.set(k, q[k]);
+    }
+    return request<AttributionReport>(`/attribution?${p}`);
+  },
+  journals: () => request<JournalEntry[]>("/journals"),
+  records: (id: string, kinds: string[], limit: number, before?: number | null) =>
+    request<RecordsPage>(
+      `/journals/${encodeURIComponent(id)}/records?kinds=${kinds.join(",")}&limit=${limit}` +
+        (before ? `&before=${before}` : ""),
+    ),
+  reconcile: (id: string, venueRecord: string) =>
+    post<LiveReconciliation["reconciliation"]>(`/journals/${encodeURIComponent(id)}/reconcile`, {
+      venue_record: venueRecord,
+    }),
+  settings: () => request<RuntimeSettings>("/runtime/settings"),
 };

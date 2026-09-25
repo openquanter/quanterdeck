@@ -8,7 +8,11 @@ import { Setup } from "@/features/auth/Setup";
 
 import { Compare } from "./Compare";
 import { Ops } from "./Ops";
-import { Live, OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
+import { OpsAudit, OpsDeploy, OpsLogs, OpsOrders } from "./OpsPages";
+import { Live } from "./Live";
+import { Attribution } from "./Attribution";
+import { Journal } from "./Journal";
+import { Settings } from "./Settings";
 import { Overview } from "./Overview";
 import { RunDetail } from "./RunDetail";
 import { Runs } from "./Runs";
@@ -35,23 +39,14 @@ export const router = createBrowserRouter([
       { path: "runs", element: <Runs /> },
       { path: "runs/compare", element: <Compare /> },
       { path: "runs/:id", element: <RunDetail /> },
-      {
-        path: "attribution",
-        element: (
-          <Placeholder
-            title="归因"
-            milestone="M2"
-            note="接口已可用（/api/v1/attribution），界面在 M2。实盘减模型的差额分解，以及不可分解的残差；残差在分解不完整时是「未知」而不是零。"
-          />
-        ),
-      },
+      { path: "attribution", element: <Attribution /> },
       { path: "live", element: <Live /> },
       { path: "ops", element: <Ops /> },
       { path: "ops/orders", element: <OpsOrders /> },
       { path: "ops/logs", element: <OpsLogs /> },
       { path: "ops/deploy", element: <OpsDeploy /> },
       { path: "ops/audit", element: <OpsAudit /> },
-      { path: "journal", element: <Placeholder title="Journal 回放" milestone="M1" /> },
+      { path: "journal", element: <Journal /> },
       {
         path: "sweeps",
         element: (
@@ -65,7 +60,7 @@ export const router = createBrowserRouter([
         ),
       },
       { path: "strategies", element: <Placeholder title="策略" milestone="M4" /> },
-      { path: "settings", element: <Placeholder title="设置" milestone="M1" /> },
+      { path: "settings", element: <Settings /> },
     ],
   },
 ]);
