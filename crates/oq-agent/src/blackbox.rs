@@ -179,6 +179,15 @@ impl Recorder {
         }
         let host_now = host(&self.disks);
         let mut lines = vec![json!({"at": now_ms, "k": "host", "host": host_now})];
+        if self.units.is_empty() && self.control_ok.is_none() {
+            // The first look since the agent started: whatever happened
+            // between the last sample and this one was not recorded, and
+            // the review says so rather than drawing a line across it.
+            lines.push(
+                json!({"at": now_ms, "k": "event", "what": "recording_started",
+                "version": env!("CARGO_PKG_VERSION")}),
+            );
+        }
         for unit in units {
             let cg = cgroup(unit);
             let active = cg.is_some();

@@ -23,6 +23,7 @@ const EVENT_NAMES: Record<string, string> = {
   control_back: "控制口恢复",
   alert_raised: "告警触发",
   alert_cleared: "告警恢复",
+  recording_started: "主机代理启动，开始记录（此前的空白没有记录）",
 };
 
 const fmtTime = (ms: number) => new Date(ms).toLocaleString("zh-CN", { hour12: false });
@@ -266,9 +267,16 @@ function Chart({
           <line key={k} x1={x(t)} x2={x(t)} y1={0} y2={H} stroke="var(--color-warn)" strokeWidth={0.5} opacity={0.6} />
         ))}
         {series.map((s, i) => {
+          // Break the line across a stretch nothing was recorded in, so a
+          // gap reads as a gap and not as a steady value.
+          const steps = s.points.slice(1).map((p, k) => p[0] - s.points[k][0]).sort((a, b) => a - b);
+          const gap = 3 * (steps[Math.floor(steps.length / 2)] ?? Infinity);
           let d = "";
           let pen = false;
+          let prev = -Infinity;
           for (const [t, v] of s.points) {
+            if (t - prev > gap) pen = false;
+            prev = t;
             if (v === null) {
               pen = false;
               continue;
