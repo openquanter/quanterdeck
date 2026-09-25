@@ -17,6 +17,7 @@ const SECTIONS: { to: string; label: string; capability: CapabilityName | null }
   { to: "/live", label: "实盘对账", capability: "live" },
   { to: "/attribution", label: "归因", capability: "attribution" },
   { to: "/journal", label: "Journal 回放", capability: "live" },
+  { to: "/blackbox", label: "黑匣子复盘", capability: "ops" },
   { to: "/ops/logs", label: "日志", capability: "ops" },
   { to: "/ops/deploy", label: "部署", capability: "ops" },
   { to: "/config", label: "配置", capability: "ops" },

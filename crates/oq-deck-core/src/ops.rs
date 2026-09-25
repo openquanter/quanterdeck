@@ -84,6 +84,27 @@ pub enum Op {
     AlertSilence { key: String, minutes: i64 },
     /// Which account each process is using, by key fingerprint.
     Accounts,
+    /// Each unit's memory and CPU over the last `hours`, from the agent's
+    /// own samples.
+    Resources { hours: i64 },
+    /// The black box between two times: every event, and each series
+    /// thinned to about `points`.
+    Blackbox {
+        from_ms: i64,
+        to_ms: i64,
+        points: usize,
+    },
+    /// What everything looked like at one moment.
+    BlackboxAt { at_ms: i64 },
+    /// A unit's output from the systemd journal, with its timestamps.
+    JournalLog {
+        unit: String,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+        lines: usize,
+        #[serde(default)]
+        grep: Option<String>,
+    },
     /// The strategy config files.
     ConfigList,
     /// One config file, or one of its backups.
@@ -148,6 +169,10 @@ impl Op {
             | Self::Releases
             | Self::Alerts
             | Self::Accounts
+            | Self::Resources { .. }
+            | Self::Blackbox { .. }
+            | Self::BlackboxAt { .. }
+            | Self::JournalLog { .. }
             | Self::ConfigList
             | Self::ConfigGet { .. }
             | Self::Strategies => Risk::Read,

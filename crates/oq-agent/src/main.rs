@@ -13,6 +13,7 @@
 
 mod alerts;
 mod audit;
+mod blackbox;
 mod config;
 mod configs;
 mod control;
@@ -251,7 +252,41 @@ fn handle(state: &State, line: &str) -> AgentResponse {
             .lock()
             .map(|p| deploy::list(cfg, &p))
             .map_err(|_| "deploy state poisoned".to_string()),
-        Op::Accounts => Ok(accounts(&cfg.log_dir)),
+        Op::Accounts => Ok(accounts(&cfg.log_dir, &cfg.manageable)),
+        Op::Resources { hours } => Ok(blackbox::resources(
+            &cfg.state_dir,
+            now,
+            *hours.clamp(&1, &(blackbox::KEEP_DAYS * 24)),
+            &cfg.units,
+        )),
+        Op::Blackbox {
+            from_ms,
+            to_ms,
+            points,
+        } => {
+            // A week at a time at most: a review asks about a moment, and a
+            // request for months would read every file there is.
+            let from = (*from_ms).max(to_ms - 7 * 86_400_000);
+            Ok(blackbox::window(
+                &cfg.state_dir,
+                from,
+                *to_ms,
+                (*points).clamp(10, 2000),
+            ))
+        }
+        Op::BlackboxAt { at_ms } => Ok(blackbox::at(&cfg.state_dir, *at_ms)),
+        Op::JournalLog {
+            unit,
+            since_ms,
+            until_ms,
+            lines,
+            grep,
+        } => {
+            if !cfg.units.contains(unit) {
+                return AgentResponse::refused(format!("{unit} is not a unit this agent watches"));
+            }
+            system::journal(unit, *since_ms, *until_ms, *lines, grep.as_deref())
+        }
         Op::ConfigList => Ok(configs::list(&cfg.config_dir)),
         Op::ConfigGet { name, backup } => configs::get(&cfg.config_dir, name, backup.as_deref()),
         Op::Strategies => {
@@ -407,13 +442,31 @@ fn record(state: &State, actor: &str, op: &str, reason: &str, result: &str) -> R
 }
 
 /// Which venue account each process uses, from the fingerprint it writes
-/// as the first line of every log. Two processes on different accounts —
-/// a watcher reading a key that is not the trader's — is the failure this
-/// exists to show.
-fn accounts(log_dir: &std::path::Path) -> serde_json::Value {
-    let files = system::log_files(log_dir);
+/// at every start — from the systemd journal, and from the log files of
+/// the runs before output went there. Two processes on different accounts
+/// — a watcher reading a key that is not the trader's — is the failure
+/// this exists to show.
+fn accounts(log_dir: &std::path::Path, units: &[String]) -> serde_json::Value {
     let mut latest: std::collections::BTreeMap<String, serde_json::Value> =
         std::collections::BTreeMap::new();
+    for unit in units {
+        let found = system::journal(unit, None, None, 1, Some("account key"))
+            .ok()
+            .and_then(|v| v["lines"].as_array().and_then(|l| l.last().cloned()))
+            .and_then(|l| l.as_str().map(str::to_string));
+        if let Some(line) = found {
+            let fingerprint = line
+                .split("account key")
+                .nth(1)
+                .and_then(|rest| rest.split_whitespace().next())
+                .map(str::to_string);
+            latest.insert(
+                unit.trim_end_matches(".service").to_string(),
+                json!({"log": format!("journal: {unit}"), "fingerprint": fingerprint, "line": line}),
+            );
+        }
+    }
+    let files = system::log_files(log_dir);
     for f in files.as_array().cloned().unwrap_or_default() {
         let name = f["name"].as_str().unwrap_or_default().to_string();
         let Some(process) = name
@@ -427,7 +480,6 @@ fn accounts(log_dir: &std::path::Path) -> serde_json::Value {
             continue;
         }
         let line = system::first_line(log_dir, &name).unwrap_or_default();
-        let line = line.as_str();
         let fingerprint = line.strip_prefix("account key").map(|rest| {
             rest.split_whitespace()
                 .next()

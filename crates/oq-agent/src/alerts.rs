@@ -119,14 +119,27 @@ pub fn assess(
 /// Run the watch forever on this thread.
 pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::Sender<Message>) {
     let mut last_unreadable: Option<u64> = None;
+    let mut recorder = crate::blackbox::Recorder::new(&cfg.state_dir);
     loop {
+        // Whether each unit runs, from its cgroup: no process started.
         let units: Vec<(String, bool)> = cfg
             .manageable
             .iter()
-            .map(|u| (u.clone(), system::is_active(u)))
+            .map(|u| (u.clone(), crate::blackbox::Recorder::running(u)))
             .collect();
         let status = crate::control::ask(&cfg.control_dir, "status", "oq-agent watch", "");
-        let host = system::host_health();
+        // The black box takes its sample from this same look: the trader
+        // is asked once, and the host read once.
+        let host = recorder
+            .tick(
+                system::now_ms(),
+                &cfg.units,
+                status.as_ref().map_err(String::as_str),
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("oq-agent: black box not written: {e}");
+                Value::Null
+            });
         let on_purpose = raised
             .lock()
             .map(|r| r.trader_stopped_on_purpose)
@@ -139,6 +152,12 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             on_purpose,
             last_unreadable,
         );
+        let mut found = found;
+        for unit in &cfg.manageable {
+            if let Some(msg) = crate::blackbox::growing(&cfg.state_dir, unit, system::now_ms()) {
+                found.insert(format!("mem:{unit}"), msg);
+            }
+        }
         if let Ok(s) = &status {
             last_unreadable = s["feed"]["unreadable"].as_u64();
         }
@@ -154,6 +173,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             for key in cleared {
                 if let Some((_, msg)) = r.active.remove(&key) {
                     r.note(now, &key, &msg, false);
+                    recorder.event(now, "alert_cleared", &key, &msg);
                     if !r.quiet(&key, now) {
                         let _ = notify.send(Message {
                             title: "已恢复".into(),
@@ -166,6 +186,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             for (key, msg) in found {
                 if !r.active.contains_key(&key) {
                     r.note(now, &key, &msg, true);
+                    recorder.event(now, "alert_raised", &key, &msg);
                     if !r.quiet(&key, now) {
                         let _ = notify.send(Message {
                             title: "告警".into(),
