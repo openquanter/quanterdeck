@@ -59,6 +59,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: scripts/check-incoming.sh
+      - run: scripts/check-i18n.py
       - run: npm ci
         working-directory: web
       - run: npm run build

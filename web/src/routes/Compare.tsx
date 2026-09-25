@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Code2, RefreshCcw, TriangleAlert, 
 
 import { api, type Comparison, type Verdict } from "@/api/client";
 import { ErrorState, Skeleton } from "@/components/States";
+import { tr } from "@/i18n";
 import { Badge, Card, KV, PageHeader, cx } from "@/ui/kit";
 
 // Loaded when a comparison is shown: the chart library is most of the
@@ -45,22 +46,25 @@ export function Compare() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="对比"
-        description="同样的数据和配置下，两次运行的成交是否一致；以及成交之后价格往哪走。"
+        title={tr("对比", "Compare")}
+        description={tr(
+          "同样的数据和配置下，两次运行的成交是否一致；以及成交之后价格往哪走。",
+          "Whether two runs on the same data and config produce the same fills, and where the price went after each fill.",
+        )}
         actions={
           <Link to="/runs" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink">
             <ArrowLeft className="h-4 w-4" />
-            回测记录
+            {tr("回测记录", "Backtest runs")}
           </Link>
         }
       />
 
       <Card bodyClassName="flex flex-wrap items-end gap-4 p-4">
-        <Picker label="基准" value={baseline} onChange={(v) => set("baseline", v)} options={readable} />
+        <Picker label={tr("基准", "Baseline")} value={baseline} onChange={(v) => set("baseline", v)} options={readable} />
         <ArrowRight className="mb-2 h-4 w-4 text-ink-faint" />
-        <Picker label="待测" value={candidate} onChange={(v) => set("candidate", v)} options={readable} />
+        <Picker label={tr("待测", "Candidate")} value={candidate} onChange={(v) => set("candidate", v)} options={readable} />
         <label className="text-xs text-ink-muted">
-          <span className="mb-1.5 block">盈亏相对误差容忍</span>
+          <span className="mb-1.5 block">{tr("盈亏相对误差容忍", "P&L relative error tolerance")}</span>
           <input
             className={cx(SELECT, "w-28 tabular-nums")}
             key={tolText}
@@ -73,14 +77,19 @@ export function Compare() {
             }}
           />
         </label>
-        {isFetching && <span className="mb-2 text-xs text-ink-faint">比对中…</span>}
+        {isFetching && <span className="mb-2 text-xs text-ink-faint">{tr("比对中…", "Comparing…")}</span>}
       </Card>
 
-      {same && <p className="text-sm text-ink-muted">基准和待测是同一份 run，选两份不同的。</p>}
+      {same && <p className="text-sm text-ink-muted">{tr("基准和待测是同一份 run，选两份不同的。", "Baseline and candidate are the same run; pick two different ones.")}</p>}
       {!baseline || !candidate ? (
-        <p className="text-sm text-ink-muted">选一份基准和一份待测 run；也可以在「回测记录」里勾选两份后点「对比所选」。</p>
+        <p className="text-sm text-ink-muted">
+          {tr(
+            "选一份基准和一份待测 run；也可以在「回测记录」里勾选两份后点「对比所选」。",
+            "Pick a baseline run and a candidate run, or check two in Backtest runs and click Compare selected.",
+          )}
+        </p>
       ) : null}
-      {error ? <ErrorState error={error} what="对比结果" /> : null}
+      {error ? <ErrorState error={error} what={tr("对比结果", "comparison")} /> : null}
       {isFetching && !data && <Skeleton tiles={1} rows={4} />}
       {data && (
         <>
@@ -108,8 +117,18 @@ function VerdictBanner({ c }: { c: Comparison }) {
     // colouring it like one sends someone hunting for a bug that is not
     // there. It is amber, and it says what to do.
     return (
-      <Banner tone="warn" icon={<TriangleAlert className="h-6 w-6 text-warn" />} title="基准已失效——无法得出任何结论" badge={<Badge tone="warn">不是「一致」，也不是「不一致」</Badge>}>
-        <p className="text-ink-muted">两份 run 的数据或配置不同，比较它们的成交说明不了引擎有没有变。</p>
+      <Banner
+        tone="warn"
+        icon={<TriangleAlert className="h-6 w-6 text-warn" />}
+        title={tr("基准已失效——无法得出任何结论", "Baseline invalidated: no conclusion can be drawn")}
+        badge={<Badge tone="warn">{tr("不是「一致」，也不是「不一致」", "Neither \"match\" nor \"differ\"")}</Badge>}
+      >
+        <p className="text-ink-muted">
+          {tr(
+            "两份 run 的数据或配置不同，比较它们的成交说明不了引擎有没有变。",
+            "The two runs differ in data or config, so comparing their fills says nothing about whether the engine changed.",
+          )}
+        </p>
         {verdict.changed.length > 0 && (
           <ul className="mt-2 space-y-1">
             {verdict.changed.map((why) => (
@@ -122,7 +141,10 @@ function VerdictBanner({ c }: { c: Comparison }) {
         )}
         <p className="mt-3 flex items-start gap-2 rounded-md border border-warn/30 bg-ground/40 px-3 py-2 text-ink">
           <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-          需要重建基准（rebase）：用与待测相同的数据和配置重新跑一份基准，再拿来对比。在那之前，这里的任何数字都不能当作结论。
+          {tr(
+            "需要重建基准（rebase）：用与待测相同的数据和配置重新跑一份基准，再拿来对比。在那之前，这里的任何数字都不能当作结论。",
+            "Rebase needed: rerun the baseline on the same data and config as the candidate, then compare again. Until then, no number here is a conclusion.",
+          )}
         </p>
       </Banner>
     );
@@ -132,26 +154,39 @@ function VerdictBanner({ c }: { c: Comparison }) {
     <Banner
       tone={c.passes ? "good" : "bad"}
       icon={c.passes ? <CheckCircle2 className="h-6 w-6 text-good" /> : <XCircle className="h-6 w-6 text-bad" />}
-      title={c.passes ? "一致：通过" : `存在差异：${c.differences} 处`}
+      title={
+        c.passes
+          ? tr("一致：通过", "Match: pass")
+          : tr(`存在差异：${c.differences} 处`, `Differences: ${c.differences}`)
+      }
       badge={
         codeChanged ? (
           <Badge tone="accent">
             <Code2 className="h-3 w-3" />
-            代码已变更，数据与配置未变
+            {tr("代码已变更，数据与配置未变", "Code changed; data and config unchanged")}
           </Badge>
         ) : (
-          <Badge>代码、数据、配置都相同</Badge>
+          <Badge>{tr("代码、数据、配置都相同", "Same code, data and config")}</Badge>
         )
       }
     >
       <p className="text-ink-muted">
         {codeChanged
           ? c.passes
-            ? "新代码在同样的数据和配置下跑出了同样的成交：这次改动没有改变行为。"
-            : "新代码在同样的数据和配置下跑出了不同的成交：这次改动改变了行为，确认是否有意为之。"
+            ? tr(
+                "新代码在同样的数据和配置下跑出了同样的成交：这次改动没有改变行为。",
+                "The new code produced the same fills on the same data and config: this change did not alter behavior.",
+              )
+            : tr(
+                "新代码在同样的数据和配置下跑出了不同的成交：这次改动改变了行为，确认是否有意为之。",
+                "The new code produced different fills on the same data and config: this change altered behavior. Confirm it was intended.",
+              )
           : c.passes
-            ? "同样的代码、数据、配置跑出了同样的成交。"
-            : "同样的代码、数据、配置却跑出了不同的成交：这是行为回归，需要查。"}
+            ? tr("同样的代码、数据、配置跑出了同样的成交。", "The same code, data and config produced the same fills.")
+            : tr(
+                "同样的代码、数据、配置却跑出了不同的成交：这是行为回归，需要查。",
+                "The same code, data and config produced different fills: this is a behavior regression and needs investigating.",
+              )}
       </p>
       {codeChanged && verdict.changed.length > 0 && (
         <ul className="mt-2 space-y-0.5 text-xs text-ink-muted">
@@ -184,12 +219,12 @@ function Banner({ tone, icon, title, badge, children }: { tone: "good" | "bad" |
 
 function Numbers({ c }: { c: Comparison }) {
   const items: [ReactNode, ReactNode][] = [
-    ["成交数", <span key="f" className="font-mono">{c.fill_counts[0]} → {c.fill_counts[1]}</span>],
-    ["盈亏", <span key="p" className="font-mono">{c.pnl[0].toFixed(6)} → {c.pnl[1].toFixed(6)}</span>],
+    [tr("成交数", "Fills"), <span key="f" className="font-mono">{c.fill_counts[0]} → {c.fill_counts[1]}</span>],
+    [tr("盈亏", "P&L"), <span key="p" className="font-mono">{c.pnl[0].toFixed(6)} → {c.pnl[1].toFixed(6)}</span>],
     [
-      "相对误差",
+      tr("相对误差", "Relative error"),
       <span key="e" className="font-mono">
-        {c.pnl_relative_error === null ? "—（基准盈亏为零）" : c.pnl_relative_error.toExponential(3)}
+        {c.pnl_relative_error === null ? tr("—（基准盈亏为零）", "— (baseline P&L is zero)") : c.pnl_relative_error.toExponential(3)}
       </span>,
     ],
   ];
@@ -197,9 +232,14 @@ function Numbers({ c }: { c: Comparison }) {
   // invalidated, so they are not shown at all rather than shown as 0.
   if (c.verdict.conclusive) {
     items.push(
-      ["差异", <span key="d" className="font-mono">{c.differences}</span>],
-      ["一致的前缀", <span key="m" className="font-mono">{c.matched_prefix} 笔</span>],
-      ["首个分歧", <span key="v" className="font-mono">{c.first_divergence === null ? "—" : `#${c.first_divergence}`}</span>],
+      [tr("差异", "Differences"), <span key="d" className="font-mono">{c.differences}</span>],
+      [
+        tr("一致的前缀", "Matching prefix"),
+        <span key="m" className="font-mono">
+          {tr(`${c.matched_prefix} 笔`, `${c.matched_prefix} fill${c.matched_prefix === 1 ? "" : "s"}`)}
+        </span>,
+      ],
+      [tr("首个分歧", "First divergence"), <span key="v" className="font-mono">{c.first_divergence === null ? "—" : `#${c.first_divergence}`}</span>],
     );
   }
   return (

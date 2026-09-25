@@ -4,6 +4,7 @@ use oq_deck_core::auth::{
     hash_password, new_token, new_totp_secret, password_complaint, secrets_match, totp_code,
     verify_password, verify_totp,
 };
+use oq_deck_core::lang::Lang;
 
 #[test]
 fn a_password_verifies_against_its_own_hash() {
@@ -77,11 +78,15 @@ fn a_malformed_totp_secret_is_a_corruption_not_a_rejection() {
 
 #[test]
 fn short_passwords_are_refused_with_a_reason() {
-    let complaint = password_complaint("short").expect("too short");
-    assert!(complaint.contains("12"));
-    assert!(
-        password_complaint("123456789012345").is_some(),
-        "all digits"
-    );
-    assert!(password_complaint("a long enough passphrase").is_none());
+    for lang in [Lang::Zh, Lang::En] {
+        let complaint = password_complaint("short", lang).expect("too short");
+        assert!(complaint.contains("12"));
+        assert!(
+            password_complaint("123456789012345", lang).is_some(),
+            "all digits"
+        );
+        assert!(password_complaint("a long enough passphrase", lang).is_none());
+    }
+    let en = password_complaint("short", Lang::En).expect("too short");
+    assert!(en.contains("characters"), "{en}");
 }

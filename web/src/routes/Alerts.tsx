@@ -6,17 +6,18 @@ import { api, type Alert, type OpsAction } from "@/api/client";
 import { ActionDialog } from "@/components/ActionDialog";
 import { ErrorState, Skeleton } from "@/components/States";
 import { useCaps } from "@/features/trading";
+import { said, tr } from "@/i18n";
 import { Ago, Badge, Button, Card, Freshness, PageHeader, Table, fmtTime } from "@/ui/kit";
 
-const RULES: [string, string][] = [
-  ["halted", "交易进程停机"],
-  ["reconcile", "进程内持仓核对与交易所不一致"],
-  ["journal", "交易日志写不进去（进程已停止开新单）"],
-  ["feed", "行情出现读不出的消息"],
-  ["control", "交易进程在运行，控制口却无应答"],
-  ["unit:<服务>", "受管服务没有在运行（操作者主动停机时不报）"],
-  ["disk:<挂载点>", "剩余空间不足 10%"],
-  ["clock", "系统时钟未与 NTP 同步"],
+const rules = (): [string, string][] => [
+  ["halted", tr("交易进程停机", "The trading process halted")],
+  ["reconcile", tr("进程内持仓核对与交易所不一致", "In-process position reconciliation disagrees with the venue")],
+  ["journal", tr("交易日志写不进去（进程已停止开新单）", "The journal cannot be written (the process has stopped opening orders)")],
+  ["feed", tr("行情出现读不出的消息", "The market feed sent a message that cannot be read")],
+  ["control", tr("交易进程在运行，控制口却无应答", "The trading process is running but its control port does not answer")],
+  [tr("unit:<服务>", "unit:<service>"), tr("受管服务没有在运行（操作者主动停机时不报）", "A managed service is not running (not raised when an operator stopped it)")],
+  [tr("disk:<挂载点>", "disk:<mount>"), tr("剩余空间不足 10%", "Less than 10% free space left")],
+  ["clock", tr("系统时钟未与 NTP 同步", "The system clock is not synced with NTP")],
 ];
 
 type PendingAlertAction = { title: string; consequence: string; action: OpsAction };
@@ -36,8 +37,11 @@ export function Alerts() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="告警"
-        description="主机代理每 30 秒检查一次；条件出现时触发、消失时恢复，两次都推送到告警频道。"
+        title={tr("告警", "Alerts")}
+        description={tr(
+          "主机代理每 30 秒检查一次；条件出现时触发、消失时恢复，两次都推送到告警频道。",
+          "The host agent checks every 30 seconds. An alert is raised when a condition appears and cleared when it goes away; both are pushed to the alert channel.",
+        )}
         meta={<Freshness at={q.dataUpdatedAt} fetching={q.isFetching} staleAfterS={30} onRefresh={() => q.refetch()} />}
         actions={
           writable && (
@@ -45,13 +49,16 @@ export function Alerts() {
               icon={<Send className="h-4 w-4" />}
               onClick={() =>
                 setPending({
-                  title: "发送测试消息",
-                  consequence: "向 Discord「alerts」频道发一条测试消息，确认渠道通着。",
+                  title: tr("发送测试消息", "Send a test message"),
+                  consequence: tr(
+                    "向 Discord「alerts」频道发一条测试消息，确认渠道通着。",
+                    "Sends a test message to the Discord \"monitoring alerts\" channel to confirm the channel works.",
+                  ),
                   action: { action: "alert_test" },
                 })
               }
             >
-              测试告警渠道
+              {tr("测试告警渠道", "Test alert channel")}
             </Button>
           )
         }
@@ -60,16 +67,21 @@ export function Alerts() {
       {q.isLoading ? (
         <Skeleton rows={6} />
       ) : q.isError ? (
-        <ErrorState error={q.error} what="告警" />
+        <ErrorState error={q.error} what={tr("告警", "alerts")} />
       ) : (
         <>
           <Active alerts={q.data!.active} writable={writable} onAct={setPending} />
-          <Card title="最近的触发与恢复" icon={<History className="h-4 w-4" />} bodyClassName="p-0" extra={<span>{q.data!.history.length} 条</span>}>
+          <Card
+            title={tr("最近的触发与恢复", "Recently raised and cleared")}
+            icon={<History className="h-4 w-4" />}
+            bodyClassName="p-0"
+            extra={<span>{tr(`${q.data!.history.length} 条`, `${q.data!.history.length} ${q.data!.history.length === 1 ? "entry" : "entries"}`)}</span>}
+          >
             {q.data!.history.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-ink-faint">主机代理启动以来还没有触发过。</p>
+              <p className="px-4 py-6 text-center text-sm text-ink-faint">{tr("主机代理启动以来还没有触发过。", "Nothing has been raised since the host agent started.")}</p>
             ) : (
               <div className="max-h-[28rem] overflow-auto">
-                <Table head={["时间", "", "告警", "键"]} dense>
+                <Table head={[tr("时间", "Time"), "", tr("告警", "Alert"), tr("键", "Key")]} dense>
                   {q.data!.history.map((h, k) => (
                     <tr key={k}>
                       <td className="whitespace-nowrap font-mono text-xs text-ink-muted">
@@ -78,8 +90,8 @@ export function Alerts() {
                           <Ago ms={h.at_ms} />
                         </span>
                       </td>
-                      <td className="whitespace-nowrap">{h.raised ? <Badge tone="bad">触发</Badge> : <Badge tone="good">恢复</Badge>}</td>
-                      <td className="text-ink">{h.message}</td>
+                      <td className="whitespace-nowrap">{h.raised ? <Badge tone="bad">{tr("触发", "Raised")}</Badge> : <Badge tone="good">{tr("恢复", "Cleared")}</Badge>}</td>
+                      <td className="text-ink">{said(h)}</td>
                       <td className="font-mono text-xs text-ink-faint">{h.key}</td>
                     </tr>
                   ))}
@@ -91,9 +103,15 @@ export function Alerts() {
       )}
 
       <div className="grid gap-5 xl:grid-cols-5">
-        <Card title="规则" icon={<ListChecks className="h-4 w-4" />} className="xl:col-span-3" bodyClassName="p-0" extra={<span>每 30 秒检查一次</span>}>
-          <Table head={["键", "什么时候触发"]}>
-            {RULES.map(([k, v]) => (
+        <Card
+          title={tr("规则", "Rules")}
+          icon={<ListChecks className="h-4 w-4" />}
+          className="xl:col-span-3"
+          bodyClassName="p-0"
+          extra={<span>{tr("每 30 秒检查一次", "Checked every 30 seconds")}</span>}
+        >
+          <Table head={[tr("键", "Key"), tr("什么时候触发", "Raised when")]}>
+            {rules().map(([k, v]) => (
               <tr key={k}>
                 <td className="whitespace-nowrap font-mono text-xs text-ink-muted">{k}</td>
                 <td className="text-ink">{v}</td>
@@ -101,10 +119,15 @@ export function Alerts() {
             ))}
           </Table>
         </Card>
-        <Card title="渠道" icon={<Send className="h-4 w-4" />} className="xl:col-span-2">
-          <p className="text-sm leading-relaxed text-ink">Discord「alerts」频道（与 1.x 同一个机器人）。</p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-muted">每一条操作审计也会同步发到这个频道。静默只停推送，页面上照常显示。</p>
-          {!writable && <p className="mt-3 text-xs text-ink-faint">写入未开启：测试渠道与静默不可用。</p>}
+        <Card title={tr("渠道", "Channel")} icon={<Send className="h-4 w-4" />} className="xl:col-span-2">
+          <p className="text-sm leading-relaxed text-ink">{tr("Discord「alerts」频道（与 1.x 同一个机器人）。", "The Discord \"monitoring alerts\" channel (the same bot as 1.x).")}</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+            {tr(
+              "每一条操作审计也会同步发到这个频道。静默只停推送，页面上照常显示。",
+              "Every audited operator action is also posted to this channel. Silencing only stops the pushes; alerts still show on this page.",
+            )}
+          </p>
+          {!writable && <p className="mt-3 text-xs text-ink-faint">{tr("写入未开启：测试渠道与静默不可用。", "Writes are off: the channel test and silencing are unavailable.")}</p>}
         </Card>
       </div>
 
@@ -127,26 +150,31 @@ function Active({
     return (
       <div className="flex items-center gap-3 rounded-[var(--radius-card)] border border-good/30 bg-good/8 px-4 py-3.5 text-sm">
         <CheckCircle2 className="h-4 w-4 text-good" />
-        <span className="text-ink">当前没有告警</span>
+        <span className="text-ink">{tr("当前没有告警", "No active alerts")}</span>
       </div>
     );
   }
   return (
-    <Card title="当前告警" icon={<AlertTriangle className="h-4 w-4 text-bad" />} tone="bad" bodyClassName="p-0" extra={<Badge tone="bad">{alerts.length}</Badge>}>
+    <Card title={tr("当前告警", "Active alerts")} icon={<AlertTriangle className="h-4 w-4 text-bad" />} tone="bad" bodyClassName="p-0" extra={<Badge tone="bad">{alerts.length}</Badge>}>
       <ul className="divide-y divide-line/60">
         {alerts.map((a) => (
           <li key={a.key} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
             <AlertTriangle className="h-4 w-4 shrink-0 text-bad" />
             <div className="min-w-0 flex-1">
-              <div className="text-ink">{a.message}</div>
+              <div className="text-ink">{said(a)}</div>
               <div className="mt-0.5 text-xs text-ink-muted">
-                自 {fmtTime(a.since_ms)}（<Ago ms={a.since_ms} />）<span className="ml-2 font-mono text-ink-faint">{a.key}</span>
+                {tr("自 ", "Since ")}
+                {fmtTime(a.since_ms)}
+                {tr("（", " (")}
+                <Ago ms={a.since_ms} />
+                {tr("）", ")")}
+                <span className="ml-2 font-mono text-ink-faint">{a.key}</span>
               </div>
             </div>
             {a.silenced_until_ms ? (
               <Badge tone="warn">
                 <BellOff className="h-3 w-3" />
-                静默至 {fmtTime(a.silenced_until_ms, false)}
+                {tr(`静默至 ${fmtTime(a.silenced_until_ms, false)}`, `Silenced until ${fmtTime(a.silenced_until_ms, false)}`)}
               </Badge>
             ) : (
               writable && (
@@ -156,13 +184,16 @@ function Active({
                   icon={<BellOff className="h-3.5 w-3.5" />}
                   onClick={() =>
                     onAct({
-                      title: `静默「${a.message}」1 小时`,
-                      consequence: "1 小时内这条告警的触发与恢复都不推送；页面上照常显示。",
+                      title: tr(`静默「${said(a)}」1 小时`, `Silence "${said(a)}" for 1 hour`),
+                      consequence: tr(
+                        "1 小时内这条告警的触发与恢复都不推送；页面上照常显示。",
+                        "For 1 hour this alert's raises and clears are not pushed; it still shows on this page.",
+                      ),
                       action: { action: "alert_silence", key: a.key, minutes: 60 },
                     })
                   }
                 >
-                  静默 1 小时
+                  {tr("静默 1 小时", "Silence 1 hour")}
                 </Button>
               )
             )}

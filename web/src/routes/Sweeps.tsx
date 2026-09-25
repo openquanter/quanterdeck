@@ -5,6 +5,7 @@ import { ArrowDown, CheckCircle2, FileWarning, OctagonX } from "lucide-react";
 
 import { api, type Sweep } from "@/api/client";
 import { Empty, ErrorState, Expert, Skeleton, Term } from "@/components/States";
+import { tr } from "@/i18n";
 import { Ago, Badge, Card, PageHeader, Stat, Table, cx } from "@/ui/kit";
 
 /**
@@ -22,20 +23,29 @@ export function Sweeps() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="参数扫描"
+        title={tr("参数扫描", "Sweeps")}
         description={
           <>
-            策略是编译进程序的 Rust 代码，扫描在调用方自己的程序里跑，结果写成 <code className="font-mono">.sweep</code> 文件放在运行记录目录（例如{" "}
-            <code className="font-mono">sweep_100 --out 文件</code>）。这里只读这些文件。
+            {tr(
+              "策略是编译进程序的 Rust 代码，扫描在调用方自己的程序里跑，结果写成 ",
+              "Strategies are Rust code compiled into the program, so a sweep runs in the caller's own program and writes its result as a ",
+            )}
+            <code className="font-mono">.sweep</code>
+            {tr(" 文件放在运行记录目录（例如 ", " file in the runs directory (for example ")}
+            <code className="font-mono">{tr("sweep_100 --out 文件", "sweep_100 --out FILE")}</code>
+            {tr("）。这里只读这些文件。", "). This page only reads those files.")}
           </>
         }
       />
       {list.isLoading ? (
         <Skeleton rows={4} />
       ) : list.isError ? (
-        <ErrorState error={list.error} what="扫描结果" />
+        <ErrorState error={list.error} what={tr("扫描结果", "sweep results")} />
       ) : !list.data?.length ? (
-        <Empty title="运行记录目录里还没有 .sweep 文件。" next="跑一次参数扫描并用 --out 把结果写到运行记录目录。" />
+        <Empty
+          title={tr("运行记录目录里还没有 .sweep 文件。", "No .sweep files in the runs directory yet.")}
+          next={tr("跑一次参数扫描并用 --out 把结果写到运行记录目录。", "Run a sweep and use --out to write its result into the runs directory.")}
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {list.data.map((e) => (
@@ -51,16 +61,16 @@ export function Sweeps() {
                 <span className="min-w-0 flex-1 truncate font-mono text-sm text-ink">{e.id}</span>
                 {e.state === "read" ? (
                   <Badge tone={e.refused ? "bad" : "good"} dot>
-                    {e.refused ? "不可部署" : "未被拒绝"}
+                    {e.refused ? tr("不可部署", "Not deployable") : tr("未被拒绝", "Not refused")}
                   </Badge>
                 ) : (
-                  <Badge tone="warn">读不出</Badge>
+                  <Badge tone="warn">{tr("读不出", "Unreadable")}</Badge>
                 )}
               </div>
               {e.state === "read" ? (
                 <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-ink-muted">
                   <span>{e.label}</span>
-                  <span>{e.configs} 组参数</span>
+                  <span>{tr(`${e.configs} 组参数`, `${e.configs} config${e.configs === 1 ? "" : "s"}`)}</span>
                   {e.modified_ms !== null && <Ago ms={e.modified_ms} />}
                 </div>
               ) : (
@@ -73,7 +83,9 @@ export function Sweeps() {
           ))}
         </div>
       )}
-      {selected ? <Detail id={selected} /> : list.data?.length ? <p className="text-sm text-ink-muted">选一份扫描，查看它的结论和各参数组。</p> : null}
+      {selected ? <Detail id={selected} /> : list.data?.length ? (
+        <p className="text-sm text-ink-muted">{tr("选一份扫描，查看它的结论和各参数组。", "Choose a sweep to see its verdict and every configuration.")}</p>
+      ) : null}
     </div>
   );
 }
@@ -81,7 +93,7 @@ export function Sweeps() {
 function Detail({ id }: { id: string }) {
   const q = useQuery({ queryKey: ["sweep", id], queryFn: () => api.sweep(id) });
   if (q.isLoading) return <Skeleton tiles={4} rows={6} />;
-  if (q.isError) return <ErrorState error={q.error} what={`扫描 ${id}`} />;
+  if (q.isError) return <ErrorState error={q.error} what={tr(`扫描 ${id}`, `sweep ${id}`)} />;
   return <SweepView s={q.data!} />;
 }
 
@@ -101,7 +113,12 @@ function SweepView({ s }: { s: Sweep }) {
         <div className="rounded-[var(--radius-card)] border border-bad/40 bg-bad/8 px-5 py-4">
           <div className="flex items-center gap-3">
             <OctagonX className="h-6 w-6 text-bad" />
-            <div className="text-lg font-semibold text-ink">不可部署：{s.refusals.length} 条理由</div>
+            <div className="text-lg font-semibold text-ink">
+              {tr(
+                `不可部署：${s.refusals.length} 条理由`,
+                `Not deployable: ${s.refusals.length} reason${s.refusals.length === 1 ? "" : "s"}`,
+              )}
+            </div>
           </div>
           <ul className="mt-3 space-y-2.5 text-sm">
             {s.refusals.map((r, k) => (
@@ -109,7 +126,7 @@ function SweepView({ s }: { s: Sweep }) {
                 <span className="text-bad">•</span>
                 <div>
                   <div className="text-ink">{translate(r)}</div>
-                  <div className="mt-0.5 text-xs text-ink-faint">{r}</div>
+                  {translate(r) !== r && <div className="mt-0.5 text-xs text-ink-faint">{r}</div>}
                 </div>
               </li>
             ))}
@@ -119,9 +136,12 @@ function SweepView({ s }: { s: Sweep }) {
         <div className="flex gap-3 rounded-[var(--radius-card)] border border-good/30 bg-good/6 px-5 py-4">
           <CheckCircle2 className="h-6 w-6 shrink-0 text-good" />
           <div>
-            <div className="text-lg font-semibold text-ink">没有被拒绝</div>
+            <div className="text-lg font-semibold text-ink">{tr("没有被拒绝", "Not refused")}</div>
             <p className="mt-1 text-sm text-ink-muted">
-              过拟合概率、折减夏普和样本外退化都在阈值内，也没有发现使用未来数据。这只说明这次搜索没有明显的自欺，不代表实盘会赚钱。
+              {tr(
+                "过拟合概率、折减夏普和样本外退化都在阈值内，也没有发现使用未来数据。这只说明这次搜索没有明显的自欺，不代表实盘会赚钱。",
+                "Overfitting probability, deflated Sharpe and out-of-sample degradation are all within limits, and no lookahead was found. This only says the search did not obviously fool itself; it does not mean live will make money.",
+              )}
             </p>
           </div>
         </div>
@@ -131,27 +151,35 @@ function SweepView({ s }: { s: Sweep }) {
           number and never green. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label={<Term name="dsr">折减夏普</Term>}
-          value={dsr.state === "value" ? dsr.value.toFixed(3) : "无法计算"}
-          sub={dsr.state === "value" ? `至少 ${t.min_deflated_sharpe}` : dsr.reason}
+          label={<Term name="dsr">{tr("折减夏普", "Deflated Sharpe")}</Term>}
+          value={dsr.state === "value" ? dsr.value.toFixed(3) : tr("无法计算", "Cannot compute")}
+          sub={dsr.state === "value" ? tr(`至少 ${t.min_deflated_sharpe}`, `At least ${t.min_deflated_sharpe}`) : dsr.reason}
           tone={dsr.state === "value" ? (dsr.value >= t.min_deflated_sharpe ? "good" : "bad") : "warn"}
         />
         <Stat
-          label={<Term name="pbo">回测过拟合概率</Term>}
-          value={pbo.state === "value" ? pbo.value.pbo.toFixed(3) : "无法计算"}
-          sub={pbo.state === "value" ? `至多 ${t.max_pbo} · ${pbo.value.splits} 次切分` : pbo.reason}
+          label={<Term name="pbo">{tr("回测过拟合概率", "Probability of backtest overfitting")}</Term>}
+          value={pbo.state === "value" ? pbo.value.pbo.toFixed(3) : tr("无法计算", "Cannot compute")}
+          sub={
+            pbo.state === "value"
+              ? tr(`至多 ${t.max_pbo} · ${pbo.value.splits} 次切分`, `At most ${t.max_pbo} · ${pbo.value.splits} splits`)
+              : pbo.reason
+          }
           tone={pbo.state === "value" ? (pbo.value.pbo <= t.max_pbo ? "good" : "bad") : "warn"}
         />
         <Stat
-          label={<Term name="degradation">样本外退化斜率</Term>}
-          value={pbo.state === "value" ? pbo.value.degradation.toFixed(3) : "无法计算"}
-          sub={`需大于 ${t.min_degradation_slope}`}
+          label={<Term name="degradation">{tr("样本外退化斜率", "Out-of-sample degradation slope")}</Term>}
+          value={pbo.state === "value" ? pbo.value.degradation.toFixed(3) : tr("无法计算", "Cannot compute")}
+          sub={tr(`需大于 ${t.min_degradation_slope}`, `Must exceed ${t.min_degradation_slope}`)}
           tone={pbo.state === "value" ? (pbo.value.degradation > t.min_degradation_slope ? "good" : "bad") : "warn"}
         />
         <Stat
-          label="样本外亏损概率"
+          label={tr("样本外亏损概率", "Out-of-sample loss probability")}
           value={pbo.state === "value" ? `${(pbo.value.probability_of_loss * 100).toFixed(0)}%` : "—"}
-          sub={pbo.state === "value" ? `样本外夏普中位数 ${pbo.value.median_oos_sharpe.toFixed(3)}` : "过拟合统计无法计算"}
+          sub={
+            pbo.state === "value"
+              ? tr(`样本外夏普中位数 ${pbo.value.median_oos_sharpe.toFixed(3)}`, `Median out-of-sample Sharpe ${pbo.value.median_oos_sharpe.toFixed(3)}`)
+              : tr("过拟合统计无法计算", "Overfitting statistics cannot be computed")
+          }
         />
       </div>
 
@@ -160,9 +188,11 @@ function SweepView({ s }: { s: Sweep }) {
       <Configs s={s} />
 
       {s.unscorable.length > 0 && (
-        <Card title={`无法评分的参数组（${s.unscorable.length}）`} tone="warn">
-          <p className="text-sm text-ink-muted">收益序列太短，算不出夏普；它们不参与过拟合统计。</p>
-          <Expert label="查看这些参数组">
+        <Card title={tr(`无法评分的参数组（${s.unscorable.length}）`, `Unscorable configurations (${s.unscorable.length})`)} tone="warn">
+          <p className="text-sm text-ink-muted">
+            {tr("收益序列太短，算不出夏普；它们不参与过拟合统计。", "Their return series are too short for a Sharpe ratio; they are left out of the overfitting statistics.")}
+          </p>
+          <Expert label={tr("查看这些参数组", "Show these configurations")}>
             <ul className="font-mono text-xs text-ink-muted">
               {s.unscorable.map((u) => (
                 <li key={u}>{u}</li>
@@ -172,15 +202,17 @@ function SweepView({ s }: { s: Sweep }) {
         </Card>
       )}
       <p className="text-xs text-ink-muted">
-        未来数据检查：
+        {tr("未来数据检查：", "Lookahead check: ")}
         {s.lookahead ? (
           <span className="font-mono">
             {s.lookahead[0]} — {s.lookahead[1]}
           </span>
         ) : (
-          <span className="text-warn">这次扫描没有做（只有给了检查用的策略工厂时才做）。</span>
+          <span className="text-warn">
+            {tr("这次扫描没有做（只有给了检查用的策略工厂时才做）。", "not run for this sweep (it runs only when a strategy factory is supplied for the check).")}
+          </span>
         )}{" "}
-        · 权益每 {s.equity_every} 个 tick 采样一次
+        · {tr(`权益每 ${s.equity_every} 个 tick 采样一次`, `equity sampled every ${s.equity_every} ticks`)}
       </p>
     </div>
   );
@@ -209,12 +241,12 @@ function Logits({ logits }: { logits: number[] }) {
     <Card
       title={
         <>
-          <Term name="logit">样本内最优在样本外的排名</Term>
+          <Term name="logit">{tr("样本内最优在样本外的排名", "Out-of-sample rank of the in-sample best")}</Term>
         </>
       }
       extra={
         <span>
-          {below} / {logits.length} 次落到后一半（0 线左侧）
+          {tr(`${below} / ${logits.length} 次落到后一半（0 线左侧）`, `${below} / ${logits.length} in the bottom half (left of 0)`)}
         </span>
       }
     >
@@ -230,7 +262,10 @@ function Logits({ logits }: { logits: number[] }) {
             opacity={0.8}
           >
             <title>
-              [{b.toFixed(2)}, {(b + bins.width).toFixed(2)})：{c} 次
+              {tr(
+                `[${b.toFixed(2)}, ${(b + bins.width).toFixed(2)})：${c} 次`,
+                `[${b.toFixed(2)}, ${(b + bins.width).toFixed(2)}): ${c}`,
+              )}
             </title>
           </rect>
         ))}
@@ -243,11 +278,11 @@ function Logits({ logits }: { logits: number[] }) {
       <div className="mt-2 flex gap-4 text-xs text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-warn/80" />
-          样本外落到后一半
+          {tr("样本外落到后一半", "Bottom half out of sample")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-accent/80" />
-          样本外仍在前一半
+          {tr("样本外仍在前一半", "Still top half out of sample")}
         </span>
       </div>
     </Card>
@@ -278,20 +313,27 @@ function Configs({ s }: { s: Sweep }) {
     </span>
   );
   return (
-    <Card title={`各参数组（${s.configs.length}）`} extra="样本内结果。按夏普排第一的，正是上面过拟合统计在检验的那一组。" bodyClassName="p-0">
+    <Card
+      title={tr(`各参数组（${s.configs.length}）`, `Configurations (${s.configs.length})`)}
+      extra={tr(
+        "样本内结果。按夏普排第一的，正是上面过拟合统计在检验的那一组。",
+        "In-sample results. The top one by Sharpe is exactly the one the overfitting statistics above are testing.",
+      )}
+      bodyClassName="p-0"
+    >
       <div className="[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-surface">
         <Table
           dense
           className="max-h-[32rem] overflow-auto"
           head={[
-            head("label", "参数", false),
-            head("sharpe", "夏普（逐采样）"),
-            head("realized", "已实现"),
-            plain("手续费"),
-            head("final_equity", "期末权益"),
-            head("min_equity", "最低权益"),
-            head("fills", "成交"),
-            plain("强平"),
+            head("label", tr("参数", "Parameters"), false),
+            head("sharpe", tr("夏普（逐采样）", "Sharpe (per sample)")),
+            head("realized", tr("已实现", "Realized")),
+            plain(tr("手续费", "Fees")),
+            head("final_equity", tr("期末权益", "Final equity")),
+            head("min_equity", tr("最低权益", "Min equity")),
+            head("fills", tr("成交", "Fills")),
+            plain(tr("强平", "Liquidations")),
           ]}
         >
           {rows.map((c) => (
@@ -318,17 +360,21 @@ function sig(v: number) {
   return v === 0 ? "0" : v.toPrecision(3);
 }
 
-/** The framework's refusals are English sentences; the operator reads Chinese. The original stays beneath. */
+/**
+ * The framework's refusals are English sentences. In Chinese they are
+ * explained, with the original beneath; in English the original is the
+ * explanation.
+ */
 function translate(r: string) {
   let m = r.match(/^probability of backtest overfitting is ([\d.]+), above the limit of ([\d.]+)/);
-  if (m) return `回测过拟合概率 ${m[1]}，高于上限 ${m[2]}：这次搜索找到的更可能是噪声而不是优势。`;
+  if (m) return tr(`回测过拟合概率 ${m[1]}，高于上限 ${m[2]}：这次搜索找到的更可能是噪声而不是优势。`, r);
   m = r.match(/^out-of-sample Sharpe regressed on in-sample Sharpe has slope (-?[\d.]+), at or below (-?[\d.]+)/);
-  if (m) return `样本外夏普对样本内夏普的斜率 ${m[1]}，不高于 ${m[2]}：样本内的排名对样本外毫无预测力，第一名只是最贴合噪声的那组。`;
+  if (m) return tr(`样本外夏普对样本内夏普的斜率 ${m[1]}，不高于 ${m[2]}：样本内的排名对样本外毫无预测力，第一名只是最贴合噪声的那组。`, r);
   m = r.match(/^deflated Sharpe ratio is (-?[\d.]+), below the limit of ([\d.]+)/);
-  if (m) return `折减夏普 ${m[1]}，低于下限 ${m[2]}：考虑到试了这么多组，这个结果站不住。`;
+  if (m) return tr(`折减夏普 ${m[1]}，低于下限 ${m[2]}：考虑到试了这么多组，这个结果站不住。`, r);
   m = r.match(/^(.+) decides differently on a prefix of the data than on all of it, first at tick (\d+)/);
-  if (m) return `${m[1]} 只看前一段数据和看全部数据时，在第 ${m[2]} 个 tick 做出了不同决定：它用到了当时不可能有的数据，结果在实盘无法复现。`;
+  if (m) return tr(`${m[1]} 只看前一段数据和看全部数据时，在第 ${m[2]} 个 tick 做出了不同决定：它用到了当时不可能有的数据，结果在实盘无法复现。`, r);
   m = r.match(/^(.+) could not be computed \((.*)\); a sweep/);
-  if (m) return `${m[1]} 无法计算（${m[2]}）：没法评分的扫描不等于评分合格。`;
+  if (m) return tr(`${m[1]} 无法计算（${m[2]}）：没法评分的扫描不等于评分合格。`, r);
   return r;
 }

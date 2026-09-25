@@ -4,6 +4,7 @@ pub mod attribution;
 pub mod auth;
 pub mod capabilities;
 pub mod gate;
+pub mod lang;
 pub mod live;
 pub mod markout;
 pub mod ops;

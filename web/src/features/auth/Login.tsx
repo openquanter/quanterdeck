@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Boxes } from "lucide-react";
 
 import { api } from "@/api/client";
+import { tr } from "@/i18n";
 
 import { LoginForm } from "./LoginForm";
 
@@ -17,7 +18,7 @@ export function Login() {
   if (session?.authenticated) return <Navigate to={next} replace />;
 
   return (
-    <Centered title="登录" subtitle="交易主机控制台">
+    <Centered title={tr("登录", "Sign in")} subtitle={tr("交易主机控制台", "Trading host console")}>
       {session ? (
         <LoginForm totpRequired={session.totp_required} onDone={() => navigate(next, { replace: true })} />
       ) : (

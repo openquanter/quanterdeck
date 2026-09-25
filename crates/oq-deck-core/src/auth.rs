@@ -222,16 +222,28 @@ pub fn new_totp_secret() -> Result<String, AuthError> {
 /// short one with a digit bolted on, and rules that force the second
 /// produce written-down passwords.
 #[must_use]
-pub fn password_complaint(password: &str) -> Option<String> {
+pub fn password_complaint(password: &str, lang: crate::lang::Lang) -> Option<String> {
     let length = password.chars().count();
     if length < 12 {
-        return Some(format!(
-            "密码至少 12 个字符，当前 {length} 个。这个控制台能下单，\
-             请用一句只有你记得的话，而不是一个词加几个数字。"
+        return Some(lang.pick(
+            format!(
+                "密码至少 12 个字符，当前 {length} 个。这个控制台能下单，\
+                 请用一句只有你记得的话，而不是一个词加几个数字。"
+            ),
+            format!(
+                "A password needs at least 12 characters; this one has {length}. This console \
+                 can place orders: use a sentence only you remember, not a word and some digits."
+            ),
         ));
     }
     if password.chars().all(|c| c.is_ascii_digit()) {
-        return Some("全是数字的密码会被最先猜到。".to_owned());
+        return Some(
+            lang.pick(
+                "全是数字的密码会被最先猜到。",
+                "A password of only digits is the first kind guessed.",
+            )
+            .to_owned(),
+        );
     }
     None
 }

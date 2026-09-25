@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router-dom";
 import "./design/tokens.css";
 import { router } from "./routes";
 import { ThemeProvider, applyStoredTheme } from "./ui/theme";
+import { I18nProvider } from "./i18n";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +26,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <RouterProvider router={router} />
+        <I18nProvider>{(locale) => <RouterProvider key={locale} router={router} />}</I18nProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,

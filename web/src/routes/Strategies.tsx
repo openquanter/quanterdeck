@@ -6,17 +6,18 @@ import { api, type OpsAction, type Stage, type StrategyView } from "@/api/client
 import { ActionDialog } from "@/components/ActionDialog";
 import { Empty, ErrorState, Expert, Skeleton } from "@/components/States";
 import { useCaps } from "@/features/trading";
+import { pair, tr } from "@/i18n";
 import { Badge, Button, Card, Drawer, Freshness, KV, PageHeader, Stat, cx, fmtTime } from "@/ui/kit";
 
-const STAGES: { key: Stage; label: string; meaning: string }[] = [
-  { key: "draft", label: "草稿", meaning: "还没有证据" },
-  { key: "backtested", label: "已回测", meaning: "有一份通过的回测支撑当前配置" },
-  { key: "observing", label: "观察中", meaning: "在测试网上跑，积累观察时长和成交" },
-  { key: "confirmed", label: "已确认", meaning: "观察期满，有人签字" },
-  { key: "live", label: "实盘", meaning: "允许上实盘" },
+const stages = (): { key: Stage; label: string; meaning: string }[] => [
+  { key: "draft", label: tr("草稿", "Draft"), meaning: tr("还没有证据", "No evidence yet") },
+  { key: "backtested", label: tr("已回测", "Backtested"), meaning: tr("有一份通过的回测支撑当前配置", "A passing backtest backs the current config") },
+  { key: "observing", label: tr("观察中", "Observing"), meaning: tr("在测试网上跑，积累观察时长和成交", "Runs on testnet, accruing observation time and fills") },
+  { key: "confirmed", label: tr("已确认", "Confirmed"), meaning: tr("观察期满，有人签字", "Observation complete, signed off") },
+  { key: "live", label: tr("实盘", "Live"), meaning: tr("允许上实盘", "Cleared for live") },
 ];
 
-const stageLabel = (s: Stage | null | undefined) => STAGES.find((x) => x.key === s)?.label ?? String(s);
+const stageLabel = (s: Stage | null | undefined) => stages().find((x) => x.key === s)?.label ?? String(s);
 
 type PendingAct = { title: string; consequence: string; action: OpsAction };
 
@@ -42,13 +43,16 @@ export function Strategies() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="策略与上线"
-        description="每个策略实例从草稿一步步走到实盘：不能跳步，每一步需要什么证据、为什么还不能推进，都写在按钮旁边。"
+        title={tr("策略与上线", "Strategies & go-live")}
+        description={tr(
+          "每个策略实例从草稿一步步走到实盘：不能跳步，每一步需要什么证据、为什么还不能推进，都写在按钮旁边。",
+          "Each strategy instance moves from draft to live one step at a time, never skipping. The evidence each step needs, and why it cannot advance yet, sit beside the button.",
+        )}
         meta={<Freshness at={list.dataUpdatedAt} fetching={list.isFetching} staleAfterS={120} onRefresh={() => list.refetch()} />}
         actions={
           writable && (
             <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
-              新建实例
+              {tr("新建实例", "New instance")}
             </Button>
           )
         }
@@ -56,11 +60,18 @@ export function Strategies() {
       {list.isLoading ? (
         <Skeleton rows={6} />
       ) : list.isError ? (
-        <ErrorState error={list.error} what="策略实例" />
+        <ErrorState error={list.error} what={tr("策略实例", "strategy instances")} />
       ) : !list.data?.length ? (
         <Empty
-          title="还没有策略实例。"
-          next={writable ? "点页头的「新建实例」，用一份配置文件建一个实例；它从草稿开始，一步步走到实盘。" : "写入模式未开启，不能新建实例。在「设置」里看写入模式与原因。"}
+          title={tr("还没有策略实例。", "No strategy instances yet.")}
+          next={
+            writable
+              ? tr(
+                  "点页头的「新建实例」，用一份配置文件建一个实例；它从草稿开始，一步步走到实盘。",
+                  "Click \"New instance\" in the header to create one from a config file; it starts as a draft and moves step by step to live.",
+                )
+              : tr("写入模式未开启，不能新建实例。在「设置」里看写入模式与原因。", "Write mode is off, so instances cannot be created. See Settings for write mode and why.")
+          }
         />
       ) : (
         list.data.map((s) => <Instance key={s.instance.id} s={s} writable={writable} runs={readableRuns} onAct={setPending} />)
@@ -86,40 +97,47 @@ function CreateDrawer({ onClose, onSubmit }: { onClose: () => void; onSubmit: (p
   const [name, setName] = useState("");
   const [config, setConfig] = useState("");
   return (
-    <Drawer title="新建策略实例" onClose={onClose} width="max-w-md">
+    <Drawer title={tr("新建策略实例", "New strategy instance")} onClose={onClose} width="max-w-md">
       <div className="space-y-4">
-        <p className="text-sm text-ink-muted">实例从草稿开始，没有任何证据。之后为它记录回测、观察、签字，逐步推进。</p>
+        <p className="text-sm text-ink-muted">
+          {tr(
+            "实例从草稿开始，没有任何证据。之后为它记录回测、观察、签字，逐步推进。",
+            "An instance starts as a draft with no evidence. Record a backtest, observation and sign-off for it to advance step by step.",
+          )}
+        </p>
         <label className="block text-xs text-ink-muted">
-          名称
+          {tr("名称", "Name")}
           <input className={FIELD} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </label>
         <label className="block text-xs text-ink-muted">
-          配置文件
+          {tr("配置文件", "Config file")}
           <select className={cx(FIELD, "font-mono")} value={config} onChange={(e) => setConfig(e.target.value)}>
-            <option value="">选择…</option>
+            <option value="">{tr("选择…", "Select…")}</option>
             {configs.data?.map((c) => (
               <option key={c.name}>{c.name}</option>
             ))}
           </select>
         </label>
-        {configs.isError && <ErrorState error={configs.error} what="配置文件列表" />}
-        {configs.data && configs.data.length === 0 && <p className="text-xs text-warn">配置目录里还没有文件，先在「配置」里放一份。</p>}
+        {configs.isError && <ErrorState error={configs.error} what={tr("配置文件列表", "the config file list")} />}
+        {configs.data && configs.data.length === 0 && (
+          <p className="text-xs text-warn">{tr("配置目录里还没有文件，先在「配置」里放一份。", "The config directory is empty; add a file under Config first.")}</p>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>
-            取消
+            {tr("取消", "Cancel")}
           </Button>
           <Button
             variant="primary"
             disabled={!name.trim() || !config}
             onClick={() =>
               onSubmit({
-                title: `新建实例 ${name.trim()}`,
-                consequence: "实例从草稿开始，没有任何证据。",
+                title: tr(`新建实例 ${name.trim()}`, `Create instance ${name.trim()}`),
+                consequence: tr("实例从草稿开始，没有任何证据。", "The instance starts as a draft with no evidence."),
                 action: { action: "strategy_create", name: name.trim(), config },
               })
             }
           >
-            新建…
+            {tr("新建…", "Create…")}
           </Button>
         </div>
       </div>
@@ -129,7 +147,7 @@ function CreateDrawer({ onClose, onSubmit }: { onClose: () => void; onSubmit: (p
 
 function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boolean; runs: string[]; onAct: (p: PendingAct) => void }) {
   const i = s.instance;
-  const at = STAGES.findIndex((x) => x.key === i.stage);
+  const at = stages().findIndex((x) => x.key === i.stage);
   const voided = [...i.history].reverse().find((h) => h.to === "draft" && h.from !== "draft");
   const nextLabel = stageLabel(s.next);
   const ev = s.evidence;
@@ -155,33 +173,52 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
           <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
           <div>
             <p className="text-ink">
-              {fmtTime(voided.at_ms)} 从「{stageLabel(voided.from)}」退回草稿，之前的证据作废。
+              {tr(
+                `${fmtTime(voided.at_ms)} 从「${stageLabel(voided.from)}」退回草稿，之前的证据作废。`,
+                `Sent back to draft from "${stageLabel(voided.from)}" at ${fmtTime(voided.at_ms)}; earlier evidence is void.`,
+              )}
             </p>
-            <p className="mt-0.5 text-ink-muted">{voided.reason}</p>
+            <p className="mt-0.5 text-ink-muted">{pair(voided.reason, voided.reason_en)}</p>
           </div>
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="回测"
-          value={i.backtest_run ? (i.backtest_passed ? "通过" : "未通过") : "无"}
-          sub={i.backtest_run ?? "还没有记录支撑当前配置的回测"}
+          label={tr("回测", "Backtest")}
+          value={i.backtest_run ? (i.backtest_passed ? tr("通过", "Passed") : tr("未通过", "Failed")) : tr("无", "None")}
+          sub={i.backtest_run ?? tr("还没有记录支撑当前配置的回测", "No backtest recorded for the current config")}
           tone={i.backtest_run && !i.backtest_passed ? "warn" : undefined}
         />
-        <Stat label="观察时长" value={`${ev.observation_hours} / ${ev.required_hours} 小时`} sub={i.observing_since_ms ? `自 ${fmtTime(i.observing_since_ms)}` : "尚未开始观察"} />
-        <Stat label="观察期成交" value={`${ev.observation_fills} 笔`} sub={`至少 ${ev.required_fills} 笔`} />
-        <Stat label="确认人" value={i.confirmed_by ?? "无"} sub={i.confirmed_by ? "已签字" : "观察期满后由人签字"} />
+        <Stat
+          label={tr("观察时长", "Observation time")}
+          value={tr(`${ev.observation_hours} / ${ev.required_hours} 小时`, `${ev.observation_hours} / ${ev.required_hours} h`)}
+          sub={i.observing_since_ms ? tr(`自 ${fmtTime(i.observing_since_ms)}`, `Since ${fmtTime(i.observing_since_ms)}`) : tr("尚未开始观察", "Not observing yet")}
+        />
+        <Stat
+          label={tr("观察期成交", "Observation fills")}
+          value={tr(`${ev.observation_fills} 笔`, `${ev.observation_fills}`)}
+          sub={tr(`至少 ${ev.required_fills} 笔`, `At least ${ev.required_fills}`)}
+        />
+        <Stat
+          label={tr("确认人", "Signed off by")}
+          value={i.confirmed_by ?? tr("无", "None")}
+          sub={i.confirmed_by ? tr("已签字", "Signed") : tr("观察期满后由人签字", "Signed by a person once observation completes")}
+        />
       </div>
 
-      <Expert label="配置指纹">
+      <Expert label={tr("配置指纹", "Config fingerprint")}>
         <KV
           items={[
-            ["记录证据时的配置", <span key="a" className="font-mono text-xs">{i.config_sha ?? "—"}</span>],
-            ["配置文件现在", <span key="b" className={cx("font-mono text-xs", configMoved && "text-warn")}>{s.config_sha_now ?? "—"}</span>],
+            [tr("记录证据时的配置", "Config when evidence was recorded"), <span key="a" className="font-mono text-xs">{i.config_sha ?? "—"}</span>],
+            [tr("配置文件现在", "Config file now"), <span key="b" className={cx("font-mono text-xs", configMoved && "text-warn")}>{s.config_sha_now ?? "—"}</span>],
           ]}
         />
-        {configMoved && <p className="mt-2 text-xs text-warn">配置已改动：已记下的证据不再支撑当前配置。</p>}
+        {configMoved && (
+          <p className="mt-2 text-xs text-warn">
+            {tr("配置已改动：已记下的证据不再支撑当前配置。", "The config has changed: the recorded evidence no longer backs the current config.")}
+          </p>
+        )}
       </Expert>
 
       {s.next && (
@@ -193,30 +230,31 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
               disabled={!s.decision.allowed}
               onClick={() =>
                 onAct({
-                  title: `把 ${i.name} 推进到「${nextLabel}」`,
+                  title: tr(`把 ${i.name} 推进到「${nextLabel}」`, `Advance ${i.name} to "${nextLabel}"`),
                   consequence:
                     s.next === "confirmed"
-                      ? "这一步就是你的签字确认：观察期的结果你已经看过。"
+                      ? tr("这一步就是你的签字确认：观察期的结果你已经看过。", "This step is your sign-off: you have reviewed the observation results.")
                       : s.next === "live"
-                        ? "只记录门控状态，不会自动部署到实盘主机。"
-                        : `进入「${nextLabel}」。`,
+                        ? tr("只记录门控状态，不会自动部署到实盘主机。", "Only the gate state is recorded; nothing is deployed to the live host.")
+                        : tr(`进入「${nextLabel}」。`, `Moves to "${nextLabel}".`),
                   action: { action: "strategy_advance", id: i.id },
                 })
               }
             >
-              推进到「{nextLabel}」…
+              {tr(`推进到「${nextLabel}」…`, `Advance to "${nextLabel}"…`)}
             </Button>
           )}
           {/* The reason beside the control, not in a tooltip (UI-BRIEF §6). */}
           {s.decision.allowed ? (
             <span className="inline-flex items-center gap-1.5 text-sm text-good">
               <Check className="h-4 w-4" />
-              条件已满足，可以推进到「{nextLabel}」
+              {tr(`条件已满足，可以推进到「${nextLabel}」`, `Requirements met; ready to advance to "${nextLabel}"`)}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-sm text-warn">
               <Lock className="h-4 w-4 shrink-0" />
-              还不能推进到「{nextLabel}」：{translate(s.decision.reason)}
+              {tr(`还不能推进到「${nextLabel}」：`, `Cannot advance to "${nextLabel}" yet: `)}
+              {pair(s.decision.reason.zh, s.decision.reason.en)}
             </span>
           )}
         </div>
@@ -224,9 +262,9 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
 
       {writable && i.stage === "draft" && <BacktestForm s={s} runs={runs} onAct={onAct} />}
 
-      <Expert label={`经过（${i.history.length}）`}>
+      <Expert label={tr(`经过（${i.history.length}）`, `History (${i.history.length})`)}>
         {i.history.length === 0 ? (
-          <p className="text-xs text-ink-faint">还没有经过任何一步。</p>
+          <p className="text-xs text-ink-faint">{tr("还没有经过任何一步。", "No steps taken yet.")}</p>
         ) : (
           <ol className="space-y-1.5 border-l border-line pl-4 text-xs">
             {[...i.history].reverse().map((h, k) => (
@@ -237,7 +275,7 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
                 <span className="text-ink">
                   {stageLabel(h.from)} → {stageLabel(h.to)}
                 </span>
-                <span className="ml-2 text-ink-muted">{h.reason}</span>
+                <span className="ml-2 text-ink-muted">{pair(h.reason, h.reason_en)}</span>
               </li>
             ))}
           </ol>
@@ -253,12 +291,13 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
  * one (UI-BRIEF §8).
  */
 function Stepper({ at }: { at: number }) {
-  const last = STAGES.length - 1;
+  const all = stages();
+  const last = all.length - 1;
   // A segment is solid once the stage it leads to has been reached.
   const seg = (reached: boolean) => (reached ? "bg-line-strong" : "border-t border-dashed border-line-strong");
   return (
     <ol className="flex items-start">
-      {STAGES.map((stage, k) => {
+      {all.map((stage, k) => {
         const done = k < at;
         const current = k === at;
         return (
@@ -293,13 +332,13 @@ function BacktestForm({ s, runs, onAct }: { s: StrategyView; runs: string[]; onA
     <div className="rounded-md border border-line px-4 py-3">
       <div className="mb-2 flex items-center gap-2 text-sm text-ink">
         <FlaskConical className="h-4 w-4 text-ink-muted" />
-        记录回测证据
+        {tr("记录回测证据", "Record backtest evidence")}
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-64 text-xs text-ink-muted">
-          支撑当前配置的回测 run
+          {tr("支撑当前配置的回测 run", "Backtest run backing the current config")}
           <select className={cx(FIELD, "font-mono")} value={run} onChange={(e) => setRun(e.target.value)}>
-            <option value="">选择…</option>
+            <option value="">{tr("选择…", "Select…")}</option>
             {runs.map((r) => (
               <option key={r}>{r}</option>
             ))}
@@ -307,41 +346,23 @@ function BacktestForm({ s, runs, onAct }: { s: StrategyView; runs: string[]; onA
         </label>
         <label className="flex h-8 items-center gap-2 text-sm text-ink">
           <input type="checkbox" className="h-4 w-4 accent-[var(--color-accent)]" checked={passed} onChange={(e) => setPassed(e.target.checked)} />
-          我看过结果，判定通过
+          {tr("我看过结果，判定通过", "I reviewed the results and judge it passed")}
         </label>
         <Button
           disabled={!run}
           onClick={() =>
             onAct({
-              title: `为 ${i.name} 记录回测 ${run}`,
-              consequence: "记下当前配置文件的指纹；之后配置一改，这份证据就作废。",
+              title: tr(`为 ${i.name} 记录回测 ${run}`, `Record backtest ${run} for ${i.name}`),
+              consequence: tr("记下当前配置文件的指纹；之后配置一改，这份证据就作废。", "Records the current config file's fingerprint; any later config change voids this evidence."),
               action: { action: "strategy_backtest", id: i.id, run, passed },
             })
           }
         >
-          记录回测…
+          {tr("记录回测…", "Record backtest…")}
         </Button>
       </div>
-      {runs.length === 0 && <p className="mt-2 text-xs text-ink-faint">运行记录目录里还没有可读的 run。</p>}
+      {runs.length === 0 && <p className="mt-2 text-xs text-ink-faint">{tr("运行记录目录里还没有可读的 run。", "No readable runs in the runs directory yet.")}</p>}
     </div>
   );
 }
 
-/** The gate speaks English; the operator reads Chinese. */
-function translate(reason: string) {
-  const m = reason.match(/^(\d+)h of the (\d+)h observation window remain$/);
-  if (m) return `${m[2]} 小时的观察期还剩 ${m[1]} 小时`;
-  const f = reason.match(/^observation produced (\d+) fills; at least (\d+) is required/);
-  if (f) return `观察期产生 ${f[1]} 笔成交；至少需要 ${f[2]} 笔才能说明这个策略做过任何事`;
-  const r = reason.match(/^run (.+) did not pass/);
-  if (r) return `回测 ${r[1]} 没有通过；先看结果再推进`;
-  return (
-    (
-      {
-        "no backtest has been run for this configuration": "还没有为这套配置跑过回测",
-        "nobody has signed off": "没有人签字确认",
-        "already live": "已经是实盘",
-      } as Record<string, string>
-    )[reason] ?? reason
-  );
-}

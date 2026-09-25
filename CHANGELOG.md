@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### English, beside Chinese
+
+- **The interface is in Chinese and English,** switched from the top bar
+  or Settings and remembered in the browser. Every piece of copy is
+  written as `tr("中文", "English")` where it is used, and
+  `scripts/check-i18n.py` (run in CI) fails on Chinese that has no
+  English beside it.
+- **The deck answers in the reader's language:** refusals, capability
+  reasons and attribution's missing inputs follow the request's
+  `Accept-Language`.
+- **So does the host agent.** Every sentence it words is a pair
+  (`oq_deck_core::lang::Said`) — a config file that changed under a
+  write, a deploy whose health check failed, a promotion the gate
+  refuses, a control port that stops answering. The agent does not know
+  which language the console is being read in, so it sends both and the
+  deck picks.
+- **The promotion gate's refusal is a pair on the wire**
+  (`decision.reason` is `{zh, en}`). The console used to recover the
+  English by matching the gate's Chinese with a regex table that had to
+  be kept in step by hand; the table is gone.
+- **Records keep both renderings, in sibling fields:** `reason` and
+  `reason_en`, `result` and `result_en`, `problem`, `outcome`, `step`,
+  `message`. A record written before the console had two languages
+  carries one rendering, and a reader is shown that one rather than a
+  blank.
+- **A person's own words are not translated.** The reason an operator
+  types for an action is stored as they typed it, in both fields.
+- The notification channel keeps the Chinese. Settings chooses the
+  language and the theme instead of describing them.
+
 ### v4 interface — organised by task, and a console rather than a list
 
 - **Navigation grouped by what the operator does** (交易 / 诊断 / 变更 /

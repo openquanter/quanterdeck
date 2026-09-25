@@ -6,16 +6,17 @@ import { api, type HostHealth, type ResourceSummary, type UnitState } from "@/ap
 import { ActionDialog } from "@/components/ActionDialog";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { useCaps, type Pending } from "@/features/trading";
+import { tr } from "@/i18n";
 import { Sparkline, TimeSeries, type Point } from "@/ui/charts";
 import { Ago, Badge, Button, Card, Freshness, PageHeader, Segmented, Stat, StatusDot, Table, cx, fmtBytes, fmtDuration, type Tone } from "@/ui/kit";
 
 const REFRESH = 10_000;
 
-const WINDOWS: { value: number; label: string }[] = [
-  { value: 6, label: "6 小时" },
-  { value: 24, label: "24 小时" },
-  { value: 24 * 7, label: "7 天" },
-  { value: 24 * 30, label: "30 天" },
+const windows = (): { value: number; label: string }[] => [
+  { value: 6, label: tr("6 小时", "6 h") },
+  { value: 24, label: tr("24 小时", "24 h") },
+  { value: 24 * 7, label: tr("7 天", "7 d") },
+  { value: 24 * 30, label: tr("30 天", "30 d") },
 ];
 
 /**
@@ -36,25 +37,30 @@ export function Host() {
   const host = useQuery({ queryKey: ["ops", "host"], queryFn: api.host, refetchInterval: 30_000 });
   const resources = useQuery({ queryKey: ["ops", "resources", hours], queryFn: () => api.resources(hours), refetchInterval: 60_000 });
 
+  const hostPrefix = host.data?.name ? `${host.data.name} · ` : "";
+
   return (
     <div className="space-y-5">
       <PageHeader
-        title="主机与服务"
-        description={`${host.data?.name ? `${host.data.name} · ` : ""}服务启停、主机资源，以及每个服务的内存与 CPU 曲线。`}
+        title={tr("主机与服务", "Host and services")}
+        description={tr(
+          `${hostPrefix}服务启停、主机资源，以及每个服务的内存与 CPU 曲线。`,
+          `${hostPrefix}Service control, host resources, and each service's memory and CPU over time.`,
+        )}
         meta={<Freshness at={units.dataUpdatedAt} fetching={units.isFetching} staleAfterS={30} onRefresh={() => void units.refetch()} />}
       />
 
-      {host.isError ? <ErrorState error={host.error} what="主机状态" /> : host.data ? <HostStats h={host.data} /> : <Skeleton tiles={4} rows={0} />}
+      {host.isError ? <ErrorState error={host.error} what={tr("主机状态", "host status")} /> : host.data ? <HostStats h={host.data} /> : <Skeleton tiles={4} rows={0} />}
 
       <Card
-        title="服务"
+        title={tr("服务", "Services")}
         icon={<Server className="h-4 w-4" />}
         extra={units.data && <UnitsSummary units={units.data} />}
         bodyClassName="p-0"
       >
         {units.isError ? (
           <div className="p-4">
-            <ErrorState error={units.error} what="服务状态" />
+            <ErrorState error={units.error} what={tr("服务状态", "service status")} />
           </div>
         ) : !units.data ? (
           <div className="p-4">
@@ -62,12 +68,20 @@ export function Host() {
           </div>
         ) : units.data.length === 0 ? (
           <div className="p-4">
-            <Empty title="主机代理没有报告任何服务。" next="在 oq-agent 的配置里列出要管理的 systemd 服务，然后重启 oq-agent。" />
+            <Empty
+              title={tr("主机代理没有报告任何服务。", "The host agent reports no services.")}
+              next={tr("在 oq-agent 的配置里列出要管理的 systemd 服务，然后重启 oq-agent。", "List the systemd services to manage in the oq-agent config, then restart oq-agent.")}
+            />
           </div>
         ) : (
           <UnitsTable units={units.data} resources={resources.data} hours={hours} writable={writable} onAct={setPending} />
         )}
-        {!writable && caps.data && <p className="border-t border-line px-4 py-2.5 text-xs text-ink-faint">操作按钮未显示：{caps.data.writes.reason}</p>}
+        {!writable && caps.data && (
+          <p className="border-t border-line px-4 py-2.5 text-xs text-ink-faint">
+            {tr("操作按钮未显示：", "Action buttons hidden: ")}
+            {caps.data.writes.reason}
+          </p>
+        )}
       </Card>
 
       <ResourceHistory q={resources} hours={hours} setHours={setHours} />
@@ -81,32 +95,46 @@ export function Host() {
 
 function HostStats({ h }: { h: HostHealth }) {
   const memUsed = h.mem_total && h.mem_available != null ? 1 - h.mem_available / h.mem_total : null;
+  const loads = h.load.map((l) => l.toFixed(2)).join(" / ");
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Stat
-        label="负载"
+        label={tr("负载", "Load")}
         icon={<Activity className="h-3.5 w-3.5" />}
         value={<span className="tabular-nums">{h.load[0]?.toFixed(2) ?? "—"}</span>}
-        sub={h.load.length ? `1 / 5 / 15 分钟：${h.load.map((l) => l.toFixed(2)).join(" / ")}` : undefined}
+        sub={h.load.length ? tr(`1 / 5 / 15 分钟：${loads}`, `1 / 5 / 15 min: ${loads}`) : undefined}
       />
       <Stat
-        label="内存"
+        label={tr("内存", "Memory")}
         icon={<MemoryStick className="h-3.5 w-3.5" />}
-        value={memUsed === null ? "—" : <span className="tabular-nums">{(memUsed * 100).toFixed(0)}% 已用</span>}
-        sub={memUsed === null ? "主机代理没有报告内存" : <UsageBar used={memUsed} caption={`可用 ${fmtBytes(h.mem_available)} / 共 ${fmtBytes(h.mem_total)}`} />}
+        value={memUsed === null ? "—" : <span className="tabular-nums">{tr(`${(memUsed * 100).toFixed(0)}% 已用`, `${(memUsed * 100).toFixed(0)}% used`)}</span>}
+        sub={
+          memUsed === null ? (
+            tr("主机代理没有报告内存", "The host agent did not report memory")
+          ) : (
+            <UsageBar
+              used={memUsed}
+              caption={tr(`可用 ${fmtBytes(h.mem_available)} / 共 ${fmtBytes(h.mem_total)}`, `${fmtBytes(h.mem_available)} free of ${fmtBytes(h.mem_total)}`)}
+            />
+          )
+        }
       />
       <Stat
-        label="已运行"
+        label={tr("已运行", "Uptime")}
         icon={<Clock className="h-3.5 w-3.5" />}
         value={h.uptime_s == null ? "—" : fmtDuration(h.uptime_s)}
-        sub={h.uptime_s == null ? "主机代理没有报告" : "自主机上次启动"}
+        sub={h.uptime_s == null ? tr("主机代理没有报告", "Not reported by the host agent") : tr("自主机上次启动", "Since the host last booted")}
       />
       <Stat
-        label="时钟"
+        label={tr("时钟", "Clock")}
         icon={<Clock className="h-3.5 w-3.5" />}
-        value={h.clock_synced === null ? "未知" : h.clock_synced ? "已同步" : "未同步"}
+        value={h.clock_synced === null ? tr("未知", "Unknown") : h.clock_synced ? tr("已同步", "Synced") : tr("未同步", "Not synced")}
         tone={h.clock_synced === false ? "bad" : h.clock_synced === null ? "warn" : "good"}
-        sub={h.clock_synced === false ? "系统时钟没有与 NTP 同步：时间戳和延迟都不可信" : "与 NTP 同步"}
+        sub={
+          h.clock_synced === false
+            ? tr("系统时钟没有与 NTP 同步：时间戳和延迟都不可信", "The system clock is not synced to NTP: timestamps and latencies cannot be trusted")
+            : tr("与 NTP 同步", "Synced to NTP")
+        }
       />
       {h.disks.map((d) => {
         const used = d.size && d.used != null ? d.used / d.size : null;
@@ -114,11 +142,17 @@ function HostStats({ h }: { h: HostHealth }) {
         return (
           <Stat
             key={d.mount}
-            label={`磁盘 ${d.mount}`}
+            label={tr(`磁盘 ${d.mount}`, `Disk ${d.mount}`)}
             icon={<HardDrive className="h-3.5 w-3.5" />}
-            value={free === null ? "—" : <span className="tabular-nums">{(free * 100).toFixed(0)}% 可用</span>}
+            value={free === null ? "—" : <span className="tabular-nums">{tr(`${(free * 100).toFixed(0)}% 可用`, `${(free * 100).toFixed(0)}% free`)}</span>}
             tone={free !== null && free < 0.1 ? "bad" : undefined}
-            sub={used === null ? "主机代理没有报告大小" : <UsageBar used={used} caption={`可用 ${fmtBytes(d.avail)} / 共 ${fmtBytes(d.size)}`} />}
+            sub={
+              used === null ? (
+                tr("主机代理没有报告大小", "The host agent did not report the size")
+              ) : (
+                <UsageBar used={used} caption={tr(`可用 ${fmtBytes(d.avail)} / 共 ${fmtBytes(d.size)}`, `${fmtBytes(d.avail)} free of ${fmtBytes(d.size)}`)} />
+              )
+            }
           />
         );
       })}
@@ -150,7 +184,11 @@ function unitTone(u: UnitState): Tone {
 
 function UnitsSummary({ units }: { units: UnitState[] }) {
   const down = units.filter((u) => u.ActiveState !== "active").length;
-  return down ? <Badge tone="bad">{down} 个未运行</Badge> : <Badge tone="good">{units.length} 个全部运行</Badge>;
+  return down ? (
+    <Badge tone="bad">{tr(`${down} 个未运行`, `${down} not running`)}</Badge>
+  ) : (
+    <Badge tone="good">{tr(`${units.length} 个全部运行`, `All ${units.length} running`)}</Badge>
+  );
 }
 
 /**
@@ -169,16 +207,28 @@ function parseSystemdTime(s: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-const VERBS: { verb: "start" | "stop" | "restart"; label: string; note: string; icon: React.ReactNode; variant: "secondary" | "danger" | "primary" }[] = [
+const verbs = (): { verb: "start" | "stop" | "restart"; label: string; note: string; icon: React.ReactNode; variant: "secondary" | "danger" | "primary" }[] => [
   {
     verb: "restart",
-    label: "重启",
-    note: "停止（进程会撤掉自己的全部挂单）后再启动；策略重新接管持仓并补挂单。",
+    label: tr("重启", "Restart"),
+    note: tr(
+      "停止（进程会撤掉自己的全部挂单）后再启动；策略重新接管持仓并补挂单。",
+      "Stops (the process cancels all its open orders) and starts again; the strategy takes its positions back over and re-places its orders.",
+    ),
     icon: <RotateCw className="h-3.5 w-3.5" />,
     variant: "secondary",
   },
-  { verb: "stop", label: "停止", note: "停止服务。交易进程会撤掉全部挂单后退出，之后持仓无人管理。", icon: <Square className="h-3.5 w-3.5" />, variant: "danger" },
-  { verb: "start", label: "启动", note: "启动服务。", icon: <Play className="h-3.5 w-3.5" />, variant: "primary" },
+  {
+    verb: "stop",
+    label: tr("停止", "Stop"),
+    note: tr(
+      "停止服务。交易进程会撤掉全部挂单后退出，之后持仓无人管理。",
+      "Stops the service. The trading process cancels all open orders and exits; its positions are then unmanaged.",
+    ),
+    icon: <Square className="h-3.5 w-3.5" />,
+    variant: "danger",
+  },
+  { verb: "start", label: tr("启动", "Start"), note: tr("启动服务。", "Starts the service."), icon: <Play className="h-3.5 w-3.5" />, variant: "primary" },
 ];
 
 const mib = (b: number | null | undefined) => (b == null ? "—" : `${(b / 1_048_576).toFixed(1)} MiB`);
@@ -207,9 +257,11 @@ function UnitsTable({
   writable: boolean;
   onAct: (p: Pending) => void;
 }) {
-  const span = WINDOWS.find((w) => w.value === hours)?.label ?? `${hours} 小时`;
+  const span = windows().find((w) => w.value === hours)?.label ?? tr(`${hours} 小时`, `${hours} h`);
   return (
-    <Table head={["服务", "状态", "启动于", "重启次数", "内存", "CPU（单核）", ""]}>
+    <Table
+      head={[tr("服务", "Service"), tr("状态", "State"), tr("启动于", "Started"), tr("重启次数", "Restarts"), tr("内存", "Memory"), tr("CPU（单核）", "CPU (one core)"), ""]}
+    >
       {units.map((u) => {
         const up = u.ActiveState === "active";
         const tone = unitTone(u);
@@ -224,7 +276,7 @@ function UnitsTable({
               <span className="inline-flex items-center gap-2">
                 <StatusDot tone={tone} pulse={tone === "bad"} />
                 <span className={cx(tone === "bad" ? "text-bad" : tone === "warn" ? "text-warn" : "text-ink")}>
-                  {u.error ? "无法获取" : `${u.ActiveState ?? "—"} / ${u.SubState ?? "—"}`}
+                  {u.error ? tr("无法获取", "Unavailable") : `${u.ActiveState ?? "—"} / ${u.SubState ?? "—"}`}
                 </span>
               </span>
               {u.error && <div className="mt-0.5 text-xs text-ink-faint">{u.error}</div>}
@@ -239,7 +291,7 @@ function UnitsTable({
                   <div className="text-ink">{mib(mem)}</div>
                   {r?.memory && (
                     <div className="text-xs text-ink-faint">
-                      {span}峰值 {mib(r.memory.max)}
+                      {tr(`${span}峰值 ${mib(r.memory.max)}`, `${span} peak ${mib(r.memory.max)}`)}
                     </div>
                   )}
                 </>
@@ -258,7 +310,7 @@ function UnitsTable({
             <td className="text-right">
               {writable && u.manageable && (
                 <div className="inline-flex gap-1.5">
-                  {VERBS.filter((v) => (up ? v.verb !== "start" : v.verb === "start")).map((v) => (
+                  {verbs().filter((v) => (up ? v.verb !== "start" : v.verb === "start")).map((v) => (
                     <Button
                       key={v.verb}
                       size="sm"
@@ -289,7 +341,7 @@ function UnitsTable({
 // -- resource history ---------------------------------------------------------------
 
 /**
- * The black box (host agent, every 30 s, kept 30 days): each service's
+ * The black box (host agent, every 30 s, kept 90 days): each service's
  * memory and CPU with its extremes over a window. systemd forgets both at
  * every restart; these samples do not.
  */
@@ -308,27 +360,33 @@ function ResourceHistory({
   const recorded = rows.filter((r) => r.samples > 0);
   return (
     <Card
-      title="资源曲线"
+      title={tr("资源曲线", "Resource history")}
       icon={<Cpu className="h-4 w-4" />}
       extra={
         <>
-          <span className="hidden sm:inline">主机代理每 30 秒记录一次，保留 90 天</span>
-          <Segmented value={hours} options={WINDOWS} onChange={setHours} />
+          <span className="hidden sm:inline">{tr("主机代理每 30 秒记录一次，保留 90 天", "Recorded by the host agent every 30 s, kept 90 days")}</span>
+          <Segmented value={hours} options={windows()} onChange={setHours} />
         </>
       }
     >
       {q.isLoading ? (
         <Skeleton rows={5} />
       ) : q.isError ? (
-        <ErrorState error={q.error} what="资源记录" />
+        <ErrorState error={q.error} what={tr("资源记录", "resource records")} />
       ) : rows.length === 0 ? (
-        <Empty title="还没有资源记录。" next="主机代理启动后每 30 秒记录一次各服务的内存和 CPU；稍等片刻再看。" />
+        <Empty
+          title={tr("还没有资源记录。", "No resource records yet.")}
+          next={tr(
+            "主机代理启动后每 30 秒记录一次各服务的内存和 CPU；稍等片刻再看。",
+            "Once started, the host agent records each service's memory and CPU every 30 s; check back shortly.",
+          )}
+        />
       ) : (
         <div className="space-y-5">
           {recorded.length > 0 && (
             <div className="grid gap-4 lg:grid-cols-2">
               <div>
-                <div className="mb-1 text-xs text-ink-muted">内存（MiB）</div>
+                <div className="mb-1 text-xs text-ink-muted">{tr("内存（MiB）", "Memory (MiB)")}</div>
                 <TimeSeries
                   height={180}
                   from={from}
@@ -341,7 +399,7 @@ function ResourceHistory({
                 />
               </div>
               <div>
-                <div className="mb-1 text-xs text-ink-muted">CPU（单核 %）</div>
+                <div className="mb-1 text-xs text-ink-muted">{tr("CPU（单核 %）", "CPU (% of one core)")}</div>
                 <TimeSeries
                   height={180}
                   from={from}
@@ -356,7 +414,15 @@ function ResourceHistory({
               </div>
             </div>
           )}
-          <Table head={["服务", "内存 最小 / 平均 / p95 / 最大", "CPU（单核）平均 / p95 / 最大", "重启", "内存走势"]}>
+          <Table
+            head={[
+              tr("服务", "Service"),
+              tr("内存 最小 / 平均 / p95 / 最大", "Memory min / avg / p95 / max"),
+              tr("CPU（单核）平均 / p95 / 最大", "CPU (one core) avg / p95 / max"),
+              tr("重启", "Restarts"),
+              tr("内存走势", "Memory trend"),
+            ]}
+          >
             {rows.map((r) => (
               <ResourceRow key={r.unit} r={r} hours={hours} />
             ))}
@@ -370,14 +436,15 @@ function ResourceHistory({
 function ResourceRow({ r, hours }: { r: ResourceSummary; hours: number }) {
   const covered = r.first_ms ? (Date.now() - r.first_ms) / 3.6e6 : 0;
   const points: Point[] = r.curve.map((p) => [p.at, p.mem]);
+  const downMin = Math.round((r.samples_down * 30) / 60);
   return (
     <tr className="align-top">
       <td className="font-mono text-xs text-ink">
         {r.unit}
         {r.samples === 0 ? (
-          <div className="mt-0.5 font-sans text-warn">还没有记录</div>
+          <div className="mt-0.5 font-sans text-warn">{tr("还没有记录", "Not recorded yet")}</div>
         ) : covered < hours * 0.9 ? (
-          <div className="mt-0.5 font-sans text-ink-faint">记录只覆盖最近 {covered.toFixed(1)} 小时</div>
+          <div className="mt-0.5 font-sans text-ink-faint">{tr(`记录只覆盖最近 ${covered.toFixed(1)} 小时`, `Records cover only the last ${covered.toFixed(1)} h`)}</div>
         ) : null}
       </td>
       <td className="whitespace-nowrap text-xs tabular-nums text-ink-muted">
@@ -387,7 +454,8 @@ function ResourceRow({ r, hours }: { r: ResourceSummary; hours: number }) {
         {r.cpu_percent ? `${pct(r.cpu_percent.avg)} / ${pct(r.cpu_percent.p95)} / ${pct(r.cpu_percent.max)}` : "—"}
       </td>
       <td className={cx("whitespace-nowrap text-xs", r.process_changes > 0 ? "text-warn" : "text-ink-muted")}>
-        {r.process_changes} 次{r.samples_down > 0 ? ` · 停止 ${Math.round((r.samples_down * 30) / 60)} 分钟` : ""}
+        {tr(`${r.process_changes} 次`, `${r.process_changes}`)}
+        {r.samples_down > 0 ? tr(` · 停止 ${downMin} 分钟`, ` · down ${downMin} min`) : ""}
       </td>
       <td className="w-44">{points.filter((p) => p[1] != null).length >= 2 ? <Sparkline points={points} height={28} /> : <span className="text-xs text-ink-faint">—</span>}</td>
     </tr>

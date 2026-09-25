@@ -4,6 +4,7 @@ import { Navigate } from "react-router-dom";
 
 import { ApiError, api, type SetupDone } from "@/api/client";
 import { Copy } from "@/components/States";
+import { tr } from "@/i18n";
 import { Button, cx } from "@/ui/kit";
 
 import { Centered } from "./Login";
@@ -46,8 +47,13 @@ export function Setup() {
     }
   }
 
+  const stepName = [tr("粘贴令牌", "Paste token"), tr("设置密码", "Set password"), tr("保存凭据", "Save credentials")][step - 1];
+
   return (
-    <Centered title="首次设置" subtitle={`第 ${step} 步，共 3 步 · ${["粘贴令牌", "设置密码", "保存凭据"][step - 1]}`}>
+    <Centered
+      title={tr("首次设置", "First-time setup")}
+      subtitle={tr(`第 ${step} 步，共 3 步 · ${stepName}`, `Step ${step} of 3 · ${stepName}`)}
+    >
       <Steps step={step} />
       {step === 1 && (
         <form
@@ -58,14 +64,16 @@ export function Setup() {
           }}
         >
           <p className="leading-relaxed text-ink-muted">
-            粘贴启动 deck 的那个终端里打印的一次性令牌。它只出现在那里，是因为读到它需要这台机器的本地访问权限；
-            deck 重启后它就失效，设置完成后也立即失效。
+            {tr(
+              "粘贴启动 deck 的那个终端里打印的一次性令牌。它只出现在那里，是因为读到它需要这台机器的本地访问权限；deck 重启后它就失效，设置完成后也立即失效。",
+              "Paste the one-time token printed in the terminal that started the deck. It appears only there because reading it requires local access to this machine. It expires when the deck restarts, and as soon as setup completes.",
+            )}
           </p>
-          <input autoFocus required value={token} onChange={(e) => setToken(e.target.value)} className={cx(INPUT, "font-mono")} placeholder="一次性令牌" />
+          <input autoFocus required value={token} onChange={(e) => setToken(e.target.value)} className={cx(INPUT, "font-mono")} placeholder={tr("一次性令牌", "One-time token")} />
           {refusal && <Refusal text={refusal} />}
           <Wide>
             <Button type="submit" variant="primary">
-              下一步
+              {tr("下一步", "Next")}
             </Button>
           </Wide>
         </form>
@@ -74,7 +82,10 @@ export function Setup() {
       {step === 2 && (
         <form className="space-y-4 text-sm" onSubmit={finish}>
           <p className="leading-relaxed text-ink-muted">
-            设置密码。唯一的规则是至少 12 个字符——用一句只有你记得的话，比一串写在便签上的符号更好。
+            {tr(
+              "设置密码。唯一的规则是至少 12 个字符——用一句只有你记得的话，比一串写在便签上的符号更好。",
+              "Set a password. The only rule is at least 12 characters. A sentence only you remember beats a string of symbols on a sticky note.",
+            )}
           </p>
           <div>
             <input
@@ -87,14 +98,14 @@ export function Setup() {
               onChange={(e) => setPassword(e.target.value)}
               className={INPUT}
             />
-            <p className={cx("mt-1.5 text-xs tabular-nums", password.length >= 12 ? "text-good" : "text-ink-faint")}>{password.length} / 至少 12</p>
+            <p className={cx("mt-1.5 text-xs tabular-nums", password.length >= 12 ? "text-good" : "text-ink-faint")}>{tr(`${password.length} / 至少 12`, `${password.length} / at least 12`)}</p>
           </div>
           {refusal && <Refusal text={refusal} />}
           <div className="flex gap-2">
-            <Button onClick={() => setStep(1)}>上一步</Button>
+            <Button onClick={() => setStep(1)}>{tr("上一步", "Back")}</Button>
             <div className="flex-1 [&>button]:h-8 [&>button]:w-full">
               <Button type="submit" variant="primary" disabled={busy || password.length < 12}>
-                {busy ? "正在生成…" : "生成凭据"}
+                {busy ? tr("正在生成…", "Generating…") : tr("生成凭据", "Generate credentials")}
               </Button>
             </div>
           </div>
@@ -131,13 +142,15 @@ function Credentials({ done }: { done: SetupDone }) {
   return (
     <div className="space-y-4 text-sm">
       <p className="rounded-md border border-warn/40 bg-warn/8 px-3.5 py-3 leading-relaxed text-ink">
-        下面两样东西<strong>不要截图、不要粘进聊天、不要提交进 git</strong>。离开这一页就不会再显示。
+        {tr("下面两样东西", "Do ")}
+        <strong>{tr("不要截图、不要粘进聊天、不要提交进 git", "not screenshot, paste into chat, or commit to git")}</strong>
+        {tr("。离开这一页就不会再显示。", " the two values below. They are not shown again once you leave this page.")}
       </p>
       <Field label="OQ_DECK_PASSWORD_HASH" value={done.password_hash} />
-      <Field label="OQ_DECK_TOTP_SECRET（录入验证器应用）" value={done.totp_secret} />
-      <Field label="验证器链接（支持直接打开的应用可用）" value={uri} />
+      <Field label={tr("OQ_DECK_TOTP_SECRET（录入验证器应用）", "OQ_DECK_TOTP_SECRET (enter into your authenticator app)")} value={done.totp_secret} />
+      <Field label={tr("验证器链接（支持直接打开的应用可用）", "Authenticator link (for apps that open it directly)")} value={uri} />
       <div>
-        <div className="mb-1.5 text-xs text-ink-muted">接下来</div>
+        <div className="mb-1.5 text-xs text-ink-muted">{tr("接下来", "Next steps")}</div>
         <ol className="list-decimal space-y-1 pl-5 text-ink-muted">
           {done.next_steps.map((step) => (
             <li key={step}>{step}</li>

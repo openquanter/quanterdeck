@@ -23,6 +23,7 @@ use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use oq_deck_core::lang::Lang;
 use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, runs, sweeps};
 use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
@@ -41,6 +42,21 @@ pub struct Deck {
     /// Taken, not read, by a setup that succeeds: the token is single
     /// use, as the notes and the startup message say it is.
     pub setup_token: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+tokio::task_local! {
+    /// The language the request asked for; set once, outermost.
+    static LANG: Lang;
+}
+
+/// The language of the request being answered. Chinese outside one.
+fn lang() -> Lang {
+    LANG.try_with(|l| *l).unwrap_or_default()
+}
+
+/// One of two renderings, in the language of the request being answered.
+fn t<T>(zh: T, en: T) -> T {
+    lang().pick(zh, en)
 }
 
 /// A refusal the interface can act on.
@@ -88,11 +104,19 @@ fn check_host(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     }
     Err(Refusal::new(
         StatusCode::MISDIRECTED_REQUEST,
-        format!(
-            "拒绝服务该 Host。本 deck 只应答 {}。\
-             一个指向 127.0.0.1 的外部域名正是 DNS rebinding 的形状；\
-             若你在用反向代理，请把它的域名加进 OQ_DECK_EXTRA_HOSTS。",
-            deck.hosts.names().join(", ")
+        t(
+            format!(
+                "拒绝服务该 Host。本 deck 只应答 {}。\
+                 一个指向 127.0.0.1 的外部域名正是 DNS rebinding 的形状；\
+                 若你在用反向代理，请把它的域名加进 OQ_DECK_EXTRA_HOSTS。",
+                deck.hosts.names().join(", ")
+            ),
+            format!(
+                "This Host is refused. This deck answers only to {}. An outside name that \
+                 points at 127.0.0.1 is exactly the shape of DNS rebinding; if you are behind \
+                 a reverse proxy, add its name to OQ_DECK_EXTRA_HOSTS.",
+                deck.hosts.names().join(", ")
+            ),
         ),
     ))
 }
@@ -108,7 +132,10 @@ fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     if site.is_some_and(|s| !matches!(s, "same-origin" | "none")) {
         return Err(Refusal::new(
             StatusCode::FORBIDDEN,
-            "该写入请求来自其他站点（Sec-Fetch-Site），跨站点的写入会被拒绝。",
+            t(
+                "该写入请求来自其他站点（Sec-Fetch-Site），跨站点的写入会被拒绝。",
+                "This write came from another site (Sec-Fetch-Site); cross-site writes are refused.",
+            ),
         ));
     }
     if origin_permitted(origin, &deck.hosts, deck.settings.behind_tls) {
@@ -116,20 +143,29 @@ fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     }
     Err(Refusal::new(
         StatusCode::FORBIDDEN,
-        "该写入请求的 Origin 不属于本 deck。跨站点的写入会被拒绝。",
+        t(
+            "该写入请求的 Origin 不属于本 deck。跨站点的写入会被拒绝。",
+            "This write's Origin is not this deck; cross-site writes are refused.",
+        ),
     ))
 }
 
 fn check_session(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     let cookie = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
     let Some(token) = session::token_from_cookies(cookie) else {
-        return Err(Refusal::new(StatusCode::UNAUTHORIZED, "请先登录。"));
+        return Err(Refusal::new(
+            StatusCode::UNAUTHORIZED,
+            t("请先登录。", "Sign in first."),
+        ));
     };
     match deck.sessions.touch(&token) {
         Ok(()) => Ok(()),
         Err(Denied::NoSession) => Err(Refusal::new(
             StatusCode::UNAUTHORIZED,
-            "会话已失效，请重新登录。",
+            t(
+                "会话已失效，请重新登录。",
+                "The session has expired; sign in again.",
+            ),
         )),
     }
 }
@@ -145,11 +181,18 @@ fn source_of(peer: Option<&axum::Extension<ConnectInfo<SocketAddr>>>) -> String 
     peer.map_or_else(|| "unknown".to_owned(), |p| p.0.0.ip().to_string())
 }
 
-/// The deck's own configuration is broken, not the request.
+/// The deck's own configuration is broken, not the request. `what` is
+/// a finished sentence in the request's language.
 fn misconfigured(what: &str) -> Refusal {
     Refusal::new(
         StatusCode::INTERNAL_SERVER_ERROR,
-        format!("{what}这是配置问题，不是密码错误；本次尝试不计入失败次数。"),
+        t(
+            format!("{what}这是配置问题，不是密码错误；本次尝试不计入失败次数。"),
+            format!(
+                "{what} This is a configuration problem, not a wrong password; \
+                 the attempt is not counted as a failure."
+            ),
+        ),
     )
 }
 
@@ -160,7 +203,10 @@ fn locked_out(deck: &Deck, source: &str) -> Refusal {
         .map_or(0, |left| left.as_secs().div_ceil(60));
     Refusal::new(
         StatusCode::TOO_MANY_REQUESTS,
-        format!("失败次数过多，请在 {minutes} 分钟后再试。"),
+        t(
+            format!("失败次数过多，请在 {minutes} 分钟后再试。"),
+            format!("Too many failed attempts; try again in {minutes} min."),
+        ),
     )
 }
 
@@ -170,7 +216,10 @@ fn check_writes(deck: &Deck) -> Result<(), Refusal> {
     }
     Err(Refusal::new(
         StatusCode::FORBIDDEN,
-        "本 deck 处于只读模式；要修改任何东西，请先在设置中开启写入。",
+        t(
+            "本 deck 处于只读模式；要修改任何东西，请先在设置中开启写入。",
+            "This deck is read-only; to change anything, turn on write mode first.",
+        ),
     ))
 }
 
@@ -265,12 +314,18 @@ async fn login(
     let Some(stored) = deck.settings.password_hash.as_ref() else {
         return Refusal::new(
             StatusCode::PRECONDITION_REQUIRED,
-            "本 deck 尚未完成初始设置。",
+            t(
+                "本 deck 尚未完成初始设置。",
+                "This deck has not been set up yet.",
+            ),
         )
         .into_response();
     };
 
-    let rejected = Refusal::new(StatusCode::UNAUTHORIZED, "密码或验证码不正确。");
+    let rejected = Refusal::new(
+        StatusCode::UNAUTHORIZED,
+        t("密码或验证码不正确。", "The password or code is incorrect."),
+    );
 
     match auth::verify_password(&body.password, stored) {
         Ok(()) => {}
@@ -281,7 +336,13 @@ async fn login(
         // The stored hash, not the attempt. Reported as itself and not
         // counted: read as a wrong password it sent the operator after a
         // password that was never the problem, and locked them out.
-        Err(_) => return misconfigured("OQ_DECK_PASSWORD_HASH 无法解析。").into_response(),
+        Err(_) => {
+            return misconfigured(t(
+                "OQ_DECK_PASSWORD_HASH 无法解析。",
+                "OQ_DECK_PASSWORD_HASH cannot be parsed.",
+            ))
+            .into_response();
+        }
     }
 
     if let Some(secret) = deck.settings.totp_secret.as_ref() {
@@ -295,7 +356,11 @@ async fn login(
                 return rejected.into_response();
             }
             Err(_) => {
-                return misconfigured("OQ_DECK_TOTP_SECRET 无法解析。").into_response();
+                return misconfigured(t(
+                    "OQ_DECK_TOTP_SECRET 无法解析。",
+                    "OQ_DECK_TOTP_SECRET cannot be parsed.",
+                ))
+                .into_response();
             }
         }
     }
@@ -311,7 +376,10 @@ async fn login(
             .into_response(),
         Err(error) => Refusal::new(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("无法签发会话：{error}"),
+            t(
+                format!("无法签发会话：{error}"),
+                format!("Could not issue a session: {error}"),
+            ),
         )
         .into_response(),
     }
@@ -380,14 +448,22 @@ async fn setup(
     let token = {
         let mut slot = deck.setup_token.lock().unwrap_or_else(|e| e.into_inner());
         let Some(expected) = slot.as_ref() else {
-            return Refusal::new(StatusCode::CONFLICT, "初始设置已经完成。").into_response();
+            return Refusal::new(
+                StatusCode::CONFLICT,
+                t("初始设置已经完成。", "Setup is already done."),
+            )
+            .into_response();
         };
         if !auth::secrets_match(expected, &body.token) {
             deck.sessions.record_failure(&source);
-            return Refusal::new(StatusCode::UNAUTHORIZED, "一次性令牌不正确。").into_response();
+            return Refusal::new(
+                StatusCode::UNAUTHORIZED,
+                t("一次性令牌不正确。", "The one-time token is incorrect."),
+            )
+            .into_response();
         }
         // A password that is refused does not spend the token.
-        if let Some(complaint) = auth::password_complaint(&body.password) {
+        if let Some(complaint) = auth::password_complaint(&body.password, lang()) {
             return Refusal::bad_request(complaint).into_response();
         }
         slot.take()
@@ -398,9 +474,21 @@ async fn setup(
             password_hash,
             totp_secret: totp_secret.clone(),
             next_steps: vec![
-                "把 OQ_DECK_PASSWORD_HASH 设为上面的 hash，重启 deck。".to_owned(),
-                "把 TOTP secret 录入验证器应用，并设为 OQ_DECK_TOTP_SECRET；deck 对外可达时（非回环地址、反向代理或 OQ_DECK_EXTRA_HOSTS）它是必需的。".to_owned(),
-                "两者都不要提交进 git，也不要写进任何日志。".to_owned(),
+                t(
+                    "把 OQ_DECK_PASSWORD_HASH 设为上面的 hash，重启 deck。",
+                    "Set OQ_DECK_PASSWORD_HASH to the hash above and restart the deck.",
+                )
+                .to_owned(),
+                t(
+                    "把 TOTP secret 录入验证器应用，并设为 OQ_DECK_TOTP_SECRET；deck 对外可达时（非回环地址、反向代理或 OQ_DECK_EXTRA_HOSTS）它是必需的。",
+                    "Add the TOTP secret to an authenticator app and set it as OQ_DECK_TOTP_SECRET; it is required whenever the deck is reachable from outside (a non-loopback address, a reverse proxy, or OQ_DECK_EXTRA_HOSTS).",
+                )
+                .to_owned(),
+                t(
+                    "两者都不要提交进 git，也不要写进任何日志。",
+                    "Commit neither to git, and write neither to any log.",
+                )
+                .to_owned(),
             ],
         })
         .into_response(),
@@ -409,7 +497,10 @@ async fn setup(
             *deck.setup_token.lock().unwrap_or_else(|e| e.into_inner()) = token;
             Refusal::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("初始设置失败：{error}"),
+                t(
+                    format!("初始设置失败：{error}"),
+                    format!("Setup failed: {error}"),
+                ),
             )
             .into_response()
         }
@@ -428,6 +519,7 @@ async fn caps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         deck.settings.ticks_dir.as_deref(),
         deck.settings.agent_socket.as_deref(),
         deck.settings.allow_writes,
+        lang(),
     ))
     .into_response()
 }
@@ -436,7 +528,10 @@ fn dir_of(configured: Option<&PathBuf>, variable: &str) -> Result<PathBuf, Refus
     configured.cloned().ok_or_else(|| {
         Refusal::new(
             StatusCode::PRECONDITION_REQUIRED,
-            format!("尚未配置目录；请设置 {variable}"),
+            t(
+                format!("尚未配置目录；请设置 {variable}"),
+                format!("No directory is configured; set {variable}"),
+            ),
         )
     })
 }
@@ -452,7 +547,10 @@ struct Listing {
 fn unreadable_dir(why: String) -> Refusal {
     Refusal::new(
         StatusCode::SERVICE_UNAVAILABLE,
-        format!("目录无法读取，所以无法判断其中有什么：{why}"),
+        t(
+            format!("目录无法读取，所以无法判断其中有什么：{why}"),
+            format!("The directory cannot be read, so what is in it is unknown: {why}"),
+        ),
     )
 }
 
@@ -642,10 +740,12 @@ async fn attribution_report(
         return refusal.into_response();
     }
     let (Some(price_scale), Some(qty_scale)) = (query.price_scale, query.qty_scale) else {
-        return Refusal::bad_request(
+        return Refusal::bad_request(t(
             "需要 price_scale 和 qty_scale：归因金额按合约的价格与数量精度计算，\
              没有默认值可以替你选。",
-        )
+            "price_scale and qty_scale are required: attribution is computed at the \
+             instrument's price and quantity precision, and no default can choose them for you.",
+        ))
         .into_response();
     };
     let inputs = attribution::Inputs {
@@ -653,6 +753,7 @@ async fn attribution_report(
         qty_scale,
         funding: AttributionQuery::pair(query.venue_funding, query.model_funding),
         fees: AttributionQuery::pair(query.venue_fees, query.model_fees),
+        lang: lang(),
     };
     match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR").and_then(|dir| {
         attribution::from_runs(&dir, &query.live, &query.model, inputs).map_err(Refusal::not_found)
@@ -736,8 +837,11 @@ async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         return refusal.into_response();
     }
     let Some(record_path) = deck.settings.venue_record.clone() else {
-        return Refusal::not_found("尚未配置交易所最新记录（OQ_DECK_VENUE_RECORD）")
-            .into_response();
+        return Refusal::not_found(t(
+            "尚未配置交易所最新记录（OQ_DECK_VENUE_RECORD）",
+            "No latest venue record is configured (OQ_DECK_VENUE_RECORD)",
+        ))
+        .into_response();
     };
     let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
         Ok(d) => d,
@@ -751,13 +855,23 @@ async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Respo
             .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
     });
     let Some(id) = newest else {
-        return Refusal::not_found("日志目录里还没有交易日志").into_response();
+        return Refusal::not_found(t(
+            "日志目录里还没有交易日志",
+            "The journals directory has no journal yet",
+        ))
+        .into_response();
     };
     let text = match std::fs::read_to_string(&record_path) {
         Ok(t) => t,
         Err(e) => {
-            return Refusal::not_found(format!("读不到交易所记录 {}：{e}", record_path.display()))
-                .into_response();
+            return Refusal::not_found(t(
+                format!("读不到交易所记录 {}：{e}", record_path.display()),
+                format!(
+                    "Cannot read the venue record {}: {e}",
+                    record_path.display()
+                ),
+            ))
+            .into_response();
         }
     };
     match live::reconcile(&dir, &id, &text) {
@@ -787,11 +901,21 @@ async fn ask_agent(
     actor: String,
 ) -> Response {
     let Some(sock) = deck.settings.agent_socket.clone() else {
-        return Refusal::not_found("尚未配置主机代理（OQ_DECK_AGENT_SOCKET）").into_response();
+        return Refusal::not_found(t(
+            "尚未配置主机代理（OQ_DECK_AGENT_SOCKET）",
+            "No host agent is configured (OQ_DECK_AGENT_SOCKET)",
+        ))
+        .into_response();
     };
     let nonce = match auth::new_token() {
         Ok(n) => n,
-        Err(e) => return misconfigured(&format!("无法生成请求编号：{e}。")).into_response(),
+        Err(e) => {
+            return misconfigured(&t(
+                format!("无法生成请求编号：{e}。"),
+                format!("Could not make a request id: {e}."),
+            ))
+            .into_response();
+        }
     };
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -808,12 +932,22 @@ async fn ask_agent(
         Ok(resp) if resp.ok => axum::Json(resp.data).into_response(),
         Ok(resp) => Refusal::new(
             StatusCode::CONFLICT,
-            resp.error.unwrap_or_else(|| "主机代理拒绝了请求".into()),
+            // The agent writes a refusal in both languages — it cannot
+            // know which one this reader asked for, and for a request it
+            // could not even read there is nobody to ask.
+            resp.why(lang()).map(str::to_string).unwrap_or_else(|| {
+                t("主机代理拒绝了请求", "The host agent refused the request").into()
+            }),
         )
         .into_response(),
-        Err(e) => {
-            Refusal::new(StatusCode::BAD_GATEWAY, format!("主机代理无应答：{e}")).into_response()
-        }
+        Err(e) => Refusal::new(
+            StatusCode::BAD_GATEWAY,
+            t(
+                format!("主机代理无应答：{e}"),
+                format!("The host agent did not answer: {e}"),
+            ),
+        )
+        .into_response(),
     }
 }
 
@@ -838,12 +972,16 @@ async fn agent_call(
             .read_line(&mut answer)
             .await
             .map_err(|e| e.to_string())?;
-        serde_json::from_str::<ops::AgentResponse>(&answer)
-            .map_err(|e| format!("无法读取应答：{e}"))
+        serde_json::from_str::<ops::AgentResponse>(&answer).map_err(|e| {
+            t(
+                format!("无法读取应答：{e}"),
+                format!("cannot read the answer: {e}"),
+            )
+        })
     };
     tokio::time::timeout(std::time::Duration::from_secs(60), work)
         .await
-        .map_err(|_| "超时".to_string())?
+        .map_err(|_| t("超时", "timed out").to_string())?
 }
 
 /// Who is asking, for the agent's audit trail: the deck's one operator,
@@ -1198,7 +1336,7 @@ async fn ops_action(
         return refusal.into_response();
     }
     if body.reason.trim().is_empty() {
-        return Refusal::bad_request("请填写原因").into_response();
+        return Refusal::bad_request(t("请填写原因", "A reason is required")).into_response();
     }
     let op = match body.action.as_str() {
         "halt" => ops::Op::Halt,
@@ -1207,11 +1345,17 @@ async fn ops_action(
         "rollback" => ops::Op::Rollback,
         "unit" => match (body.unit, body.verb) {
             (Some(unit), Some(verb)) => ops::Op::Unit { unit, verb },
-            _ => return Refusal::bad_request("缺少单元或动作").into_response(),
+            _ => {
+                return Refusal::bad_request(t("缺少单元或动作", "A unit and a verb are required"))
+                    .into_response();
+            }
         },
         "deploy" => match body.id {
             Some(id) => ops::Op::Deploy { id },
-            None => return Refusal::bad_request("缺少发布编号").into_response(),
+            None => {
+                return Refusal::bad_request(t("缺少发布编号", "A release id is required"))
+                    .into_response();
+            }
         },
         "config_put" => match (body.name, body.content, body.base_sha) {
             (Some(name), Some(content), Some(base_sha)) => ops::Op::ConfigPut {
@@ -1219,7 +1363,13 @@ async fn ops_action(
                 content,
                 base_sha,
             },
-            _ => return Refusal::bad_request("缺少文件名、内容或读取时的版本").into_response(),
+            _ => {
+                return Refusal::bad_request(t(
+                    "缺少文件名、内容或读取时的版本",
+                    "A file name, content and the version it was read at are required",
+                ))
+                .into_response();
+            }
         },
         "config_rollback" => match (body.name, body.backup, body.base_sha) {
             (Some(name), Some(backup), Some(base_sha)) => ops::Op::ConfigRollback {
@@ -1227,26 +1377,59 @@ async fn ops_action(
                 backup,
                 base_sha,
             },
-            _ => return Refusal::bad_request("缺少文件名、备份或当前版本").into_response(),
+            _ => {
+                return Refusal::bad_request(t(
+                    "缺少文件名、备份或当前版本",
+                    "A file name, a backup and the current version are required",
+                ))
+                .into_response();
+            }
         },
         "strategy_create" => match (body.name, body.config) {
             (Some(name), Some(config)) => ops::Op::StrategyCreate { name, config },
-            _ => return Refusal::bad_request("缺少名称或配置文件").into_response(),
+            _ => {
+                return Refusal::bad_request(t(
+                    "缺少名称或配置文件",
+                    "A name and a config file are required",
+                ))
+                .into_response();
+            }
         },
         "strategy_backtest" => match (body.id, body.run, body.passed) {
             (Some(id), Some(run), Some(passed)) => ops::Op::StrategyBacktest { id, run, passed },
-            _ => return Refusal::bad_request("缺少实例、回测 run 或是否通过").into_response(),
+            _ => {
+                return Refusal::bad_request(t(
+                    "缺少实例、回测 run 或是否通过",
+                    "An instance, a backtest run and a verdict are required",
+                ))
+                .into_response();
+            }
         },
         "strategy_advance" => match body.id {
             Some(id) => ops::Op::StrategyAdvance { id },
-            None => return Refusal::bad_request("缺少实例").into_response(),
+            None => {
+                return Refusal::bad_request(t("缺少实例", "An instance is required"))
+                    .into_response();
+            }
         },
         "alert_test" => ops::Op::AlertTest,
         "alert_silence" => match (body.key, body.minutes) {
             (Some(key), Some(minutes)) => ops::Op::AlertSilence { key, minutes },
-            _ => return Refusal::bad_request("缺少告警或时长").into_response(),
+            _ => {
+                return Refusal::bad_request(t(
+                    "缺少告警或时长",
+                    "An alert and a duration are required",
+                ))
+                .into_response();
+            }
         },
-        other => return Refusal::bad_request(format!("未知操作 {other}")).into_response(),
+        other => {
+            return Refusal::bad_request(t(
+                format!("未知操作 {other}"),
+                format!("Unknown action {other}"),
+            ))
+            .into_response();
+        }
     };
     let actor = actor_of(peer.as_ref(), &headers);
     ask_agent(&deck, op, Some(body.reason), body.step_up, actor).await
@@ -1339,6 +1522,19 @@ pub fn router(
     router
         .layer(axum::middleware::from_fn(security_headers))
         .layer(axum::middleware::from_fn_with_state(deck, host_first))
+        // Outside even that: the refusal of a Host is a sentence too.
+        .layer(axum::middleware::from_fn(language))
+}
+
+/// Answers in the language the request asks for (`Accept-Language`),
+/// for everything the request reaches.
+async fn language(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let asked = request
+        .headers()
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok())
+        .map_or_else(Lang::default, Lang::from_accept_language);
+    LANG.scope(asked, next.run(request)).await
 }
 
 async fn host_first(
@@ -1391,5 +1587,9 @@ async fn no_store(request: axum::extract::Request, next: axum::middleware::Next)
 }
 
 async fn api_not_found() -> Response {
-    Refusal::new(StatusCode::NOT_FOUND, "没有这个 API 路径。").into_response()
+    Refusal::new(
+        StatusCode::NOT_FOUND,
+        t("没有这个 API 路径。", "No such API path."),
+    )
+    .into_response()
 }

@@ -19,6 +19,8 @@
 use oq_parity::manifest::{BaselineStatus, RunManifest};
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Said;
+
 /// Where an instance sits on the road to live trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -72,24 +74,28 @@ pub struct Evidence {
 }
 
 /// Whether one step forward is allowed, and if not, why not.
+///
+/// The refusal is a sentence, and it is worded here — the module that
+/// knows what the gate checked — in both languages, so that the console
+/// shows it in the reader's and the audit trail keeps it either way.
 #[derive(Debug, Clone, Serialize)]
 pub struct Decision {
     pub allowed: bool,
-    pub reason: String,
+    pub reason: Said,
 }
 
 impl Decision {
     fn yes() -> Self {
         Self {
             allowed: true,
-            reason: String::new(),
+            reason: Said::default(),
         }
     }
 
-    fn no(reason: impl Into<String>) -> Self {
+    fn no(zh: impl Into<String>, en: impl Into<String>) -> Self {
         Self {
             allowed: false,
-            reason: reason.into(),
+            reason: Said::new(zh, en),
         }
     }
 }
@@ -103,18 +109,22 @@ pub fn advance(
     min_fills: usize,
 ) -> Decision {
     let Some(target) = current.next() else {
-        return Decision::no("already live");
+        return Decision::no("已经是实盘了", "it is already live");
     };
 
     match target {
         Stage::Backtested => {
             let Some(run) = evidence.backtest_run.as_ref() else {
-                return Decision::no("no backtest has been run for this configuration");
+                return Decision::no(
+                    "还没有为这套配置跑过回测",
+                    "no backtest has been run for this configuration",
+                );
             };
             if !evidence.backtest_passed {
-                return Decision::no(format!(
-                    "run {run} did not pass; read the result before advancing"
-                ));
+                return Decision::no(
+                    format!("回测 {run} 没有通过；先看结果再推进"),
+                    format!("run {run} did not pass; read the result before advancing"),
+                );
             }
             Decision::yes()
         }
@@ -122,26 +132,33 @@ pub fn advance(
         Stage::Confirmed => {
             if evidence.observation_hours < observation_hours {
                 let remaining = observation_hours - evidence.observation_hours;
-                return Decision::no(format!(
-                    "{remaining}h of the {observation_hours}h observation window remain"
-                ));
+                return Decision::no(
+                    format!("{observation_hours} 小时的观察期还剩 {remaining} 小时"),
+                    format!("{remaining}h of the {observation_hours}h observation window remain"),
+                );
             }
             if evidence.observation_fills < min_fills {
-                return Decision::no(format!(
-                    "observation produced {} fills; at least {min_fills} is required \
-                     to say the strategy did anything at all",
-                    evidence.observation_fills
-                ));
+                return Decision::no(
+                    format!(
+                        "观察期产生 {} 笔成交；至少需要 {min_fills} 笔才能说明这个策略做过任何事",
+                        evidence.observation_fills
+                    ),
+                    format!(
+                        "observation produced {} fills; at least {min_fills} are required \
+                         to say the strategy did anything at all",
+                        evidence.observation_fills
+                    ),
+                );
             }
             Decision::yes()
         }
         Stage::Live => {
             if evidence.confirmed_by.is_none() {
-                return Decision::no("nobody has signed off");
+                return Decision::no("没有人签字确认", "nobody has signed off");
             }
             Decision::yes()
         }
-        Stage::Draft => Decision::no("draft is the first stage"),
+        Stage::Draft => Decision::no("草稿是第一步", "draft is the first stage"),
     }
 }
 

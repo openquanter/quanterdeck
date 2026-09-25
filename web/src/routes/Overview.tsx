@@ -31,8 +31,9 @@ import {
 
 import { api, type BlackboxWindow, type TraderStatus } from "@/api/client";
 import { ErrorState } from "@/components/States";
-import { KIND_NAMES, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
-import { Ago, Badge, Card, Freshness, IconTile, Money, PageHeader, Ring, Stat, StatusDot, cx, fmtDuration, type Hue, type Tone } from "@/ui/kit";
+import { kindNames, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
+import { intlLocale, pair, said, tr } from "@/i18n";
+import { Ago, Badge, Card, Freshness, IconTile, Money, PageHeader, Ring, Stat, StatusDot, agoText, cx, fmtDuration, type Hue, type Tone } from "@/ui/kit";
 
 // The chart library is most of the bundle; the overview's numbers should
 // not wait for it.
@@ -67,8 +68,8 @@ export function Overview() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="总览"
-        description="交易主机此刻是否一切正常；任何一项不正常都可以点进去处理。"
+        title={tr("总览", "Overview")}
+        description={tr("交易主机此刻是否一切正常；任何一项不正常都可以点进去处理。", "Whether everything on the trading host is all right now; click any item that is not to deal with it.")}
         meta={<Freshness at={status.dataUpdatedAt} fetching={status.isFetching} staleAfterS={30} onRefresh={() => status.refetch()} />}
       />
       <Banner status={status.data} failed={status.isError} writable={writable} />
@@ -123,16 +124,31 @@ function Banner({ status: s, failed, writable }: { status: TraderStatus | undefi
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-xl font-medium text-ink">
-          {failed ? "交易进程无应答" : !s ? "读取中…" : s.halted ? "交易进程已停机" : "交易进程运行中"}
-          {s && <Badge tone={s.deployment === "Live" ? "bad" : "accent"}>{s.deployment === "Live" ? "主网" : "测试网"}</Badge>}
+          {failed
+            ? tr("交易进程无应答", "Trader not answering")
+            : !s
+              ? tr("读取中…", "Loading…")
+              : s.halted
+                ? tr("交易进程已停机", "Trader halted")
+                : tr("交易进程运行中", "Trader running")}
+          {s && <Badge tone={s.deployment === "Live" ? "bad" : "accent"}>{s.deployment === "Live" ? tr("主网", "Mainnet") : tr("测试网", "Testnet")}</Badge>}
         </div>
         <div className="mt-1 text-sm text-ink-muted">
           {failed
-            ? "控制口没有回应：进程可能没在运行，或卡住了。去「主机与服务」看服务状态和日志。"
+            ? tr(
+                "控制口没有回应：进程可能没在运行，或卡住了。去「主机与服务」看服务状态和日志。",
+                "The control port does not answer: the process may not be running, or it is stuck. See service status and logs under \"Host & services\".",
+              )
             : s?.halted
-              ? `原因：${s.halt_reason ?? "未说明"}`
+              ? s.halt_reason
+                ? tr(`原因：${s.halt_reason}`, `Reason: ${s.halt_reason}`)
+                : tr("原因：未说明", "Reason: not given")
               : s
-                ? [`${s.strategy} · ${s.symbol}`, up !== null && `已运行 ${fmtDuration(up)}`, lastTickAge !== null && `最近行情 ${fmtDuration(lastTickAge)}前`]
+                ? [
+                    `${s.strategy} · ${s.symbol}`,
+                    up !== null && tr(`已运行 ${fmtDuration(up)}`, `Running for ${fmtDuration(up)}`),
+                    lastTickAge !== null && tr(`最近行情 ${agoText(lastTickAge)}`, `Last tick ${agoText(lastTickAge)}`),
+                  ]
                     .filter(Boolean)
                     .join(" · ")
                 : " "}
@@ -140,9 +156,9 @@ function Banner({ status: s, failed, writable }: { status: TraderStatus | undefi
       </div>
       {last !== null && (
         <div className="text-right">
-          <div className="text-xs text-ink-faint">{s?.symbol} 最新价</div>
+          <div className="text-xs text-ink-faint">{tr(`${s?.symbol} 最新价`, `${s?.symbol} last price`)}</div>
           <div key={last} className="oq-flash rounded-lg px-1 font-mono text-2xl font-medium text-ink">
-            {last.toLocaleString("zh-CN", { minimumFractionDigits: s?.price_scale ?? 0 })}
+            {last.toLocaleString(intlLocale(), { minimumFractionDigits: s?.price_scale ?? 0 })}
           </div>
         </div>
       )}
@@ -152,7 +168,7 @@ function Banner({ status: s, failed, writable }: { status: TraderStatus | undefi
           to={failed ? "/host" : "/live"}
           className="inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-sm font-medium text-white shadow-sm hover:bg-accent/90"
         >
-          {failed ? "主机与服务" : "查看实盘"} <ArrowRight className="h-4 w-4" />
+          {failed ? tr("主机与服务", "Host & services") : tr("查看实盘", "View live")} <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
     </div>
@@ -182,22 +198,33 @@ export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
   return (
     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
       <Stat
-        label="本次运行盈亏"
+        label={tr("本次运行盈亏", "Run P&L")}
         icon={net >= 0 ? <TrendingUp /> : <ArrowDownRight />}
         hue={net >= 0 ? "green" : "red"}
         value={s.pnl ? <Money value={s.pnl.net} signed /> : "—"}
-        sub={s.pnl ? `已实现 ${s.pnl.realized} · 手续费 ${s.pnl.fees} · 资金费 ${s.pnl.funding}` : "此版本的交易进程不报告盈亏"}
+        sub={
+          s.pnl
+            ? tr(`已实现 ${s.pnl.realized} · 手续费 ${s.pnl.fees} · 资金费 ${s.pnl.funding}`, `Realized ${s.pnl.realized} · fees ${s.pnl.fees} · funding ${s.pnl.funding}`)
+            : tr("此版本的交易进程不报告盈亏", "This trader version does not report P&L")
+        }
         help="run_pnl"
         trend={spark(pnl)}
       />
-      <Stat label="权益" icon={<Wallet />} hue="blue" value={s.pnl ? <Money value={s.pnl.equity} /> : "—"} sub="按最近标记价" trend={spark(equity)} />
       <Stat
-        label="持仓"
+        label={tr("权益", "Equity")}
+        icon={<Wallet />}
+        hue="blue"
+        value={s.pnl ? <Money value={s.pnl.equity} /> : "—"}
+        sub={tr("按最近标记价", "At the latest mark price")}
+        trend={spark(equity)}
+      />
+      <Stat
+        label={tr("持仓", "Position")}
         icon={<Scale />}
         hue="purple"
         value={
           s.positions.length === 0 ? (
-            "空仓"
+            tr("空仓", "Flat")
           ) : (
             <span className="flex items-baseline gap-3">
               {long.length > 0 && (
@@ -215,16 +242,31 @@ export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
             </span>
           )
         }
-        sub={`${s.symbol} · ${long.length && short.length ? "双向持仓：多 / 空" : long.length ? "多头" : short.length ? "空头" : "无"}`}
+        sub={`${s.symbol} · ${
+          long.length && short.length
+            ? tr("双向持仓：多 / 空", "Hedged: long / short")
+            : long.length
+              ? tr("多头", "Long")
+              : short.length
+                ? tr("空头", "Short")
+                : tr("无", "None")
+        }`}
         help="hedged"
         trend={<PositionBar s={s} />}
       />
       <Stat
-        label="挂单"
+        label={tr("挂单", "Open orders")}
         icon={<ListOrdered />}
         hue="orange"
         value={String(s.resting)}
-        sub={s.limits ? `上限 ${s.limits.max_working} · 持仓上限 ${lotsText(s.limits.max_position_qty, s.qty_scale)}` : undefined}
+        sub={
+          s.limits
+            ? tr(
+                `上限 ${s.limits.max_working} · 持仓上限 ${lotsText(s.limits.max_position_qty, s.qty_scale)}`,
+                `Limit ${s.limits.max_working} · position limit ${lotsText(s.limits.max_position_qty, s.qty_scale)}`,
+              )
+            : undefined
+        }
         trend={spark(resting)}
       />
     </div>
@@ -240,7 +282,7 @@ function PositionBar({ s }: { s: TraderStatus }) {
     <div className="space-y-1.5 px-1 pt-1">
       {legs.map((l) => (
         <div key={l.side} className="flex items-center gap-2 text-[11px] text-ink-faint">
-          <span className="w-6">{l.side === "LONG" ? "多" : l.side === "SHORT" ? "空" : l.side}</span>
+          <span className="w-6">{l.side === "LONG" ? tr("多", "L") : l.side === "SHORT" ? tr("空", "S") : l.side}</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-raised">
             <div className="h-full rounded-full bg-hue-purple" style={{ width: `${Math.min(100, (l.qty / cap) * 100)}%` }} />
           </div>
@@ -270,20 +312,20 @@ export function PriceAndOrders({ s }: { s: TraderStatus | undefined }) {
   const last = points.at(-1)?.[1];
   const levels = (orders.data?.orders ?? [])
     .filter((o) => o.price_ticks !== null)
-    .map((o) => ({ value: (o.price_ticks as number) / 10 ** ps, label: `${o.side === "BUY" ? "买" : "卖"}${o.closing ? " 平" : ""}` }));
+    .map((o) => ({ value: (o.price_ticks as number) / 10 ** ps, label: o.side === "BUY" ? (o.closing ? tr("买 平", "Buy close") : tr("买", "Buy")) : o.closing ? tr("卖 平", "Sell close") : tr("卖", "Sell") }));
   // Only the orders near the market are drawn: a ladder a thousand ticks
   // away would flatten the price into a line.
   const near = last === undefined ? [] : levels.filter((l) => Math.abs(l.value - last) <= last * 0.01);
   const nearest = last !== undefined && levels.length ? Math.min(...levels.map((l) => Math.abs(l.value - last))) : null;
   return (
     <Card
-      title="价格与挂单"
+      title={tr("价格与挂单", "Price and open orders")}
       icon={<LineChart />}
       hue="blue"
       className="h-full"
       extra={
         <span className="inline-flex items-center gap-1.5">
-          <StatusDot tone="good" pulse /> 实时 · 5 秒
+          <StatusDot tone="good" pulse /> {tr("实时 · 5 秒", "Live · 5 s")}
         </span>
       }
     >
@@ -291,15 +333,15 @@ export function PriceAndOrders({ s }: { s: TraderStatus | undefined }) {
         chartFallback(280)
       ) : (
         <Suspense fallback={chartFallback(280)}>
-          <TimeSeries height={280} decimals={ps} step series={[{ name: "最新价", points, area: true }]} levels={near} />
+          <TimeSeries height={280} decimals={ps} step series={[{ name: tr("最新价", "Last price"), points, area: true }]} levels={near} />
         </Suspense>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
-        <span>挂单 {levels.length} 张</span>
-        <span>市价 ±1% 以内 {near.length} 张（虚线）</span>
-        {nearest !== null && <span>最近一张距市价 {nearest.toFixed(ps)}</span>}
+        <span>{tr(`挂单 ${levels.length} 张`, `${levels.length} open order${levels.length === 1 ? "" : "s"}`)}</span>
+        <span>{tr(`市价 ±1% 以内 ${near.length} 张（虚线）`, `${near.length} within ±1% of the market (dashed)`)}</span>
+        {nearest !== null && <span>{tr(`最近一张距市价 ${nearest.toFixed(ps)}`, `Nearest is ${nearest.toFixed(ps)} from the market`)}</span>}
         <Link to="/live?tab=positions" className="ml-auto text-accent hover:underline">
-          全部挂单 →
+          {tr("全部挂单 →", "All open orders →")}
         </Link>
       </div>
     </Card>
@@ -315,56 +357,74 @@ function Health({ s, failed }: { s: TraderStatus | undefined; failed: boolean })
 
   const checks: Check[] = [];
   if (failed) {
-    checks.push({ name: "交易进程", icon: <ActivityIcon />, hue: "red", tone: "bad", verdict: "无应答", detail: "控制口没有回应", to: "/host" });
+    checks.push({
+      name: tr("交易进程", "Trader"),
+      icon: <ActivityIcon />,
+      hue: "red",
+      tone: "bad",
+      verdict: tr("无应答", "Not answering"),
+      detail: tr("控制口没有回应", "The control port does not answer"),
+      to: "/host",
+    });
   } else if (s) {
     const age = s.last_tick ? (s.now_ns - s.last_tick.local_ns) / 1e9 : null;
     checks.push({
-      name: "行情",
+      name: tr("行情", "Market data"),
       icon: <Radio />,
       hue: "blue",
       tone: age === null ? "warn" : age > 120 || s.feed.unreadable > 0 ? "bad" : "good",
-      verdict: age === null ? "尚无行情" : age > 120 ? "行情中断" : "正常",
-      detail: `${age === null ? "" : `${fmtDuration(age)}前 · `}读不出 ${s.feed.unreadable}`,
+      verdict: age === null ? tr("尚无行情", "No data yet") : age > 120 ? tr("行情中断", "Feed stalled") : tr("正常", "OK"),
+      detail: `${age === null ? "" : `${agoText(age)} · `}${tr(`读不出 ${s.feed.unreadable}`, `${s.feed.unreadable} unreadable`)}`,
       to: "/live?tab=market",
     });
     checks.push({
-      name: "进程自检",
+      name: tr("进程自检", "Self-check"),
       icon: <BookCheck />,
       hue: "purple",
       tone: s.reconcile.agreed === false ? "bad" : s.reconcile.agreed ? "good" : "warn",
-      verdict: s.reconcile.agreed === null ? "尚未核对" : s.reconcile.agreed ? "一致" : "不一致",
-      detail: "内存持仓 vs 交易所查询",
+      verdict: s.reconcile.agreed === null ? tr("尚未核对", "Not yet checked") : s.reconcile.agreed ? tr("一致", "Agrees") : tr("不一致", "Disagrees"),
+      detail: tr("内存持仓 vs 交易所查询", "In-memory positions vs venue query"),
       to: "/live?tab=risk",
     });
     checks.push({
-      name: "交易日志",
+      name: tr("交易日志", "Journal"),
       icon: <FileCheck2 />,
       hue: "teal",
       tone: s.journal_lost ? "bad" : "good",
-      verdict: s.journal_lost ? "无法写入" : "可写",
-      detail: s.journal_lost ?? "先写日志再发单",
+      verdict: s.journal_lost ? tr("无法写入", "Cannot write") : tr("可写", "Writable"),
+      detail: s.journal_lost ?? tr("先写日志再发单", "Written before each order is sent"),
       to: "/journal",
     });
   }
   const r = live.data?.reconciliation;
   checks.push({
-    name: "交易所对账",
+    name: tr("交易所对账", "Venue reconciliation"),
     icon: <GitCompareArrows />,
     hue: "orange",
     tone: live.isError ? "warn" : !r ? "neutral" : r.verdict === "agree" ? "good" : r.verdict === "disagree" ? "bad" : "warn",
-    verdict: live.isError ? "无法对账" : !r ? "读取中" : r.verdict === "agree" ? "一致" : r.verdict === "disagree" ? `不一致 ${r.differences.length} 处` : "无法判断",
-    detail: live.data ? `读数 ${fmtDuration(live.data.record_age_ms / 1000)}前` : "journal vs 交易所",
+    verdict: live.isError
+      ? tr("无法对账", "Cannot reconcile")
+      : !r
+        ? tr("读取中", "Loading")
+        : r.verdict === "agree"
+          ? tr("一致", "Agrees")
+          : r.verdict === "disagree"
+            ? tr(`不一致 ${r.differences.length} 处`, `${r.differences.length} difference${r.differences.length === 1 ? "" : "s"}`)
+            : tr("无法判断", "Undetermined"),
+    detail: live.data ? tr(`读数 ${agoText(live.data.record_age_ms / 1000)}`, `Read ${agoText(live.data.record_age_ms / 1000)}`) : tr("journal vs 交易所", "journal vs venue"),
     to: "/reconcile",
   });
   if (units.data) {
     const down = units.data.filter((u) => u.ActiveState !== "active");
     checks.push({
-      name: "服务",
+      name: tr("服务", "Services"),
       icon: <Server />,
       hue: "green",
       tone: down.length ? "bad" : "good",
-      verdict: down.length ? `${down.length} 个未运行` : `${units.data.length}/${units.data.length} 运行`,
-      detail: down.length ? down.map((u) => u.unit.replace(".service", "")).join("、") : "全部在运行",
+      verdict: down.length
+        ? tr(`${down.length} 个未运行`, `${down.length} not running`)
+        : tr(`${units.data.length}/${units.data.length} 运行`, `${units.data.length}/${units.data.length} running`),
+      detail: down.length ? down.map((u) => u.unit.replace(".service", "")).join(tr("、", ", ")) : tr("全部在运行", "All running"),
       to: "/host",
     });
   }
@@ -374,12 +434,14 @@ function Health({ s, failed }: { s: TraderStatus | undefined; failed: boolean })
     const diskPct = h.disks.length ? Math.max(...h.disks.map(pct)) : null;
     const bad = (diskPct ?? 0) >= 90 || h.clock_synced === false;
     checks.push({
-      name: "主机",
+      name: tr("主机", "Host"),
       icon: <Cpu />,
       hue: "pink",
       tone: bad ? "bad" : "good",
-      verdict: h.clock_synced === false ? "时钟未同步" : bad ? "磁盘将满" : "正常",
-      detail: `负载 ${h.load[0]?.toFixed(2)} · 时钟${h.clock_synced ? "已同步" : "未同步"}`,
+      verdict: h.clock_synced === false ? tr("时钟未同步", "Clock not synced") : bad ? tr("磁盘将满", "Disk nearly full") : tr("正常", "OK"),
+      detail: h.clock_synced
+        ? tr(`负载 ${h.load[0]?.toFixed(2)} · 时钟已同步`, `Load ${h.load[0]?.toFixed(2)} · clock synced`)
+        : tr(`负载 ${h.load[0]?.toFixed(2)} · 时钟未同步`, `Load ${h.load[0]?.toFixed(2)} · clock not synced`),
       to: "/host",
     });
   }
@@ -388,16 +450,20 @@ function Health({ s, failed }: { s: TraderStatus | undefined; failed: boolean })
   const bad = checks.filter((c) => c.tone === "bad").length;
   return (
     <Card
-      title="健康检查"
+      title={tr("健康检查", "Health checks")}
       icon={<CheckCircle2 />}
       hue="green"
       className="h-full"
-      extra={bad ? <Badge tone="bad">{bad} 项异常</Badge> : checks.length ? <Badge tone="good">全部正常</Badge> : null}
+      extra={bad ? <Badge tone="bad">{tr(`${bad} 项异常`, `${bad} failing`)}</Badge> : checks.length ? <Badge tone="good">{tr("全部正常", "All OK")}</Badge> : null}
     >
       <div className="mb-4 flex items-center gap-4">
         <Ring value={checks.length ? good : null} max={checks.length || 1} tone={bad ? "bad" : good === checks.length ? "good" : "warn"} label={`${good}/${checks.length}`} />
         <div className="text-sm text-ink-muted">
-          {bad ? `${bad} 项需要处理，点对应的磁贴进去。` : good === checks.length ? "行情、账目、日志、服务和主机都正常。" : "有项目还在读取或无法判断。"}
+          {bad
+            ? tr(`${bad} 项需要处理，点对应的磁贴进去。`, `${bad} item${bad === 1 ? " needs" : "s need"} attention; click the tile to open it.`)
+            : good === checks.length
+              ? tr("行情、账目、日志、服务和主机都正常。", "Market data, books, journal, services and host are all OK.")
+              : tr("有项目还在读取或无法判断。", "Some items are still loading or cannot be determined.")}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -432,24 +498,24 @@ export function PnlChart({ day, from, to }: { day?: BlackboxWindow; from: number
   const start = net[0]?.[0];
   return (
     <Card
-      title="盈亏走势"
+      title={tr("盈亏走势", "P&L over time")}
       icon={<TrendingUp />}
       hue="green"
       className="h-full"
       extra={
         <Link to="/blackbox" className="hover:text-ink">
-          黑匣子复盘 →
+          {tr("黑匣子复盘 →", "Black box review →")}
         </Link>
       }
     >
       {net.length < 2 ? (
-        <p className="py-16 text-center text-sm text-ink-faint">黑匣子里还没有这次运行的盈亏记录。</p>
+        <p className="py-16 text-center text-sm text-ink-faint">{tr("黑匣子里还没有这次运行的盈亏记录。", "The black box has no P&L for this run yet.")}</p>
       ) : (
         <Suspense fallback={chartFallback(260)}>
-          <TimeSeries height={260} from={start && start > from ? start : from} to={to} decimals={4} series={[{ name: "本次运行盈亏", points: net, area: true }]} levels={[{ value: 0 }]} />
+          <TimeSeries height={260} from={start && start > from ? start : from} to={to} decimals={4} series={[{ name: tr("本次运行盈亏", "Run P&L"), points: net, area: true }]} levels={[{ value: 0 }]} />
         </Suspense>
       )}
-      <p className="mt-2 text-xs text-ink-faint">每 30 秒一个点，来自黑匣子；交易进程重启后从 0 重新计算。</p>
+      <p className="mt-2 text-xs text-ink-faint">{tr("每 30 秒一个点，来自黑匣子；交易进程重启后从 0 重新计算。", "One point every 30 seconds from the black box; it restarts from 0 when the trader restarts.")}</p>
     </Card>
   );
 }
@@ -459,23 +525,23 @@ function Alerts() {
   const active = q.data?.active ?? [];
   return (
     <Card
-      title="告警"
+      title={tr("告警", "Alerts")}
       icon={<Bell />}
       hue="red"
       extra={
         <Link to="/alerts" className="hover:text-ink">
-          全部 →
+          {tr("全部 →", "All →")}
         </Link>
       }
       className="h-full"
     >
       {q.isError ? (
-        <ErrorState error={q.error} what="告警" />
+        <ErrorState error={q.error} what={tr("告警", "alerts")} />
       ) : active.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl bg-good/6 px-4 py-6 text-center">
           <IconTile icon={<CheckCircle2 />} hue="green" size="lg" />
-          <div className="text-sm font-medium text-ink">没有正在发生的告警</div>
-          <div className="text-xs text-ink-faint">每 30 秒检查一次，触发和恢复都会推送到告警频道</div>
+          <div className="text-sm font-medium text-ink">{tr("没有正在发生的告警", "No active alerts")}</div>
+          <div className="text-xs text-ink-faint">{tr("每 30 秒检查一次，触发和恢复都会推送到告警频道", "Checked every 30 seconds; raises and clears are pushed to the alert channel")}</div>
         </div>
       ) : (
         <ul className="space-y-2">
@@ -483,9 +549,12 @@ function Alerts() {
             <li key={a.key} className="flex items-start gap-3 rounded-2xl border border-bad/30 bg-bad/6 px-3 py-2.5 text-sm">
               <IconTile icon={<AlertTriangle />} hue="red" size="sm" />
               <div className="min-w-0">
-                <div className="text-ink">{a.message}</div>
+                <div className="text-ink">{said(a)}</div>
                 <div className="text-xs text-ink-muted">
-                  <Ago ms={a.since_ms} /> 开始{a.silenced_until_ms ? " · 已静默" : ""}
+                  {tr("", "Started ")}
+                  <Ago ms={a.since_ms} />
+                  {tr(" 开始", "")}
+                  {a.silenced_until_ms ? tr(" · 已静默", " · silenced") : ""}
                 </div>
               </div>
             </li>
@@ -494,12 +563,12 @@ function Alerts() {
       )}
       {(q.data?.history.length ?? 0) > 0 && (
         <>
-          <div className="mb-2 mt-5 text-xs font-medium text-ink-faint">最近</div>
+          <div className="mb-2 mt-5 text-xs font-medium text-ink-faint">{tr("最近", "Recent")}</div>
           <ul className="space-y-2 text-xs">
             {q.data!.history.slice(0, 5).map((h, k) => (
               <li key={k} className="flex items-center gap-2">
                 <StatusDot tone={h.raised ? "bad" : "good"} />
-                <span className="min-w-0 flex-1 truncate text-ink-muted">{h.message}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-muted">{said(h)}</span>
                 <span className="shrink-0 text-ink-faint">
                   <Ago ms={h.at_ms} />
                 </span>
@@ -533,22 +602,26 @@ function Activity() {
   const items = useMemo(() => {
     const out: { at: number; kind: string; label: string; text: string; failed?: boolean }[] = [];
     for (const r of records.data?.records ?? []) {
-      if (r.at) out.push({ at: r.at / 1e6, kind: r.kind, label: KIND_NAMES[r.kind] ?? r.kind, text: recordText(r, records.data!.price_scale, records.data!.qty_scale) });
+      if (r.at) out.push({ at: r.at / 1e6, kind: r.kind, label: kindNames()[r.kind] ?? r.kind, text: recordText(r, records.data!.price_scale, records.data!.qty_scale) });
     }
     // Each action is recorded when asked and again with its result; the
     // result is the one worth a line.
     for (const e of audit.data?.entries ?? []) {
-      if (e.result === "requested") continue;
-      const failed = /^(refused|failed|error)/.test(e.result);
-      out.push({ at: e.at_ms, kind: "audit", label: "操作", text: `${e.op}${e.reason ? `：${e.reason}` : ""}${failed ? " · 未执行" : ""}`, failed });
+      // The verdict is the agent's own word, in English; what is shown
+      // is the reader's language.
+      const verdict = e.result_en || e.result;
+      if (verdict === "requested") continue;
+      const failed = /^(refused|failed|error)/.test(verdict);
+      const why = pair(e.reason, e.reason_en);
+      out.push({ at: e.at_ms, kind: "audit", label: tr("操作", "Action"), text: `${e.op}${why ? tr(`：${why}`, `: ${why}`) : ""}${failed ? tr(" · 未执行", " · not done") : ""}`, failed });
     }
     return out.sort((a, b) => b.at - a.at).slice(0, 9);
   }, [records.data, audit.data]);
 
   return (
-    <Card title="最近动态" icon={<Clock />} hue="purple" className="h-full" bodyClassName="px-5 py-3">
+    <Card title={tr("最近动态", "Recent activity")} icon={<Clock />} hue="purple" className="h-full" bodyClassName="px-5 py-3">
       {items.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-faint">这次运行还没有成交或操作。</p>
+        <p className="py-8 text-center text-sm text-ink-faint">{tr("这次运行还没有成交或操作。", "No fills or actions in this run yet.")}</p>
       ) : (
         <ol className="relative">
           {items.map((i, k) => {
@@ -591,39 +664,39 @@ function Resources({ day, failed, error, from, to }: { day?: BlackboxWindow; fai
           {icon}
           {label}
         </div>
-        <div className="text-sm font-medium text-ink">{value === null ? "—" : `已用 ${value.toFixed(0)}%`}</div>
+        <div className="text-sm font-medium text-ink">{value === null ? "—" : tr(`已用 ${value.toFixed(0)}%`, `${value.toFixed(0)}% used`)}</div>
       </div>
     </div>
   );
   return (
     <Card
-      title="主机资源"
+      title={tr("主机资源", "Host resources")}
       icon={<MemoryStick />}
       hue="teal"
       extra={
         <Link to="/host" className="hover:text-ink">
-          主机与服务 →
+          {tr("主机与服务 →", "Host & services →")}
         </Link>
       }
     >
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        {ring("内存", <MemoryStick className="h-3.5 w-3.5" />, "teal", memPct)}
-        {ring("磁盘", <HardDrive className="h-3.5 w-3.5" />, "blue", disk)}
+        {ring(tr("内存", "Memory"), <MemoryStick className="h-3.5 w-3.5" />, "teal", memPct)}
+        {ring(tr("磁盘", "Disk"), <HardDrive className="h-3.5 w-3.5" />, "blue", disk)}
         <div className="flex items-center gap-3 rounded-2xl border border-line p-3">
           <IconTile icon={<Cpu />} hue="pink" size="lg" />
           <div>
-            <div className="text-xs text-ink-muted">负载 1 / 5 / 15 分钟</div>
+            <div className="text-xs text-ink-muted">{tr("负载 1 / 5 / 15 分钟", "Load 1 / 5 / 15 min")}</div>
             <div className="font-mono text-sm font-medium text-ink">{h ? h.load.map((l) => l.toFixed(2)).join(" / ") : "—"}</div>
           </div>
         </div>
       </div>
       {failed ? (
-        <ErrorState error={error} what="黑匣子记录" />
+        <ErrorState error={error} what={tr("黑匣子记录", "black box records")} />
       ) : !day ? (
         chartFallback(190)
       ) : (
         <Suspense fallback={chartFallback(190)}>
-          <div className="mb-1 text-xs text-ink-muted">各服务内存（MiB，最近 24 小时）</div>
+          <div className="mb-1 text-xs text-ink-muted">{tr("各服务内存（MiB，最近 24 小时）", "Memory per service (MiB, last 24 h)")}</div>
           <TimeSeries
             height={190}
             from={start}
@@ -643,10 +716,18 @@ function Resources({ day, failed, error, from, to }: { day?: BlackboxWindow; fai
 function NoHost() {
   return (
     <div className="space-y-5">
-      <PageHeader title="总览" description="这个 deck 没有连接主机代理，只能看研究数据。" />
+      <PageHeader
+        title={tr("总览", "Overview")}
+        description={tr("这个 deck 没有连接主机代理，只能看研究数据。", "This deck is not connected to a host agent; only research data is available.")}
+      />
       <Card>
         <p className="text-sm text-ink-muted">
-          设置 <code className="font-mono text-ink">OQ_DECK_AGENT_SOCKET</code> 指向交易主机上的 oq-agent 后，这里会显示交易进程、告警和健康检查。回测记录与参数扫描在左侧「研究」里。
+          {tr("设置 ", "Set ")}
+          <code className="font-mono text-ink">OQ_DECK_AGENT_SOCKET</code>
+          {tr(
+            " 指向交易主机上的 oq-agent 后，这里会显示交易进程、告警和健康检查。回测记录与参数扫描在左侧「研究」里。",
+            " to the oq-agent on the trading host and the trader, alerts and health checks show here. Backtests and sweeps are under \"Research\" on the left.",
+          )}
         </p>
       </Card>
     </div>

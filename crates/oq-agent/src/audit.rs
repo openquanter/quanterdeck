@@ -9,6 +9,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use oq_deck_core::lang::Said;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -79,6 +80,12 @@ impl Audit {
 
     /// Append one entry and return it.
     ///
+    /// Both sentences a reader sees are recorded in both languages, and
+    /// both are inside the hash: the trail is read long after the night it
+    /// was written, and a reader should not need the language of whoever
+    /// was on call. What a person typed as the reason goes in the same
+    /// both ways — it is their words, not a translation of them.
+    ///
     /// # Errors
     /// The write failed. The caller refuses the request rather than acting
     /// unrecorded.
@@ -87,13 +94,15 @@ impl Audit {
         at_ms: i64,
         actor: &str,
         op: &str,
-        reason: &str,
-        result: &str,
+        reason: &Said,
+        result: &Said,
     ) -> Result<Value, String> {
         let seq = self.seq + 1;
         let entry = json!({
             "seq": seq, "at_ms": at_ms, "actor": actor, "op": op,
-            "reason": reason, "result": result, "prev": self.prev,
+            "reason": reason.zh, "reason_en": reason.en,
+            "result": result.zh, "result_en": result.en,
+            "prev": self.prev,
         });
         let body = serde_json::to_string(&entry).map_err(|e| e.to_string())?;
         let hash = digest(&self.prev, &body);
@@ -141,11 +150,31 @@ mod tests {
     fn the_chain_continues_across_opens_and_catches_an_edit() {
         let dir = tempfile::tempdir().expect("dir");
         let mut a = Audit::open(dir.path()).expect("open");
-        a.append(1, "deck:x", "halt", "why", "halted").expect("one");
+        a.append(
+            1,
+            "deck:x",
+            "halt",
+            &Said::same("why"),
+            &Said::new("已停机", "halted"),
+        )
+        .expect("one");
         drop(a);
         let mut a = Audit::open(dir.path()).expect("reopen");
-        a.append(2, "deck:x", "resume", "ok now", "resumed")
-            .expect("two");
+        a.append(
+            2,
+            "deck:x",
+            "resume",
+            &Said::same("ok now"),
+            &Said::new("已恢复", "resumed"),
+        )
+        .expect("two");
+        // Both renderings are in the entry, and so inside the hash: the
+        // trail reads in either language without being rewritten.
+        let first = a.tail(10)["entries"][0].clone();
+        assert_eq!(first["result"], "已停机");
+        assert_eq!(first["result_en"], "halted");
+        // A person's own reason is not translated, and says so.
+        assert_eq!(first["reason"], first["reason_en"]);
         assert_eq!(a.tail(10)["chain"]["intact"], true);
         assert_eq!(a.tail(10)["entries"].as_array().expect("entries").len(), 2);
 
@@ -163,5 +192,45 @@ mod tests {
             Audit::open(dir.path()).is_err(),
             "a deleted entry breaks the chain"
         );
+    }
+
+    /// A trail written before an entry carried English verifies, and can be
+    /// continued: the hash is over the bytes the entry has, not over the
+    /// shape the code happens to write now. A host's trail is years long,
+    /// and one that stopped verifying at an upgrade would be read as an
+    /// incident rather than as a change of format.
+    #[test]
+    fn an_entry_with_one_language_still_verifies() {
+        let dir = tempfile::tempdir().expect("dir");
+        // The entry as it was written before there were two: `reason` and
+        // `result` alone, hashed the same way.
+        let old = json!({
+            "seq": 1, "at_ms": 7, "actor": "deck:x", "op": "halt",
+            "reason": "检查时钟同步", "result": "已完成", "prev": "genesis",
+        });
+        let body = serde_json::to_string(&old).expect("body");
+        let mut line = old;
+        line["hash"] = json!(digest("genesis", &body));
+        std::fs::write(
+            dir.path().join("audit.log"),
+            format!("{}\n", serde_json::to_string(&line).expect("line")),
+        )
+        .expect("write");
+
+        let mut a = Audit::open(dir.path()).expect("an older trail opens");
+        assert_eq!(a.seq, 1);
+        a.append(
+            2,
+            "deck:x",
+            "resume",
+            &Said::same("好了"),
+            &Said::new("已恢复", "resumed"),
+        )
+        .expect("and takes a new entry");
+        let t = a.tail(10);
+        assert_eq!(t["chain"]["intact"], true, "{t}");
+        assert_eq!(t["entries"][0]["result"], "已完成");
+        // The older entry has one rendering, and reads back as it was left.
+        assert!(t["entries"][0].get("result_en").is_none());
     }
 }
