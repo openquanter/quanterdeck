@@ -22,6 +22,7 @@ oq-parity.workspace = true
 oq-types.workspace = true
 rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha1.workspace = true
 subtle.workspace = true
 

@@ -73,6 +73,7 @@ export interface Capabilities {
   attribution: Capability;
   markout: Capability;
   live: Capability;
+  ops: Capability;
   writes: Capability;
 }
 
@@ -159,6 +160,157 @@ export interface MarkoutComparison {
   contrast: { seconds: number; difference_bps: number | null }[];
 }
 
+// -- operations -----------------------------------------------------------
+
+export interface Disk {
+  mount: string;
+  size: number | null;
+  used: number | null;
+  avail: number | null;
+}
+
+export interface HostHealth {
+  load: number[];
+  mem_total: number | null;
+  mem_available: number | null;
+  uptime_s: number | null;
+  disks: Disk[];
+  clock_synced: boolean | null;
+  now_ms: number;
+}
+
+/** `systemctl show`, as the agent reports it. */
+export interface UnitState {
+  unit: string;
+  manageable: boolean;
+  ActiveState?: string;
+  SubState?: string;
+  Result?: string;
+  NRestarts?: string;
+  ExecMainStartTimestamp?: string;
+  ExecMainPID?: string;
+  ExecMainStatus?: string;
+  UnitFileState?: string;
+  error?: string;
+}
+
+/** The trader's own status, from its control port. */
+export interface TraderStatus {
+  pid: number;
+  deployment: string;
+  symbol: string;
+  prefix: string;
+  strategy: string;
+  /** Decimal places of price and quantity; older traders do not say. */
+  price_scale?: number;
+  qty_scale?: number;
+  now_ns: number;
+  halted: boolean;
+  halt_reason: string | null;
+  journal_lost: string | null;
+  resume_allowed: boolean;
+  resting: number;
+  ticks: number;
+  last_tick: { exch_ns: number; local_ns: number; last: number } | null;
+  positions: { side: string; amount: string }[];
+  feed: {
+    depth: number;
+    trades: number;
+    out_of_order: number;
+    quiet: number;
+    snapshots: number;
+    resyncs: number;
+    unreadable: number;
+  };
+  reconcile: { at_ns: number | null; agreed: boolean | null; mismatches: number; unread: number };
+  waiting_on: Record<string, number>;
+  counters: Record<string, number>;
+}
+
+export interface RestingOrder {
+  local: number;
+  client_id: string;
+  closing: boolean;
+  side: "BUY" | "SELL" | null;
+  price_ticks: number | null;
+  qty_lots: number | null;
+}
+
+export interface Alert {
+  key: string;
+  since_ms: number;
+  message: string;
+}
+
+export interface LogFile {
+  name: string;
+  mtime: number;
+  size: number;
+}
+
+export interface LogTail {
+  name: string;
+  size: number;
+  truncated: boolean;
+  lines: string[];
+}
+
+export interface AuditEntry {
+  seq: number;
+  at_ms: number;
+  actor: string;
+  op: string;
+  reason: string;
+  result: string;
+  hash: string;
+}
+
+export interface AuditTrail {
+  chain: { intact: boolean; problem?: string };
+  entries: AuditEntry[];
+}
+
+export interface StagedRelease {
+  id: string;
+  verified: boolean;
+  problem?: string;
+  manifest?: { id: string; files: Record<string, string>; [k: string]: unknown };
+}
+
+export interface Releases {
+  staged: StagedRelease[];
+  installed: string[];
+  current: string | null;
+  previous: string | null;
+  progress: {
+    running: boolean;
+    id: string;
+    outcome: string | null;
+    steps: { at_ms: number; step: string }[];
+  };
+}
+
+export type OpsAction =
+  | { action: "halt" }
+  | { action: "shutdown" }
+  | { action: "resume" }
+  | { action: "rollback" }
+  | { action: "deploy"; id: string }
+  | { action: "unit"; unit: string; verb: "start" | "stop" | "restart" };
+
+export interface LiveReconciliation {
+  record_age_ms: number;
+  reconciliation: {
+    journal: string;
+    believed: { symbol: string; read_at_ms: number; legs: [string, number, number][]; orders: string[] };
+    venue: { symbol: string; read_at_ms: number; legs: [string, number, number][]; orders: string[] };
+    differences: string[];
+    verdict: "agree" | "disagree" | "cannot_tell";
+    undecodable: number;
+    hedged: boolean;
+  };
+}
+
 export const api = {
   capabilities: () => request<Capabilities>("/runtime/capabilities"),
   runs: () => request<Listing>("/runs"),
@@ -179,4 +331,19 @@ export const api = {
     post<{ authenticated: boolean }>("/session/login", { password, totp }),
   logout: () => post<{ authenticated: boolean }>("/session/logout", {}),
   setup: (token: string, password: string) => post<SetupDone>("/setup", { token, password }),
+  host: () => request<HostHealth>("/ops/host"),
+  units: () => request<UnitState[]>("/ops/units"),
+  traderStatus: () => request<TraderStatus>("/ops/status"),
+  orders: () => request<{ orders: RestingOrder[] }>("/ops/orders"),
+  alerts: () => request<Alert[]>("/ops/alerts"),
+  logs: () => request<LogFile[]>("/ops/logs"),
+  log: (name: string, lines: number, grep: string) =>
+    request<LogTail>(
+      `/ops/log?name=${encodeURIComponent(name)}&lines=${lines}&grep=${encodeURIComponent(grep)}`,
+    ),
+  audit: (lines = 200) => request<AuditTrail>(`/ops/audit?lines=${lines}`),
+  releases: () => request<Releases>("/ops/releases"),
+  act: (action: OpsAction, reason: string, stepUp: string) =>
+    post<unknown>("/ops/action", { ...action, reason, step_up: stepUp || null }),
+  liveLatest: () => request<LiveReconciliation>("/live/latest"),
 };

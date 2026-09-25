@@ -150,7 +150,7 @@ fn an_unreadable_directory_is_reported_not_listed_as_empty() {
     // Root reads through permissions; there is nothing to test there.
     let readable_anyway = std::fs::read_dir(&dir).is_ok();
     let listed = runs::list(&dir);
-    let caps = oq_deck_core::capabilities::detect(Some(&dir), None, None, false);
+    let caps = oq_deck_core::capabilities::detect(Some(&dir), None, None, None, false);
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("chmod back");
     std::fs::remove_dir_all(&dir).ok();
     if readable_anyway {
