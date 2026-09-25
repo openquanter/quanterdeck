@@ -388,8 +388,8 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
                       ],
                       ...(t.pnl
                         ? ([
-                            [tr("本次运行盈亏", "Run P&L"), t.pnl.net],
-                            [tr("手续费", "Fees"), t.pnl.fees],
+                            [tr("本次运行盈亏", "Run P&L"), t.pnl.net ?? tr("未测得", "not measured")],
+                            [tr("手续费", "Fees"), t.pnl.fees ?? tr("未测得", "not measured")],
                             [tr("权益", "Equity"), t.pnl.equity],
                           ] as [ReactNode, ReactNode][])
                         : []),

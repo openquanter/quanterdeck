@@ -234,7 +234,12 @@ export interface TraderStatus {
   waiting_on: Record<string, number>;
   counters: Record<string, number>;
   /** Since the process started; absent from traders built before it was reported. */
-  pnl?: { since_ms: number; realized: string; fees: string; funding: string; net: string; equity: string };
+  /**
+   * The run's P&L. `fees` and `net` are null when the trader did not
+   * measure its fees — null is "not measured", never zero, and the two
+   * mean opposite things.
+   */
+  pnl?: { since_ms: number; realized: string; fees: string | null; funding: string; net: string | null; equity: string };
   /** The risk limits in force; quantities in lots. */
   limits?: {
     max_order_qty: number;
