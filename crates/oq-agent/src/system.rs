@@ -92,19 +92,7 @@ pub fn host_health() -> Value {
     let disks: Vec<Value> = Command::new("df")
         .args(["-B1", "--output=target,size,used,avail", "/", "/var"])
         .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .skip(1)
-                .filter_map(|l| {
-                    let f: Vec<&str> = l.split_whitespace().collect();
-                    (f.len() == 4).then(|| {
-                        json!({"mount": f[0], "size": f[1].parse::<u64>().ok(),
-                               "used": f[2].parse::<u64>().ok(), "avail": f[3].parse::<u64>().ok()})
-                    })
-                })
-                .collect()
-        })
+        .map(|o| parse_df(&String::from_utf8_lossy(&o.stdout)))
         .unwrap_or_default();
     let synced = Command::new("timedatectl")
         .args(["show", "-p", "NTPSynchronized", "--value"])
@@ -120,6 +108,22 @@ pub fn host_health() -> Value {
         "clock_synced": synced,
         "now_ms": now_ms(),
     })
+}
+
+/// `df --output=target,size,used,avail` as JSON, one entry per mount: two
+/// paths on one filesystem are one disk, reported once.
+fn parse_df(text: &str) -> Vec<Value> {
+    let mut seen = std::collections::BTreeSet::new();
+    text.lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            (f.len() == 4 && seen.insert(f[0].to_string())).then(|| {
+                json!({"mount": f[0], "size": f[1].parse::<u64>().ok(),
+                       "used": f[2].parse::<u64>().ok(), "avail": f[3].parse::<u64>().ok()})
+            })
+        })
+        .collect()
 }
 
 /// Unix milliseconds.
@@ -219,6 +223,14 @@ pub fn tail(dir: &Path, name: &str, lines: usize, grep: Option<&str>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_filesystem_is_one_disk() {
+        let df = "Mounted on 1B-blocks Used Avail\n/ 100 40 60\n/ 100 40 60\n/var 50 10 40\n";
+        let disks = parse_df(df);
+        assert_eq!(disks.len(), 2);
+        assert_eq!(disks[1]["mount"], "/var");
+    }
 
     #[test]
     fn a_tail_reads_the_end_and_filters() {
