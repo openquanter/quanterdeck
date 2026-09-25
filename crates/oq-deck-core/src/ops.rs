@@ -272,7 +272,7 @@ mod tests {
     fn a_request_survives_the_wire() {
         let r = AgentRequest {
             op: Op::Unit {
-                unit: "oqp-live.service".into(),
+                unit: "trader.service".into(),
                 verb: "restart".into(),
             },
             actor: "deck:admin".into(),

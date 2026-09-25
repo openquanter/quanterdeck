@@ -178,7 +178,7 @@ async fn an_action_needs_writes_on_and_a_reason() {
         "POST",
         "/api/v1/ops/action",
         Some(
-            json!({"action": "unit", "unit": "oqp-live.service", "verb": "restart",
+            json!({"action": "unit", "unit": "trader.service", "verb": "restart",
                     "reason": "new config", "step_up": "123456"}),
         ),
     )
@@ -193,7 +193,7 @@ async fn an_action_needs_writes_on_and_a_reason() {
     assert_eq!(
         seen[0].op,
         Op::Unit {
-            unit: "oqp-live.service".into(),
+            unit: "trader.service".into(),
             verb: "restart".into()
         }
     );

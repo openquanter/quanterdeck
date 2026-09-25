@@ -124,9 +124,9 @@ function Staged({ r, writable, onAct }: { r: Releases; writable: boolean; onAct:
             title={tr("没有待部署的构件。", "No artifacts waiting to deploy.")}
             next={
               <>
-                {tr("在本机运行 oq-private 的 ", "Run oq-private's ")}
+                {tr("在你的发布仓运行 ", "Run ")}
                 <code className="font-mono">ops/release.sh</code>
-                {tr(" 构建、签名并上传。", " locally to build, sign and upload one.")}
+                {tr(" 构建、签名并上传。", " in your release repository to build, sign and upload one.")}
               </>
             }
           />

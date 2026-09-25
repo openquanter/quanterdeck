@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(s.in_lang(Lang::Zh), "请先登录。");
         assert_eq!(s.in_lang(Lang::En), "Sign in first.");
         // Data has one rendering, and says so rather than half-answering.
-        let d = Said::same("oqp-live.service");
+        let d = Said::same("trader.service");
         assert_eq!(d.in_lang(Lang::Zh), d.in_lang(Lang::En));
         // A bare error from elsewhere becomes one of these without a
         // second wording being invented for it.

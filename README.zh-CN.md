@@ -165,9 +165,10 @@ deck：
 |---|---|---|
 | `OQ_AGENT_SOCKET` | `$RUNTIME_DIRECTORY/agent.sock` | deck 从这里连它 |
 | `OQ_AGENT_PEERS` | `oq-deck` | 允许连接的用户 |
-| `OQ_AGENT_UNITS` | 交易进程、对账进程、deck、代理、反向代理 | 展示并记录的服务 |
-| `OQ_AGENT_MANAGEABLE` | `oqp-live.service,oq-recon.service` | 允许启停的服务 |
-| `OQ_AGENT_TRADER_UNIT` | `oqp-live.service` | 交易进程 |
+| `OQ_AGENT_UNITS` | 交易进程、对账进程、deck、agent | 展示并记录的服务 |
+| `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | 允许启停的服务 |
+| `OQ_AGENT_TRADER_UNIT` | `trader.service` | 交易进程 |
+| `OQ_AGENT_RELEASE_BINARIES` | 交易进程的二进制、`oq-recon` | 一个签名发布允许携带的二进制 |
 | `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | 交易进程控制口所在目录 |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | 日志文件 |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | 审计、告警、黑匣子、门控状态 |
@@ -176,7 +177,7 @@ deck：
 | `OQ_AGENT_CONFIG_DIR` | `/var/lib/oq/config` | 允许它修改的策略配置 |
 | `OQ_AGENT_JOURNALS` | `/var/lib/oq/journals` | journal，作为上线门控的证据 |
 | `OQ_AGENT_HOST` | `host` | 告警里的主机名 |
-| `OQ_AGENT_DISCORD_GUILD`、`OQ_AGENT_DISCORD_CHANNEL` | —、`监控告警` | 告警发往哪里；机器人令牌以 systemd 凭据传入 |
+| `OQ_AGENT_DISCORD_GUILD`、`OQ_AGENT_DISCORD_CHANNEL` | —、`alerts` | 告警发往哪里；机器人令牌以 systemd 凭据传入 |
 | `OQ_AGENT_PROXY` | — | 告警渠道使用的 HTTP 代理 |
 
 ## 文档

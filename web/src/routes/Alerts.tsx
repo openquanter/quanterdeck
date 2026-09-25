@@ -51,8 +51,8 @@ export function Alerts() {
                 setPending({
                   title: tr("发送测试消息", "Send a test message"),
                   consequence: tr(
-                    "向 Discord「监控告警」频道发一条测试消息，确认渠道通着。",
-                    "Sends a test message to the Discord \"monitoring alerts\" channel to confirm the channel works.",
+                    "向 Discord 告警频道发一条测试消息，确认渠道通着。",
+                    "Sends a test message to the Discord alerts channel to confirm it works.",
                   ),
                   action: { action: "alert_test" },
                 })
@@ -120,7 +120,7 @@ export function Alerts() {
           </Table>
         </Card>
         <Card title={tr("渠道", "Channel")} icon={<Send className="h-4 w-4" />} className="xl:col-span-2">
-          <p className="text-sm leading-relaxed text-ink">{tr("Discord「监控告警」频道（与 1.x 同一个机器人）。", "The Discord \"monitoring alerts\" channel (the same bot as 1.x).")}</p>
+          <p className="text-sm leading-relaxed text-ink">{tr("告警发往一个 Discord 频道，机器人令牌以 systemd 凭据传入。", "Alerts go to a Discord channel; the bot token arrives as a systemd credential.")}</p>
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">
             {tr(
               "每一条操作审计也会同步发到这个频道。静默只停推送，页面上照常显示。",

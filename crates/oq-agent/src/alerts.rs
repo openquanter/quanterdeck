@@ -305,14 +305,14 @@ mod tests {
 
     #[test]
     fn a_healthy_process_raises_nothing() {
-        let units = vec![("oqp-live.service".to_string(), true)];
+        let units = vec![("trader.service".to_string(), true)];
         let host =
             json!({"disks": [{"mount": "/", "size": 100, "avail": 50}], "clock_synced": true});
         assert!(
             assess(
                 Ok(&healthy()),
                 &units,
-                "oqp-live.service",
+                "trader.service",
                 &host,
                 false,
                 Some(0)
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn each_condition_is_named() {
         let units = vec![
-            ("oqp-live.service".to_string(), true),
+            ("trader.service".to_string(), true),
             ("oq-recon.service".to_string(), false),
         ];
         let mut s = healthy();
@@ -334,7 +334,7 @@ mod tests {
         s["feed"]["unreadable"] = json!(3);
         let host =
             json!({"disks": [{"mount": "/", "size": 100, "avail": 5}], "clock_synced": false});
-        let found = assess(Ok(&s), &units, "oqp-live.service", &host, false, Some(1));
+        let found = assess(Ok(&s), &units, "trader.service", &host, false, Some(1));
         let keys: Vec<&str> = found.keys().map(String::as_str).collect();
         assert_eq!(
             keys,
@@ -353,16 +353,16 @@ mod tests {
 
     #[test]
     fn a_trader_stopped_on_purpose_is_not_an_alarm_but_a_silent_port_is() {
-        let down = vec![("oqp-live.service".to_string(), false)];
+        let down = vec![("trader.service".to_string(), false)];
         let host = json!({});
         let gone = Said::new("端口不在了", "the socket is gone");
-        assert!(assess(Err(&gone), &down, "oqp-live.service", &host, true, None).is_empty());
+        assert!(assess(Err(&gone), &down, "trader.service", &host, true, None).is_empty());
         assert!(
-            assess(Err(&gone), &down, "oqp-live.service", &host, false, None)
-                .contains_key("unit:oqp-live.service")
+            assess(Err(&gone), &down, "trader.service", &host, false, None)
+                .contains_key("unit:trader.service")
         );
-        let up = vec![("oqp-live.service".to_string(), true)];
-        let found = assess(Err(&gone), &up, "oqp-live.service", &host, false, None);
+        let up = vec![("trader.service".to_string(), true)];
+        let found = assess(Err(&gone), &up, "trader.service", &host, false, None);
         // The agent's reason for not reaching the port is the agent's
         // sentence, so each rendering carries its own.
         assert!(found["control"].zh.contains("端口不在了"), "{found:?}");
