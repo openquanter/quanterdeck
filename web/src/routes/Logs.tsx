@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Pause, Play, Search, X } from "lucide-react";
 
@@ -38,6 +38,9 @@ export function Logs() {
     else if (files.data && files.data.length > 0) setName(`f:${files.data[0].name}`);
   }, [files.data, units.data, units.isPending, name]);
 
+  // Following means the newest line is in view: the pane is kept at its
+  // end as lines arrive, and left where the reader put it when paused.
+  const pane = useRef<HTMLPreElement>(null);
   const tail = useQuery({
     queryKey: ["ops", "log", name, lines, grep],
     queryFn: async () => {
@@ -51,6 +54,9 @@ export function Logs() {
     enabled: name !== null,
     refetchInterval: follow ? 5_000 : false,
   });
+  useEffect(() => {
+    if (follow && pane.current) pane.current.scrollTop = pane.current.scrollHeight;
+  }, [follow, tail.data]);
 
   const shown = tail.data?.lines ?? [];
 
@@ -150,7 +156,7 @@ export function Logs() {
           </div>
           {/* Rendered as text, never as markup: these lines come from a
               venue and a strategy, and are not ours to trust. */}
-          <pre className="flex-1 overflow-auto p-3 font-mono text-[12px] leading-5 text-ink">
+          <pre ref={pane} className="flex-1 overflow-auto p-3 font-mono text-[12px] leading-5 text-ink">
             {tail.isLoading ? (
               <span className="text-ink-faint">读取中…</span>
             ) : shown.length === 0 ? (
