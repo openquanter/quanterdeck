@@ -48,6 +48,9 @@ pub enum Op {
     Orders,
     /// Its Prometheus text.
     Metrics,
+    /// The gap between what the venue made and what its shadow backtest
+    /// made, decomposed, from the trader's own evidence.
+    Attribution,
     /// Stop opening, withdraw opening orders.
     Halt,
     /// Withdraw everything and exit.
@@ -100,6 +103,7 @@ impl Op {
             | Self::Status
             | Self::Orders
             | Self::Metrics
+            | Self::Attribution
             | Self::Logs
             | Self::LogTail { .. }
             | Self::Audit { .. }

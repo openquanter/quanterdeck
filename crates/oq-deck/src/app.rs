@@ -859,6 +859,73 @@ ops_read!(ops_orders, ops::Op::Orders);
 ops_read!(ops_alerts, ops::Op::Alerts);
 ops_read!(ops_logs, ops::Op::Logs);
 ops_read!(ops_releases, ops::Op::Releases);
+ops_read!(ops_attribution, ops::Op::Attribution);
+
+#[derive(Deserialize)]
+struct RecordsQuery {
+    /// Comma-separated kinds; empty for all.
+    #[serde(default)]
+    kinds: String,
+    #[serde(default = "default_lines")]
+    limit: usize,
+    before: Option<u64>,
+}
+
+async fn journal_records(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+    Query(q): Query<RecordsQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let kinds: Vec<String> = q
+        .kinds
+        .split(',')
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
+        Ok(d) => d,
+        Err(refusal) => return refusal.into_response(),
+    };
+    // Reading a journal is file work, off the async workers.
+    let result =
+        tokio::task::spawn_blocking(move || live::records(&dir, &id, &kinds, q.limit, q.before))
+            .await;
+    match result {
+        Ok(Ok(page)) => axum::Json(page).into_response(),
+        Ok(Err(e)) => Refusal::not_found(e).into_response(),
+        Err(e) => Refusal::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// What this deck is configured with, for the settings page. Paths and
+/// switches only; nothing secret is here to show.
+async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let s = &deck.settings;
+    let path = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string());
+    axum::Json(serde_json::json!({
+        "listen": format!("{}:{}", s.host, s.port),
+        "behind_tls": s.behind_tls,
+        "extra_hosts": s.extra_hosts,
+        "totp": s.totp_secret.is_some(),
+        "allow_writes": s.allow_writes,
+        "runs_dir": path(&s.runs_dir),
+        "journals_dir": path(&s.journals_dir),
+        "ticks_dir": path(&s.ticks_dir),
+        "agent_socket": path(&s.agent_socket),
+        "venue_record": path(&s.venue_record),
+        "session": {"idle_minutes": 60, "absolute_hours": 12},
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+    .into_response()
+}
 
 #[derive(Deserialize)]
 struct LogQuery {
@@ -994,6 +1061,9 @@ pub fn router(
         .route("/journals/{id}/belief", get(journal_belief))
         .route("/journals/{id}/reconcile", post(reconcile))
         .route("/live/latest", get(reconcile_latest))
+        .route("/journals/{id}/records", get(journal_records))
+        .route("/runtime/settings", get(runtime_settings))
+        .route("/ops/attribution", get(ops_attribution))
         .route("/ops/host", get(ops_host))
         .route("/ops/units", get(ops_units))
         .route("/ops/status", get(ops_status))

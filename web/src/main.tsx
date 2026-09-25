@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router-dom";
 
 import "./design/tokens.css";
 import { router } from "./routes";
+import { ModeProvider } from "./components/States";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +22,9 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ModeProvider>
+        <RouterProvider router={router} />
+      </ModeProvider>
     </QueryClientProvider>
   </StrictMode>,
 );
