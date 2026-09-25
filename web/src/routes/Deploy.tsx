@@ -6,7 +6,7 @@ import { api, type OpsAction, type Releases } from "@/api/client";
 import { ActionDialog } from "@/components/ActionDialog";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { useCaps } from "@/features/trading";
-import { tr } from "@/i18n";
+import { pair, tr } from "@/i18n";
 import { Ago, Badge, Button, Card, Freshness, KV, PageHeader, Table, cx, fmtDuration, fmtTime, type Tone } from "@/ui/kit";
 
 type PendingAct = { title: string; consequence: string; action: OpsAction };
@@ -152,7 +152,7 @@ function Staged({ r, writable, onAct }: { r: Releases; writable: boolean; onAct:
                   <span className="inline-flex items-center gap-1.5 text-bad">
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
                     {tr("不可部署：", "Cannot deploy: ")}
-                    {s.problem}
+                    {pair(s.problem, s.problem_en)}
                   </span>
                 )}
               </td>
@@ -191,6 +191,9 @@ function Staged({ r, writable, onAct }: { r: Releases; writable: boolean; onAct:
 /**
  * The outcome in the agent's own words, with a tone only where the words
  * are unambiguous; anything else stays neutral rather than guessing.
+ *
+ * Read from the English rendering, which is the one the agent writes:
+ * the same sentence in Chinese would not match any of these words.
  */
 function outcomeTone(outcome: string): Tone {
   // The agent's words (oq-agent deploy.rs): "… is running and healthy"
@@ -203,7 +206,7 @@ function outcomeTone(outcome: string): Tone {
 function Progress({ r }: { r: Releases }) {
   const p = r.progress;
   const steps = p.steps;
-  const tone = p.running ? "accent" : p.outcome ? outcomeTone(p.outcome) : "neutral";
+  const tone = p.running ? "accent" : p.outcome ? outcomeTone(p.outcome_en ?? p.outcome) : "neutral";
   const span = steps.length > 1 ? (steps[steps.length - 1].at_ms - steps[0].at_ms) / 1000 : null;
   return (
     <Card
@@ -223,7 +226,7 @@ function Progress({ r }: { r: Releases }) {
             </Badge>
           ) : p.outcome ? (
             <Badge tone={tone} dot>
-              {p.outcome}
+              {pair(p.outcome, p.outcome_en)}
             </Badge>
           ) : null}
         </>
@@ -248,7 +251,7 @@ function Progress({ r }: { r: Releases }) {
                   <span className="font-mono text-xs tabular-nums text-ink-faint" title={fmtTime(s.at_ms)}>
                     {fmtTime(s.at_ms, false)}
                   </span>
-                  <span className={cx("text-sm", active ? "text-ink" : "text-ink-muted")}>{s.step}</span>
+                  <span className={cx("text-sm", active ? "text-ink" : "text-ink-muted")}>{pair(s.step, s.step_en)}</span>
                   {i > 0 && <span className="text-xs text-ink-faint">+{fmtDuration((s.at_ms - steps[i - 1].at_ms) / 1000)}</span>}
                 </div>
               </li>
@@ -260,7 +263,7 @@ function Progress({ r }: { r: Releases }) {
         <p className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-sm text-ink">
           {tone === "good" && <CheckCircle2 className="h-4 w-4 text-good" />}
           {tr("结果：", "Outcome: ")}
-          {p.outcome}
+          {pair(p.outcome, p.outcome_en)}
         </p>
       )}
     </Card>

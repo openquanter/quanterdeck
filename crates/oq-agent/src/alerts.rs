@@ -20,21 +20,7 @@ use crate::system;
 ///
 /// The deck shows alerts in its reader's language, so the agent writes
 /// both where it words them; the notification channel gets the Chinese.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Said {
-    pub zh: String,
-    pub en: String,
-}
-
-impl Said {
-    #[must_use]
-    pub fn new(zh: impl Into<String>, en: impl Into<String>) -> Self {
-        Self {
-            zh: zh.into(),
-            en: en.into(),
-        }
-    }
-}
+pub use oq_deck_core::lang::Said;
 
 /// Alerts currently raised, by key: since when, and the message.
 #[derive(Debug, Default)]
@@ -66,7 +52,7 @@ impl Raised {
 /// What one look found: keys and messages of the conditions that hold.
 #[must_use]
 pub fn assess(
-    status: Result<&Value, &str>,
+    status: Result<&Value, &Said>,
     units: &[(String, bool)],
     trader_unit: &str,
     host: &Value,
@@ -139,11 +125,17 @@ pub fn assess(
             }
         }
         Err(why) if trader_up => {
+            // Why the port could not be reached is the agent's own
+            // sentence, so it goes into the alert in the reader's
+            // language rather than being carried across as one half.
             found.insert(
                 "control".into(),
                 Said::new(
-                    format!("交易进程在运行，但控制口无应答：{why}"),
-                    format!("The trader is running but its control port does not answer: {why}"),
+                    format!("交易进程在运行，但控制口无应答：{}", why.zh),
+                    format!(
+                        "The trader is running but its control port does not answer: {}",
+                        why.en
+                    ),
                 ),
             );
         }
@@ -199,11 +191,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
         // The black box takes its sample from this same look: the trader
         // is asked once, and the host read once.
         let host = recorder
-            .tick(
-                system::now_ms(),
-                &cfg.units,
-                status.as_ref().map_err(String::as_str),
-            )
+            .tick(system::now_ms(), &cfg.units, status.as_ref())
             .unwrap_or_else(|e| {
                 eprintln!("oq-agent: black box not written: {e}");
                 Value::Null
@@ -213,7 +201,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             .map(|r| r.trader_stopped_on_purpose)
             .unwrap_or(false);
         let found = assess(
-            status.as_ref().map_err(String::as_str),
+            status.as_ref(),
             &units,
             &cfg.trader_unit,
             &host,
@@ -367,15 +355,21 @@ mod tests {
     fn a_trader_stopped_on_purpose_is_not_an_alarm_but_a_silent_port_is() {
         let down = vec![("oqp-live.service".to_string(), false)];
         let host = json!({});
-        assert!(assess(Err("gone"), &down, "oqp-live.service", &host, true, None).is_empty());
+        let gone = Said::new("端口不在了", "the socket is gone");
+        assert!(assess(Err(&gone), &down, "oqp-live.service", &host, true, None).is_empty());
         assert!(
-            assess(Err("gone"), &down, "oqp-live.service", &host, false, None)
+            assess(Err(&gone), &down, "oqp-live.service", &host, false, None)
                 .contains_key("unit:oqp-live.service")
         );
         let up = vec![("oqp-live.service".to_string(), true)];
+        let found = assess(Err(&gone), &up, "oqp-live.service", &host, false, None);
+        // The agent's reason for not reaching the port is the agent's
+        // sentence, so each rendering carries its own.
+        assert!(found["control"].zh.contains("端口不在了"), "{found:?}");
         assert!(
-            assess(Err("timeout"), &up, "oqp-live.service", &host, false, None)
-                .contains_key("control")
+            found["control"].en.contains("the socket is gone"),
+            "{found:?}"
         );
+        assert!(!found["control"].en.contains("端口"), "{found:?}");
     }
 }

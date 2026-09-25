@@ -45,11 +45,19 @@ export function tr(zh: string, en: string): string {
 }
 
 /**
- * A sentence the server wrote in both languages — an alert, a black-box
- * event — in the current one. Older records carry only the Chinese.
+ * One of two renderings the server wrote, in the current language.
+ *
+ * A record — an alert, a deploy step, an audit line — is read now and
+ * again months later, so it carries both and the reader picks. Older
+ * records carry only the first.
  */
+export function pair(zh?: string | null, en?: string | null): string {
+  return (current === "en" && en) || zh || "";
+}
+
+/** A sentence the server wrote in both languages, in the current one. */
 export function said(m: { message?: string | null; message_en?: string | null }): string {
-  return (current === "en" && m.message_en) || m.message || "";
+  return pair(m.message, m.message_en);
 }
 
 /** The BCP 47 tag for dates and numbers in the current language. */

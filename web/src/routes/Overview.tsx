@@ -32,7 +32,7 @@ import {
 import { api, type BlackboxWindow, type TraderStatus } from "@/api/client";
 import { ErrorState } from "@/components/States";
 import { kindNames, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
-import { intlLocale, said, tr } from "@/i18n";
+import { intlLocale, pair, said, tr } from "@/i18n";
 import { Ago, Badge, Card, Freshness, IconTile, Money, PageHeader, Ring, Stat, StatusDot, agoText, cx, fmtDuration, type Hue, type Tone } from "@/ui/kit";
 
 // The chart library is most of the bundle; the overview's numbers should
@@ -607,9 +607,13 @@ function Activity() {
     // Each action is recorded when asked and again with its result; the
     // result is the one worth a line.
     for (const e of audit.data?.entries ?? []) {
-      if (e.result === "requested") continue;
-      const failed = /^(refused|failed|error)/.test(e.result);
-      out.push({ at: e.at_ms, kind: "audit", label: tr("操作", "Action"), text: `${e.op}${e.reason ? tr(`：${e.reason}`, `: ${e.reason}`) : ""}${failed ? tr(" · 未执行", " · not done") : ""}`, failed });
+      // The verdict is the agent's own word, in English; what is shown
+      // is the reader's language.
+      const verdict = e.result_en || e.result;
+      if (verdict === "requested") continue;
+      const failed = /^(refused|failed|error)/.test(verdict);
+      const why = pair(e.reason, e.reason_en);
+      out.push({ at: e.at_ms, kind: "audit", label: tr("操作", "Action"), text: `${e.op}${why ? tr(`：${why}`, `: ${why}`) : ""}${failed ? tr(" · 未执行", " · not done") : ""}`, failed });
     }
     return out.sort((a, b) => b.at - a.at).slice(0, 9);
   }, [records.data, audit.data]);

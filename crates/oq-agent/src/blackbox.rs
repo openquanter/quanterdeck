@@ -34,6 +34,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use oq_deck_core::lang::Said;
 use serde_json::{Value, json};
 
 /// How often everything is sampled.
@@ -171,7 +172,7 @@ impl Recorder {
         &mut self,
         now_ms: i64,
         units: &[String],
-        status: Result<&Value, &str>,
+        status: Result<&Value, &Said>,
     ) -> Result<Value, String> {
         if now_ms - self.disks_at >= DISK_EVERY_MS {
             self.disks = json!(crate::system::host_health()["disks"]);
@@ -230,9 +231,10 @@ impl Recorder {
             }
             Err(why) => {
                 if self.control_ok != Some(false) {
-                    lines.push(
-                        json!({"at": now_ms, "k": "event", "what": "control_lost", "reason": why}),
-                    );
+                    // The reason is the agent's own sentence, so the
+                    // review reads it in the language it is being read in.
+                    lines.push(json!({"at": now_ms, "k": "event", "what": "control_lost",
+                        "reason": why.zh, "reason_en": why.en}));
                 }
                 self.control_ok = Some(false);
             }

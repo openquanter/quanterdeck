@@ -6,7 +6,7 @@ import { api, type OpsAction, type Stage, type StrategyView } from "@/api/client
 import { ActionDialog } from "@/components/ActionDialog";
 import { Empty, ErrorState, Expert, Skeleton } from "@/components/States";
 import { useCaps } from "@/features/trading";
-import { tr } from "@/i18n";
+import { pair, tr } from "@/i18n";
 import { Badge, Button, Card, Drawer, Freshness, KV, PageHeader, Stat, cx, fmtTime } from "@/ui/kit";
 
 const stages = (): { key: Stage; label: string; meaning: string }[] => [
@@ -178,7 +178,7 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
                 `Sent back to draft from "${stageLabel(voided.from)}" at ${fmtTime(voided.at_ms)}; earlier evidence is void.`,
               )}
             </p>
-            <p className="mt-0.5 text-ink-muted">{voided.reason}</p>
+            <p className="mt-0.5 text-ink-muted">{pair(voided.reason, voided.reason_en)}</p>
           </div>
         </div>
       )}
@@ -254,7 +254,7 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
             <span className="inline-flex items-center gap-1.5 text-sm text-warn">
               <Lock className="h-4 w-4 shrink-0" />
               {tr(`还不能推进到「${nextLabel}」：`, `Cannot advance to "${nextLabel}" yet: `)}
-              {translate(s.decision.reason)}
+              {pair(s.decision.reason.zh, s.decision.reason.en)}
             </span>
           )}
         </div>
@@ -275,7 +275,7 @@ function Instance({ s, writable, runs, onAct }: { s: StrategyView; writable: boo
                 <span className="text-ink">
                   {stageLabel(h.from)} → {stageLabel(h.to)}
                 </span>
-                <span className="ml-2 text-ink-muted">{h.reason}</span>
+                <span className="ml-2 text-ink-muted">{pair(h.reason, h.reason_en)}</span>
               </li>
             ))}
           </ol>
@@ -366,22 +366,3 @@ function BacktestForm({ s, runs, onAct }: { s: StrategyView; runs: string[]; onA
   );
 }
 
-/** The gate speaks English; in Chinese the operator reads it translated. */
-function translate(reason: string) {
-  const m = reason.match(/^(\d+)h of the (\d+)h observation window remain$/);
-  if (m) return tr(`${m[2]} 小时的观察期还剩 ${m[1]} 小时`, `${m[1]}h of the ${m[2]}h observation window remain`);
-  const f = reason.match(/^observation produced (\d+) fills; at least (\d+) is required/);
-  if (f)
-    return tr(
-      `观察期产生 ${f[1]} 笔成交；至少需要 ${f[2]} 笔才能说明这个策略做过任何事`,
-      `Observation produced ${f[1]} fill${f[1] === "1" ? "" : "s"}; at least ${f[2]} are needed to show the strategy did anything`,
-    );
-  const r = reason.match(/^run (.+) did not pass/);
-  if (r) return tr(`回测 ${r[1]} 没有通过；先看结果再推进`, `Backtest ${r[1]} did not pass; review the results before advancing`);
-  const known: Record<string, string> = {
-    "no backtest has been run for this configuration": tr("还没有为这套配置跑过回测", "No backtest has been run for this config"),
-    "nobody has signed off": tr("没有人签字确认", "Nobody has signed off"),
-    "already live": tr("已经是实盘", "Already live"),
-  };
-  return known[reason] ?? reason;
-}

@@ -223,8 +223,13 @@ impl Op {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentResponse {
     pub ok: bool,
+    /// Why, when it is a refusal: both languages, since the agent does not
+    /// know which one the person reading the console asked for — and for
+    /// a request it could not even read, there is nobody to ask.
     #[serde(default)]
     pub error: Option<String>,
+    #[serde(default)]
+    pub error_en: Option<String>,
     #[serde(default)]
     pub data: serde_json::Value,
 }
@@ -235,17 +240,27 @@ impl AgentResponse {
         Self {
             ok: true,
             error: None,
+            error_en: None,
             data,
         }
     }
 
     #[must_use]
-    pub fn refused(why: impl Into<String>) -> Self {
+    pub fn refused(why: impl Into<crate::lang::Said>) -> Self {
+        let why = why.into();
         Self {
             ok: false,
-            error: Some(why.into()),
+            error: Some(why.zh),
+            error_en: Some(why.en),
             data: serde_json::Value::Null,
         }
+    }
+
+    /// The refusal in `lang`.
+    #[must_use]
+    pub fn why(&self, lang: crate::lang::Lang) -> Option<&str> {
+        let zh = self.error.as_deref()?;
+        Some(lang.pick(zh, self.error_en.as_deref().unwrap_or(zh)))
     }
 }
 

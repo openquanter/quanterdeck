@@ -29,7 +29,8 @@ fn a_draft_without_a_backtest_goes_nowhere() {
         1,
     );
     assert!(!decision.allowed);
-    assert!(decision.reason.contains("no backtest"));
+    assert!(decision.reason.en.contains("no backtest"));
+    assert!(decision.reason.zh.contains("回测"));
 }
 
 #[test]
@@ -40,7 +41,7 @@ fn a_failed_backtest_does_not_count() {
     };
     let decision = advance(Stage::Draft, &evidence, DEFAULT_OBSERVATION_HOURS, 1);
     assert!(!decision.allowed);
-    assert!(decision.reason.contains("did not pass"));
+    assert!(decision.reason.en.contains("did not pass"));
 }
 
 #[test]
@@ -53,8 +54,8 @@ fn the_observation_window_must_actually_elapse() {
     let decision = advance(Stage::Observing, &evidence, DEFAULT_OBSERVATION_HOURS, 1);
     assert!(!decision.allowed);
     assert!(
-        decision.reason.contains("48h of the 72h"),
-        "{}",
+        decision.reason.en.contains("48h of the 72h"),
+        "{:?}",
         decision.reason
     );
 }
@@ -68,7 +69,11 @@ fn an_observation_that_never_traded_proves_nothing() {
     };
     let decision = advance(Stage::Observing, &evidence, DEFAULT_OBSERVATION_HOURS, 1);
     assert!(!decision.allowed);
-    assert!(decision.reason.contains("0 fills"), "{}", decision.reason);
+    assert!(
+        decision.reason.en.contains("0 fills"),
+        "{:?}",
+        decision.reason
+    );
 }
 
 #[test]
@@ -91,7 +96,8 @@ fn going_live_needs_a_human() {
 fn live_is_the_end_of_the_road() {
     let decision = advance(Stage::Live, &passed(), DEFAULT_OBSERVATION_HOURS, 1);
     assert!(!decision.allowed);
-    assert_eq!(decision.reason, "already live");
+    assert_eq!(decision.reason.en, "it is already live");
+    assert_eq!(decision.reason.zh, "已经是实盘了");
 }
 
 #[test]

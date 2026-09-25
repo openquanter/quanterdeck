@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link2, Link2Off, ScrollText } from "lucide-react";
 
 import { api, type AuditEntry } from "@/api/client";
-import { tr } from "@/i18n";
+import { pair, tr } from "@/i18n";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { Ago, Badge, Card, Freshness, PageHeader, Segmented, Table, cx, fmtTime, type Tone } from "@/ui/kit";
 
@@ -87,7 +87,7 @@ export function Audit() {
                     </td>
                     <td className="font-mono text-xs text-ink">{e.actor}</td>
                     <td className="text-ink">{e.op}</td>
-                    <td className="text-ink-muted">{e.reason || <span className="text-ink-faint">—</span>}</td>
+                    <td className="text-ink-muted">{pair(e.reason, e.reason_en) || <span className="text-ink-faint">—</span>}</td>
                     <td>
                       <Result e={e} />
                     </td>
@@ -102,12 +102,19 @@ export function Audit() {
   );
 }
 
-/** The result as a verdict, with the agent's own words for a refusal. */
+/**
+ * The result as a verdict, with the agent's own words for a refusal.
+ *
+ * The verdict is read off the English rendering — that is where the
+ * agent's own words are ("done", "refused: …") — while what is shown is
+ * the rendering the reader asked for.
+ */
 function Result({ e }: { e: AuditEntry }) {
-  const r = e.result;
+  const r = e.result_en || e.result;
+  const shown = pair(e.result, e.result_en);
   const m = r.match(/^(refused|failed|error)[:\s]*([\s\S]*)$/);
   let tone: Tone = "neutral";
-  let label = r;
+  let label = shown;
   let why: string | undefined;
   if (r === "done") {
     tone = "good";
@@ -117,7 +124,11 @@ function Result({ e }: { e: AuditEntry }) {
   } else if (m) {
     tone = "bad";
     label = m[1] === "refused" ? tr("被拒绝", "Refused") : tr("失败", "Failed");
-    why = m[2] || undefined;
+    // Our own verdict word and its colon lead the sentence, in whichever
+    // language it is being read; what follows is the agent's, and an
+    // older record that never led with either is shown whole.
+    const head = m[1] === "refused" ? tr("被拒绝：", "refused: ") : tr("失败：", "failed: ");
+    why = (shown.startsWith(head) ? shown.slice(head.length) : shown) || undefined;
   }
   return (
     <div className="min-w-0">

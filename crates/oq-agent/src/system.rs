@@ -5,6 +5,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::process::Command;
 
+use oq_deck_core::lang::Said;
 use serde_json::{Value, json};
 
 /// `systemctl show` for one unit, as a JSON object.
@@ -72,18 +73,24 @@ pub fn is_active(unit: &str) -> bool {
 ///
 /// # Errors
 /// systemctl's own complaint.
-pub fn unit_action(unit: &str, verb: &str) -> Result<(), String> {
+pub fn unit_action(unit: &str, verb: &str) -> Result<(), Said> {
     if !matches!(verb, "start" | "stop" | "restart") {
-        return Err(format!("{verb} is not an action this agent takes"));
+        return Err(Said::new(
+            format!("{verb} 不是本代理会执行的操作"),
+            format!("{verb} is not an action this agent takes"),
+        ));
     }
     let out = Command::new("systemctl")
         .args(["--no-ask-password", verb, unit])
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     if out.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        // systemctl's own complaint: one language, shown as it is.
+        Err(Said::same(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ))
     }
 }
 
@@ -159,7 +166,7 @@ pub fn journal(
     until_ms: Option<i64>,
     lines: usize,
     grep: Option<&str>,
-) -> Result<Value, String> {
+) -> Result<Value, Said> {
     let mut cmd = Command::new("journalctl");
     cmd.args(["--no-pager", "-o", "short-iso-precise", "-u", unit, "-n"])
         .arg(lines.clamp(1, MAX_LINES).to_string());
@@ -174,9 +181,12 @@ pub fn journal(
         // looked for.
         cmd.args(["--grep", &regex_escape(g)]);
     }
-    let out = cmd.output().map_err(|e| e.to_string())?;
+    let out = cmd.output().map_err(|e| Said::same(e.to_string()))?;
     if !out.status.success() && out.stdout.is_empty() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        // journalctl's own complaint: one language, shown as it is.
+        return Err(Said::same(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines: Vec<&str> = text.lines().filter(|l| !l.starts_with("-- ")).collect();
@@ -190,6 +200,22 @@ pub fn journal(
         lines.reverse();
     }
     Ok(json!({"unit": unit, "lines": lines}))
+}
+
+/// A name that is not one path component — what both readers refuse.
+fn not_a_file_name(name: &str) -> Said {
+    Said::new(
+        format!("{name:?} 不是一个文件名"),
+        format!("{name:?} is not a file name"),
+    )
+}
+
+/// The name is a path component, but what is there is not a plain file.
+fn not_a_regular_file(name: &str) -> Said {
+    Said::new(
+        format!("{name} 不是一个普通文件"),
+        format!("{name} is not a regular file"),
+    )
 }
 
 /// A short-iso-precise line's timestamp, which sorts as text.
@@ -250,27 +276,27 @@ pub fn log_files(dir: &Path) -> Value {
 ///
 /// # Errors
 /// As [`tail`].
-pub fn first_line(dir: &Path, name: &str) -> Result<String, String> {
+pub fn first_line(dir: &Path, name: &str) -> Result<String, Said> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == ".." {
-        return Err(format!("{name:?} is not a file name"));
+        return Err(not_a_file_name(name));
     }
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(dir.join(name))
-        .map_err(|e| format!("{name}: {e}"))?;
+        .map_err(|e| Said::same(format!("{name}: {e}")))?;
     if !file
         .metadata()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Said::same(e.to_string()))?
         .file_type()
         .is_file()
     {
-        return Err(format!("{name} is not a regular file"));
+        return Err(not_a_regular_file(name));
     }
     let mut buf = Vec::new();
     file.take(1024)
         .read_to_end(&mut buf)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     Ok(String::from_utf8_lossy(&buf)
         .lines()
         .next()
@@ -293,28 +319,30 @@ pub const MAX_LINES: usize = 2000;
 /// # Errors
 /// A name that is not a plain file name, or a file that is not a regular
 /// file in the directory.
-pub fn tail(dir: &Path, name: &str, lines: usize, grep: Option<&str>) -> Result<Value, String> {
+pub fn tail(dir: &Path, name: &str, lines: usize, grep: Option<&str>) -> Result<Value, Said> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == ".." {
-        return Err(format!("{name:?} is not a file name"));
+        return Err(not_a_file_name(name));
     }
     let path = dir.join(name);
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&path)
-        .map_err(|e| format!("{name}: {e}"))?;
-    let meta = file.metadata().map_err(|e| format!("{name}: {e}"))?;
+        .map_err(|e| Said::same(format!("{name}: {e}")))?;
+    let meta = file
+        .metadata()
+        .map_err(|e| Said::same(format!("{name}: {e}")))?;
     if !meta.file_type().is_file() {
-        return Err(format!("{name} is not a regular file"));
+        return Err(not_a_regular_file(name));
     }
     let size = meta.len();
     let start = size.saturating_sub(MAX_TAIL_BYTES);
     file.seek(SeekFrom::Start(start))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     let mut buf = Vec::new();
     file.take(MAX_TAIL_BYTES)
         .read_to_end(&mut buf)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     let text = String::from_utf8_lossy(&buf);
     let mut all: Vec<&str> = text.lines().collect();
     if start > 0 && !all.is_empty() {

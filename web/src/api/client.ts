@@ -297,12 +297,13 @@ export interface StrategyView {
     config_sha: string | null;
     observing_since_ms: number | null;
     confirmed_by: string | null;
-    history: { at_ms: number; from: Stage; to: Stage; actor: string; reason: string }[];
+    history: { at_ms: number; from: Stage; to: Stage; actor: string; reason: string; reason_en?: string | null }[];
   };
   evidence: { observation_hours: number; observation_fills: number; required_hours: number; required_fills: number };
   config_sha_now: string | null;
   next: Stage | null;
-  decision: { allowed: boolean; reason: string };
+  /** Why the next step is closed, in both languages, from the gate. */
+  decision: { allowed: boolean; reason: { zh: string; en: string } };
 }
 
 export interface Accounts {
@@ -354,6 +355,7 @@ export interface BlackboxEvent {
   message?: string;
   message_en?: string;
   reason?: string | null;
+  reason_en?: string | null;
   result?: string | null;
   exit_status?: string | null;
   state?: string;
@@ -444,8 +446,11 @@ export interface AuditEntry {
   at_ms: number;
   actor: string;
   op: string;
+  /** What the person typed, and the agent's own words: both renderings. */
   reason: string;
+  reason_en?: string | null;
   result: string;
+  result_en?: string | null;
   hash: string;
 }
 
@@ -458,6 +463,7 @@ export interface StagedRelease {
   id: string;
   verified: boolean;
   problem?: string;
+  problem_en?: string | null;
   manifest?: { id: string; files: Record<string, string>; [k: string]: unknown };
 }
 
@@ -470,7 +476,8 @@ export interface Releases {
     running: boolean;
     id: string;
     outcome: string | null;
-    steps: { at_ms: number; step: string }[];
+    outcome_en?: string | null;
+    steps: { at_ms: number; step: string; step_en?: string | null }[];
   };
 }
 

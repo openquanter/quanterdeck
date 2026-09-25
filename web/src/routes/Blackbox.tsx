@@ -6,7 +6,7 @@ import { api, type BlackboxEvent, type BlackboxWindow } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { type Point, TimeSeries } from "@/ui/charts";
 import { useThemeColors } from "@/ui/theme";
-import { said, tr } from "@/i18n";
+import { pair, said, tr } from "@/i18n";
 import { Badge, Button, Card, Drawer, Freshness, KV, PageHeader, Segmented, StatusDot, Table, fmtBytes, fmtTime, type Tone } from "@/ui/kit";
 
 import { RecordRows } from "./Trading";
@@ -242,7 +242,10 @@ function Window({ w, onPick, moment }: { w: BlackboxWindow; onPick: (t: number) 
 }
 
 function eventDetail(e: BlackboxEvent) {
-  return [e.unit, said(e), e.reason, e.result && tr(`结果 ${e.result}`, `result ${e.result}`), e.exit_status && tr(`退出码 ${e.exit_status}`, `exit status ${e.exit_status}`)].filter(Boolean).join(" · ");
+  // The reason is the agent's when it says why the port went quiet, and
+  // the trader's own words when it says why it halted; a pair is read in
+  // the reader's language, a lone rendering is shown as it is.
+  return [e.unit, said(e), pair(e.reason, e.reason_en), e.result && tr(`结果 ${e.result}`, `result ${e.result}`), e.exit_status && tr(`退出码 ${e.exit_status}`, `exit status ${e.exit_status}`)].filter(Boolean).join(" · ");
 }
 
 function ChartCard({

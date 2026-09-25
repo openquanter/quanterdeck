@@ -932,7 +932,10 @@ async fn ask_agent(
         Ok(resp) if resp.ok => axum::Json(resp.data).into_response(),
         Ok(resp) => Refusal::new(
             StatusCode::CONFLICT,
-            resp.error.unwrap_or_else(|| {
+            // The agent writes a refusal in both languages — it cannot
+            // know which one this reader asked for, and for a request it
+            // could not even read there is nobody to ask.
+            resp.why(lang()).map(str::to_string).unwrap_or_else(|| {
                 t("主机代理拒绝了请求", "The host agent refused the request").into()
             }),
         )
