@@ -19,6 +19,29 @@
 
 后半句和前半句一样重要。这个控制台的一部分职责是**拒绝**。
 
+## 界面
+
+总览只回答一件事：交易主机现在是否一切正常；每一项不正常都能点进去处理。
+
+<img src="docs/screenshots/overview.png" alt="总览">
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/live.png" alt="实盘：持仓、挂单、成交、行情、风控，一页"><br><sub>实盘：持仓、挂单、成交、行情、风控，一页</sub></td>
+    <td width="50%"><img src="docs/screenshots/reconcile.png" alt="交易所对账：进程认为的 vs 交易所实际"><br><sub>交易所对账：进程认为的 vs 交易所实际</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/attribution.png" alt="盈亏归因：五个成因三种状态，残差未知不是 0"><br><sub>盈亏归因：五个成因三种状态，残差未知不是 0</sub></td>
+    <td width="50%"><img src="docs/screenshots/blackbox-moment.png" alt="黑匣子复盘：打开任一时刻"><br><sub>黑匣子复盘：打开任一时刻</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/host.png" alt="主机与服务"><br><sub>主机与服务</sub></td>
+    <td width="50%"><img src="docs/screenshots/deploy.png" alt="发布：签名构件、部署与回滚"><br><sub>发布：签名构件、部署与回滚</sub></td>
+  </tr>
+</table>
+
+截图由 `scripts/screenshots.py` 从运行中的 deck 生成，部署相关的名称在截图前已替换；界面改动后重跑它即可更新。
+
 ## 不做什么
 
 - **不做云托管、不做 SaaS、不代管你的 API key。** 上游把"代管用户密钥"列为
