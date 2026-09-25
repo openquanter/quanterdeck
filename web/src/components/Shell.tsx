@@ -25,7 +25,7 @@ import {
 
 import { api, type CapabilityName } from "@/api/client";
 import { Skeleton } from "@/components/States";
-import { Badge, IconTile, StatusDot, cx, type Hue } from "@/ui/kit";
+import { Badge, BrandMark, IconTile, StatusDot, cx, type Hue } from "@/ui/kit";
 import { ThemeToggle } from "@/ui/theme";
 import { LanguageToggle, tr } from "@/i18n";
 
@@ -111,7 +111,7 @@ export function Shell() {
     <div className="flex h-screen overflow-hidden">
       <nav className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
         <Link to="/" className="flex items-center gap-3 px-5 py-5">
-          <Logo />
+          <BrandMark className="h-8 w-8" />
           <span className="text-[17px] font-medium tracking-tight text-ink">
             quanter<span className="text-accent">deck</span>
           </span>
@@ -285,14 +285,3 @@ function UserMenu() {
   );
 }
 
-/** Four tiles in Google's colours: the mark, without an image to load. */
-function Logo() {
-  return (
-    <span className="grid h-8 w-8 grid-cols-2 gap-[3px] rounded-lg p-[3px]" aria-hidden>
-      <span className="rounded-[4px] bg-hue-blue" />
-      <span className="rounded-[4px] bg-hue-red" />
-      <span className="rounded-[4px] bg-hue-yellow" />
-      <span className="rounded-[4px] bg-hue-green" />
-    </span>
-  );
-}
