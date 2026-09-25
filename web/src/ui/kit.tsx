@@ -473,6 +473,22 @@ export function fmtBytes(b: number | null | undefined): string {
   return `${b} B`;
 }
 
+/**
+ * The product mark: four tiles in Google's colours, drawn rather than
+ * loaded. The sign-in screens and the sidebar draw the same one, so the
+ * door and the room behind it carry the same mark.
+ */
+export function BrandMark({ className }: { className?: string }) {
+  return (
+    <span className={cx("grid grid-cols-2 gap-[3px] rounded-lg p-[3px]", className)} aria-hidden>
+      <span className="rounded-[4px] bg-hue-blue" />
+      <span className="rounded-[4px] bg-hue-red" />
+      <span className="rounded-[4px] bg-hue-yellow" />
+      <span className="rounded-[4px] bg-hue-green" />
+    </span>
+  );
+}
+
 /** A signed money amount, coloured by sign only when asked. */
 export function Money({ value, signed }: { value: string | number | null | undefined; signed?: boolean }) {
   if (value == null || value === "") return <span className="text-ink-faint">—</span>;
