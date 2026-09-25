@@ -28,20 +28,20 @@ is to say no.
 
 The overview answers one question — is the trading host all right — and every "no" links to where it is dealt with.
 
-<img src="docs/screenshots/overview.png" alt="Overview">
+<img src="docs/screenshots/en/overview.png" alt="Overview">
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/live.png" alt="Live: positions, orders, fills, market and risk limits on one page"><br><sub>Live: positions, orders, fills, market and risk limits on one page</sub></td>
-    <td width="50%"><img src="docs/screenshots/reconcile.png" alt="Venue reconciliation: what the process believes against what the venue holds"><br><sub>Venue reconciliation: what the process believes against what the venue holds</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/live.png" alt="Live: positions, orders, fills, market and risk limits on one page"><br><sub>Live: positions, orders, fills, market and risk limits on one page</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/reconcile.png" alt="Venue reconciliation: what the process believes against what the venue holds"><br><sub>Venue reconciliation: what the process believes against what the venue holds</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/attribution.png" alt="Attribution: five causes in three states; an unknown residual is not zero"><br><sub>Attribution: five causes in three states; an unknown residual is not zero</sub></td>
-    <td width="50%"><img src="docs/screenshots/blackbox-moment.png" alt="Black box: any moment, opened up"><br><sub>Black box: any moment, opened up</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/attribution.png" alt="Attribution: five causes in three states; an unknown residual is not zero"><br><sub>Attribution: five causes in three states; an unknown residual is not zero</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/blackbox-moment.png" alt="Black box: any moment, opened up"><br><sub>Black box: any moment, opened up</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/host.png" alt="Host and services"><br><sub>Host and services</sub></td>
-    <td width="50%"><img src="docs/screenshots/deploy.png" alt="Releases: signed builds, deploy and roll back"><br><sub>Releases: signed builds, deploy and roll back</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/host.png" alt="Host and services"><br><sub>Host and services</sub></td>
+    <td width="50%"><img src="docs/screenshots/en/deploy.png" alt="Releases: signed builds, deploy and roll back"><br><sub>Releases: signed builds, deploy and roll back</sub></td>
   </tr>
 </table>
 
