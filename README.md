@@ -93,9 +93,20 @@ causes — keeping **measured zero** and **not measured** apart, and
 returning a null residual rather than a zero one whenever the
 decomposition is incomplete.
 
+With a host agent (`oq-agent`, in this repository) running on the
+trading host as its own user, it also operates that host: the trader's
+status, resting orders and halt state from its control port; unit
+state and start/stop/restart; log tails; host health; a halt, a
+shutdown and a resume; signed-release deployment with a health check
+and automatic rollback; and reconciliation of the newest journal
+against the venue's latest reading, with no pasting. Anything risky
+needs a reason and a one-time code **the agent** verifies, so a
+compromised deck cannot act alone. Every action goes into a
+hash-chained audit trail and to the alert channel, and conditions such
+as a halt, a books mismatch or a stopped unit are pushed there too.
+
 Not yet: event-by-event journal replay, sweeps, data quality, the setup
-wizard's interface, step-up authentication for dangerous actions, an
-audit log.
+wizard's interface.
 
 ## Getting started
 

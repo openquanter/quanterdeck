@@ -754,6 +754,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "oq-agent"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "oq-deck-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
 name = "oq-backtest"
 version = "2.0.0-alpha.1"
 source = "git+https://github.com/openquanter/openquanter?rev=336eae2#336eae2fa403fafda62419ea68f4cb5851e1a25b"
@@ -806,6 +820,7 @@ dependencies = [
  "oq-types",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http",
@@ -829,6 +844,7 @@ dependencies = [
  "oq-types",
  "rand 0.9.5",
  "serde",
+ "serde_json",
  "sha1 0.10.7",
  "subtle",
  "tempfile",

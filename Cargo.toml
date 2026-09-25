@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/oq-deck-core", "crates/oq-deck"]
+members = ["crates/oq-deck-core", "crates/oq-deck", "crates/oq-agent"]
 
 [workspace.package]
 version = "0.0.1"
