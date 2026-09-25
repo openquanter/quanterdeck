@@ -1,9 +1,10 @@
 # Copy
 
-Chinese is the primary language; English follows. Both live as key-value
-files here rather than as literals in components, because the audience
-for this console is split and a screen that only reads well in one of
-them is a screen half the users cannot use.
+The interface is Chinese-only for now, and the Settings page says so.
+Every screen carries its copy as literals; the glossary the novice mode
+reads is `GLOSSARY` in `src/components/States.tsx`.
 
-Not yet wired — the placeholder screens carry literals. This lands with
-M1, before there is enough copy to make the migration expensive.
+This directory is where the copy goes when English arrives: key-value
+files, Chinese first, rather than literals in components, because a
+screen that only reads well in one language is a screen half the
+audience cannot use. Nothing is here yet, and nothing imports from it.

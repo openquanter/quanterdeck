@@ -4,7 +4,7 @@
 
 English · [中文](README.zh-CN.md)
 
-> ⚠️ Early development (v0.0.1, M1). APIs are unstable. Not financial
+> ⚠️ Early development (v0.0.1). APIs are unstable. Not financial
 > advice; use at your own risk.
 
 ---
@@ -29,7 +29,8 @@ is to say no.
 - **Not hosted, not a SaaS, and it does not hold your API keys.** Custody
   of user keys is a non-goal upstream, and it is one here.
 - **Not a market terminal, a copy-trading network, or a strategy store.**
-- **Not a judge of whether your strategy is any good.**
+- **Not a judge of whether your strategy is any good.** It makes sure you
+  ran the backtest before going live, not that the backtest meant anything.
 - **Not a change to the framework.** The console is a consumer with a
   one-way dependency on the public crates. The framework need not know it
   exists.
@@ -71,42 +72,62 @@ That is upstream's FR-CORE-7, applied here.
 
 ## Status
 
-M1. Against a directory of run files it can:
+Against a directory of run files it can:
 
 - list every run **including the one that will not parse** — with its
   reason, rather than absent from the listing
 - show the identity triple, the fills and the realized P&L; an untagged
   fill and an empty-tagged one look different, because they are
 - compare two runs and distinguish three verdicts: comparable, code
-  changed, and **baseline invalidated**
+  changed, and **baseline invalidated**; and compare their fills by
+  markout against a tick file
+- show a parameter sweep (`.sweep` files) with the refusals, the
+  deflated Sharpe and the PBO **before** the table of configurations
 - report its own capabilities, rendering no control for what it cannot
   do and saying why
 - start read-only and loopback-only, and **refuse to start** when told to
   listen elsewhere without a password and a second factor
 
 Against a directory of journals it reconstructs what each process
-believed it held, reports how many frames it could not decode, and
-compares that against a venue record the operator pastes in.
+believed it held — leg by leg on a hedged account — reports how many
+frames it could not decode, compares that against a venue record
+(pasted, or the watcher's latest reading), and replays a journal event
+by event, filtered by kind.
 
-And it decomposes the gap between a live run and a model run into five
+It decomposes the gap between a live run and a model run into five
 causes — keeping **measured zero** and **not measured** apart, and
 returning a null residual rather than a zero one whenever the
-decomposition is incomplete.
+decomposition is incomplete — from run files, or live from the trader's
+own shadow model.
 
 With a host agent (`oq-agent`, in this repository) running on the
-trading host as its own user, it also operates that host: the trader's
-status, resting orders and halt state from its control port; unit
-state and start/stop/restart; log tails; host health; a halt, a
-shutdown and a resume; signed-release deployment with a health check
-and automatic rollback; and reconciliation of the newest journal
-against the venue's latest reading, with no pasting. Anything risky
-needs a reason and a one-time code **the agent** verifies, so a
-compromised deck cannot act alone. Every action goes into a
-hash-chained audit trail and to the alert channel, and conditions such
-as a halt, a books mismatch or a stopped unit are pushed there too.
+trading host as its own user, it also operates that host:
 
-Not yet: event-by-event journal replay, sweeps, data quality, the setup
-wizard's interface.
+- the trader's status — positions, resting orders, the run's P&L, the
+  risk limits in force, halt state — from its control port; unit state
+  and start/stop/restart; halt, shutdown and resume
+- log tails, from files and from each service's systemd journal
+- signed-release deployment with a health check and automatic rollback
+- strategy configuration: form and raw JSON, a diff before saving, a
+  backup of every version, rollback
+- the promotion gate for each strategy instance, draft to live, with the
+  reason a step is closed and a configuration change sending it back
+- alerts (a halt, a books mismatch, a stopped unit, a full disk, an
+  unsynced clock, a service whose memory keeps growing), their history,
+  a test send and silencing; which venue account each process uses; the
+  live feed's quality
+- a **black box**: every 30 s, kept 90 days, the host (load, memory,
+  pressure, clock, disks), each service (memory, CPU, tasks) and the
+  trader's status, with state changes and alerts as events — and a
+  review page that opens any moment: the snapshot then, the trader's
+  decisions and fills around it, and its output around it
+
+Anything risky needs a reason and a one-time code **the agent**
+verifies, so a compromised deck cannot act alone. Every action goes
+into a hash-chained audit trail and to the alert channel.
+
+The interface has a novice mode that explains each term in a sentence,
+and an expert mode that does not. It is Chinese-only for now.
 
 ## Getting started
 
@@ -124,7 +145,8 @@ cargo run -p oq-deck                              # http://127.0.0.1:8899
 The first start prints a one-time token to the terminal. Use it at
 `/setup` to set a password, then put the returned
 `OQ_DECK_PASSWORD_HASH` in the environment and restart. Until then every
-route but `/api/v1/health` and `/setup` returns 401.
+API route but `/api/v1/health`, `/api/v1/session`,
+`/api/v1/session/login` and `/api/v1/setup` returns 401.
 
 With no runs of your own, use the ones in the repository:
 
@@ -136,6 +158,55 @@ They are written by the framework's own writer
 (`cargo run -p oq-deck-core --example make_fixtures`), so the format is
 correct by construction — and one of them is deliberately truncated, to
 show what the listing does with a file it cannot read.
+
+## Configuration
+
+The deck:
+
+| Variable | What it does |
+|---|---|
+| `OQ_DECK_HOST`, `OQ_DECK_PORT` | Listen address; `127.0.0.1:8899` by default. Anything but loopback needs a second factor |
+| `OQ_DECK_PASSWORD_HASH` | The Argon2id hash `/setup` returns |
+| `OQ_DECK_TOTP_SECRET` | The second factor; required when reachable from elsewhere |
+| `OQ_DECK_BEHIND_TLS` | `1` behind a TLS reverse proxy: cookies are `Secure` |
+| `OQ_DECK_EXTRA_HOSTS` | Host names beyond the listen address that may reach it (a reverse proxy's) |
+| `OQ_DECK_RUNS_DIR` | Run files and `.sweep` files |
+| `OQ_DECK_JOURNALS_DIR` | Journals, for reconciliation and replay |
+| `OQ_DECK_TICKS_DIR` | `.oqtk` tick files, for markouts |
+| `OQ_DECK_VENUE_RECORD` | The watcher's latest venue reading, for reconciliation without pasting |
+| `OQ_DECK_AGENT_SOCKET` | The host agent's socket; without it there are no operations |
+| `OQ_DECK_ALLOW_WRITES` | `1` to allow actions at all; read-only otherwise |
+| `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
+
+The agent (`oq-agent`), whose defaults fit a host laid out as the
+reference deployment is:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `OQ_AGENT_SOCKET` | `$RUNTIME_DIRECTORY/agent.sock` | Where the deck reaches it |
+| `OQ_AGENT_PEERS` | `oq-deck` | Users allowed to connect |
+| `OQ_AGENT_UNITS` | the trader, watcher, deck, agent and proxy | Units shown and recorded |
+| `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | Units it may start and stop |
+| `OQ_AGENT_TRADER_UNIT` | `trader.service` | The trader |
+| `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | The trader's control socket directory |
+| `OQ_AGENT_LOG_DIR` | `/var/log/oq` | Log files |
+| `OQ_AGENT_STATE` | `/var/lib/oq-agent` | Audit trail, alerts, black box, gate state |
+| `OQ_AGENT_RELEASES`, `OQ_AGENT_INCOMING` | `/opt/oq/releases`, `/var/lib/oq/incoming` | Installed and staged releases |
+| `OQ_AGENT_SIGNERS` | `/etc/oq/allowed_signers` | The only keys whose releases it installs |
+| `OQ_AGENT_CONFIG_DIR` | `/var/lib/oq/config` | Strategy configuration it may change |
+| `OQ_AGENT_JOURNALS` | `/var/lib/oq/journals` | Journals, for the promotion gate's evidence |
+| `OQ_AGENT_HOST` | `host` | The host's name in alerts |
+| `OQ_AGENT_DISCORD_GUILD`, `OQ_AGENT_DISCORD_CHANNEL` | —, `alerts` | Where alerts go; the bot token comes as a systemd credential |
+| `OQ_AGENT_PROXY` | — | An HTTP proxy for the alert channel |
+
+## Docs
+
+| Doc | What it holds |
+|---|---|
+| [STACK.zh-CN.md](docs/STACK.zh-CN.md) | Why this stack, what was rejected, and what v1 got wrong |
+| [UI-BRIEF.zh-CN.md](docs/UI-BRIEF.zh-CN.md) | The brief for design: each screen's data, states and verdicts |
+| [SECURITY.zh-CN.md](docs/SECURITY.zh-CN.md) | Threat model, measures, and what is not done yet |
+| [AGENTS.md](AGENTS.md) | Local commands and the ten invariants |
 
 ## Licence
 
