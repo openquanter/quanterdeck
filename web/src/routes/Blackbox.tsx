@@ -359,6 +359,7 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
                 <div className={t.halted ? "text-bad" : "text-ink"}>{t.halted ? `已停机：${t.halt_reason ?? ""}` : "交易中"}</div>
                 <div>持仓 {(t.positions ?? []).map((p: { side: string; amount: string }) => `${p.side} ${p.amount}`).join(" ") || "无"}</div>
                 <div>挂单 {t.resting} · tick {t.ticks}</div>
+                {t.pnl && <div>本次运行盈亏 {t.pnl.net}（手续费 {t.pnl.fees}）· 权益 {t.pnl.equity}</div>}
                 <div>核对 {t.reconcile?.agreed === true ? "一致" : t.reconcile?.agreed === false ? "不一致" : "尚未"} · 读不出 {t.feed?.unreadable}</div>
                 {t.journal_lost && <div className="text-bad">日志无法写入：{t.journal_lost}</div>}
               </div>

@@ -60,7 +60,7 @@ function OpsSummary() {
         <Tile
           label="交易进程"
           value={status.isError ? "无法获取" : status.data ? (status.data.halted ? "已停机" : "交易中") : "—"}
-          sub={status.data ? `${status.data.symbol} · 挂单 ${status.data.resting} · ${status.data.positions.map((p) => `${p.side} ${p.amount}`).join(" ") || "无持仓"}` : undefined}
+          sub={status.data ? `${status.data.symbol} · 挂单 ${status.data.resting} · ${status.data.positions.map((p) => `${p.side} ${p.amount}`).join(" ") || "无持仓"}${status.data.pnl ? ` · 本次运行盈亏 ${status.data.pnl.net}` : ""}` : undefined}
         />
         <Tile
           label="告警"
