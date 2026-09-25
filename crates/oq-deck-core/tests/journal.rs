@@ -33,6 +33,7 @@ fn a_cancelled_order_is_neither_resting_nor_undecodable() {
                 limit_price: PriceTicks(6_000_000),
                 qty: QtyLots(1),
                 reduce_only: false,
+                leg: String::new(),
             },
             Record::Outcome {
                 at: Nanos(2),
