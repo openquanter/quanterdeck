@@ -172,6 +172,8 @@ export interface Disk {
 export interface HostHealth {
   /** The host's name as the agent's alerts carry it. */
   name?: string;
+  /** The systemd unit the agent treats as the trader. */
+  trader_unit?: string;
   load: number[];
   mem_total: number | null;
   mem_available: number | null;
