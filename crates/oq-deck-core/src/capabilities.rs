@@ -100,10 +100,14 @@ pub fn detect(
 
     Capabilities {
         version: env!("CARGO_PKG_VERSION"),
-        attribution: if runs.available {
+        // Two sources: a pair of run files, or the trader's own shadow
+        // through the agent — the stronger one.
+        attribution: if runs.available || ops.available {
             Capability::on()
         } else {
-            Capability::off("归因要把一次实盘 run 与一次模型 run 相比；请先配置 OQ_DECK_RUNS_DIR")
+            Capability::off(
+                "归因要把实盘与模型相比：需要 run 文件目录（OQ_DECK_RUNS_DIR）或主机代理（OQ_DECK_AGENT_SOCKET）",
+            )
         },
         markout: match (runs.available, ticks.available) {
             (true, true) => Capability::on(),

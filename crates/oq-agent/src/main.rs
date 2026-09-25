@@ -220,6 +220,7 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         Op::Status => control::ask(&cfg.control_dir, "status", &origin, ""),
         Op::Orders => control::ask(&cfg.control_dir, "orders", &origin, ""),
         Op::Metrics => control::ask(&cfg.control_dir, "metrics", &origin, ""),
+        Op::Attribution => control::ask(&cfg.control_dir, "attribution", &origin, ""),
         Op::Logs => Ok(system::log_files(&cfg.log_dir)),
         Op::LogTail { name, lines, grep } => {
             system::tail(&cfg.log_dir, name, *lines, grep.as_deref())

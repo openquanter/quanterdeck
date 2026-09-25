@@ -41,8 +41,44 @@ export function Overview() {
           }
         />
       </div>
+      {caps?.ops.available && <OpsSummary />}
       {caps && <Unavailable caps={caps} />}
     </div>
+  );
+}
+
+/** The trading host at a glance, when the deck has its agent. */
+function OpsSummary() {
+  const status = useQuery({ queryKey: ["ops", "status"], queryFn: api.traderStatus, refetchInterval: 10_000, retry: false });
+  const alerts = useQuery({ queryKey: ["ops", "alerts"], queryFn: api.alerts, refetchInterval: 10_000 });
+  const live = useQuery({ queryKey: ["live", "latest"], queryFn: api.liveLatest, refetchInterval: 30_000, retry: false });
+  const verdict = live.data?.reconciliation.verdict;
+  return (
+    <section className="mt-6">
+      <h2 className="mb-2 text-sm text-ink-muted">交易主机</h2>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Tile
+          label="交易进程"
+          value={status.isError ? "无法获取" : status.data ? (status.data.halted ? "已停机" : "交易中") : "—"}
+          sub={status.data ? `${status.data.symbol} · 挂单 ${status.data.resting} · ${status.data.positions.map((p) => `${p.side} ${p.amount}`).join(" ") || "无持仓"}` : undefined}
+        />
+        <Tile
+          label="告警"
+          value={alerts.data ? (alerts.data.length ? `${alerts.data.length} 条` : "无") : "—"}
+          sub={alerts.data?.[0]?.message}
+        />
+        <Tile
+          label="实盘对账"
+          value={verdict === "agree" ? "一致" : verdict === "disagree" ? "不一致" : verdict === "cannot_tell" ? "无法判断" : "—"}
+          sub={live.data ? `交易所读数 ${Math.round(live.data.record_age_ms / 1000)} 秒前` : undefined}
+        />
+        <Tile
+          label="持仓核对（进程内）"
+          value={status.data?.reconcile.agreed === true ? "一致" : status.data?.reconcile.agreed === false ? "不一致" : "尚未核对"}
+          sub={status.data ? `累计不一致 ${status.data.reconcile.mismatches}` : undefined}
+        />
+      </div>
+    </section>
   );
 }
 

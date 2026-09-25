@@ -123,3 +123,44 @@ fn no_difference_over_a_whole_belief_is_agreement() {
     assert!(r.agrees);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A replay reads newest first, filters by kind, and pages by sequence.
+#[test]
+fn records_page_newest_first_by_kind() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut rs = vec![start()];
+    for i in 0..5 {
+        rs.push(Record::Tick {
+            at: Nanos(100 + i),
+            seen: Nanos(200 + i),
+            last: PriceTicks(6_000_000 + i),
+            bid: PriceTicks(5_999_999),
+            ask: PriceTicks(6_000_001),
+            volume: QtyLots(i),
+        });
+    }
+    rs.push(Record::Operator {
+        at: Nanos(300),
+        command: "halt".into(),
+        reason: "looking".into(),
+        origin: "uid 1 deck".into(),
+        outcome: "halted".into(),
+    });
+    journal(dir.path(), &rs);
+
+    let all = oq_deck_core::live::records(dir.path(), "run", &[], 100, None).expect("reads");
+    assert_eq!(all.total, 7);
+    assert_eq!(all.records[0].kind, "operator", "newest first");
+    assert_eq!((all.price_scale, all.qty_scale), (2, 3));
+
+    let ticks =
+        oq_deck_core::live::records(dir.path(), "run", &["tick".into()], 2, None).expect("reads");
+    assert_eq!(ticks.total, 5);
+    assert_eq!(ticks.records.len(), 2);
+    assert_eq!(ticks.records[0].fields["last"], 6_000_004);
+    let older =
+        oq_deck_core::live::records(dir.path(), "run", &["tick".into()], 2, ticks.next_before)
+            .expect("reads");
+    assert_eq!(older.records[0].fields["last"], 6_000_002);
+    assert!(oq_deck_core::live::records(dir.path(), "../x", &[], 1, None).is_err());
+}

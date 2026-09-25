@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
 import { api } from "@/api/client";
+import { Copy } from "@/components/States";
 
 import { Failure, Skeleton } from "./Runs";
 
@@ -25,11 +26,11 @@ export function RunDetail() {
           the thing a third party checks a claim against. */}
       <dl className="mb-6 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
         <dt className="text-ink-muted">code-commit</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.code_commit}</dd>
+        <dd className="font-mono text-xs break-all">{data.identity.code_commit}<Copy text={data.identity.code_commit} /></dd>
         <dt className="text-ink-muted">data-sha256</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.data_hash}</dd>
+        <dd className="font-mono text-xs break-all">{data.identity.data_hash}<Copy text={data.identity.data_hash} /></dd>
         <dt className="text-ink-muted">config-sha256</dt>
-        <dd className="font-mono text-xs break-all">{data.identity.config_hash}</dd>
+        <dd className="font-mono text-xs break-all">{data.identity.config_hash}<Copy text={data.identity.config_hash} /></dd>
         <dt className="text-ink-muted">档位</dt>
         <dd>{data.identity.label}</dd>
         <dt className="text-ink-muted">已实现盈亏</dt>
