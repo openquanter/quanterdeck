@@ -4,6 +4,7 @@ import { Pause, Play, Search, X } from "lucide-react";
 
 import { api } from "@/api/client";
 import { ErrorState } from "@/components/States";
+import { tr } from "@/i18n";
 import { Button, Freshness, PageHeader, cx } from "@/ui/kit";
 
 /** One-click filters for the lines an operator looks for first. */
@@ -63,25 +64,28 @@ export function Logs() {
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
       <PageHeader
-        title="日志"
-        description="各服务写进 systemd journal 的输出（每行带时间），以及更早写在日志文件里的内容。"
+        title={tr("日志", "Logs")}
+        description={tr(
+          "各服务写进 systemd journal 的输出（每行带时间），以及更早写在日志文件里的内容。",
+          "Each service's output to the systemd journal (every line timestamped), and what was written to log files before that.",
+        )}
         meta={<Freshness at={tail.dataUpdatedAt} fetching={tail.isFetching} staleAfterS={follow ? 15 : 3600} onRefresh={() => tail.refetch()} />}
       />
       {files.isError && (
         <div className="mb-3">
-          <ErrorState error={files.error} what="日志文件列表" />
+          <ErrorState error={files.error} what={tr("日志文件列表", "log file list")} />
         </div>
       )}
       {units.isError && (
         <div className="mb-3">
-          <ErrorState error={units.error} what="服务列表" />
+          <ErrorState error={units.error} what={tr("服务列表", "service list")} />
         </div>
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select className={cx(control, "font-mono")} value={name ?? ""} onChange={(e) => setName(e.target.value)}>
           {units.data && units.data.length > 0 && (
-            <optgroup label="服务输出（systemd journal）">
+            <optgroup label={tr("服务输出（systemd journal）", "Service output (systemd journal)")}>
               {units.data.map((u) => (
                 <option key={u.unit} value={`j:${u.unit}`}>
                   {u.unit}
@@ -90,7 +94,7 @@ export function Logs() {
             </optgroup>
           )}
           {files.data && files.data.length > 0 && (
-            <optgroup label="日志文件">
+            <optgroup label={tr("日志文件", "Log files")}>
               {files.data.map((f) => (
                 <option key={f.name} value={`f:${f.name}`}>
                   {f.name} ({(f.size / 1024).toFixed(0)} KiB)
@@ -102,9 +106,9 @@ export function Logs() {
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
-          <input className={cx(control, "w-48 pl-7 pr-7")} placeholder="只看包含…" value={grep} onChange={(e) => setGrep(e.target.value)} />
+          <input className={cx(control, "w-48 pl-7 pr-7")} placeholder={tr("只看包含…", "Only lines containing…")} value={grep} onChange={(e) => setGrep(e.target.value)} />
           {grep && (
-            <button className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink" onClick={() => setGrep("")} aria-label="清除过滤">
+            <button className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink" onClick={() => setGrep("")} aria-label={tr("清除过滤", "Clear filter")}>
               <X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -129,7 +133,7 @@ export function Logs() {
           <select className={control} value={lines} onChange={(e) => setLines(Number(e.target.value))}>
             {LINE_COUNTS.map((n) => (
               <option key={n} value={n}>
-                最后 {n} 行
+                {tr(`最后 ${n} 行`, `Last ${n} lines`)}
               </option>
             ))}
           </select>
@@ -137,30 +141,30 @@ export function Logs() {
             variant={follow ? "primary" : "secondary"}
             icon={follow ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             onClick={() => setFollow(!follow)}
-            title={follow ? "每 5 秒刷新；点击暂停" : "已暂停；点击恢复每 5 秒刷新"}
+            title={follow ? tr("每 5 秒刷新；点击暂停", "Refreshing every 5 s; click to pause") : tr("已暂停；点击恢复每 5 秒刷新", "Paused; click to resume refreshing every 5 s")}
           >
-            {follow ? "跟随中" : "已暂停"}
+            {follow ? tr("跟随中", "Following") : tr("已暂停", "Paused")}
           </Button>
         </div>
       </div>
 
       {tail.isError ? (
-        <ErrorState error={tail.error} what="日志内容" />
+        <ErrorState error={tail.error} what={tr("日志内容", "log content")} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-line bg-term text-term-ink">
           <div className="flex items-center gap-3 border-b border-white/10 px-3 py-1.5 font-mono text-[11px] text-term-ink/60">
             <span className="truncate">{tail.data?.name ?? name?.slice(2) ?? "—"}</span>
-            <span>{shown.length} 行</span>
-            {grep && <span>过滤「{grep}」</span>}
-            {tail.data?.truncated && <span className="text-warn">只读取了文件最后 4 MiB</span>}
+            <span>{tr(`${shown.length} 行`, `${shown.length} line${shown.length === 1 ? "" : "s"}`)}</span>
+            {grep && <span>{tr(`过滤「${grep}」`, `Filter "${grep}"`)}</span>}
+            {tail.data?.truncated && <span className="text-warn">{tr("只读取了文件最后 4 MiB", "Only the last 4 MiB of the file was read")}</span>}
           </div>
           {/* Rendered as text, never as markup: these lines come from a
               venue and a strategy, and are not ours to trust. */}
           <pre ref={pane} className="flex-1 overflow-auto p-3 font-mono text-[12px] leading-5 text-term-ink">
             {tail.isLoading ? (
-              <span className="text-term-ink/60">读取中…</span>
+              <span className="text-term-ink/60">{tr("读取中…", "Loading…")}</span>
             ) : shown.length === 0 ? (
-              <span className="text-term-ink/60">{grep ? `没有包含「${grep}」的行。` : "这个来源还没有输出。"}</span>
+              <span className="text-term-ink/60">{grep ? tr(`没有包含「${grep}」的行。`, `No lines containing "${grep}".`) : tr("这个来源还没有输出。", "This source has no output yet.")}</span>
             ) : (
               shown.map((line, i) => (
                 <div key={i} className={WARN.test(line) ? "bg-warn/8 text-warn" : undefined}>

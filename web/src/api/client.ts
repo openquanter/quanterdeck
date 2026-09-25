@@ -6,6 +6,8 @@
  * are the types the server serves.
  */
 
+import { acceptLanguage, tr } from "@/i18n";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -34,14 +36,14 @@ async function read<T>(response: Response, path: string): Promise<T> {
 }
 
 async function request<T>(path: string): Promise<T> {
-  return read<T>(await fetch(`/api/v1${path}`), path);
+  return read<T>(await fetch(`/api/v1${path}`, { headers: { "Accept-Language": acceptLanguage() } }), path);
 }
 
 /** A write. The browser sets `Origin`, which the deck checks on every one. */
 async function post<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Accept-Language": acceptLanguage() },
     body: JSON.stringify(body),
   });
   return read<T>(response, path);
@@ -258,12 +260,14 @@ export interface Alert {
   key: string;
   since_ms: number;
   message: string;
+  /** The same message in English; absent from agents before it was added. */
+  message_en?: string;
   silenced_until_ms?: number | null;
 }
 
 export interface AlertsView {
   active: Alert[];
-  history: { at_ms: number; key: string; message: string; raised: boolean }[];
+  history: { at_ms: number; key: string; message: string; message_en?: string; raised: boolean }[];
 }
 
 export interface ConfigFile {
@@ -293,12 +297,13 @@ export interface StrategyView {
     config_sha: string | null;
     observing_since_ms: number | null;
     confirmed_by: string | null;
-    history: { at_ms: number; from: Stage; to: Stage; actor: string; reason: string }[];
+    history: { at_ms: number; from: Stage; to: Stage; actor: string; reason: string; reason_en?: string | null }[];
   };
   evidence: { observation_hours: number; observation_fills: number; required_hours: number; required_fills: number };
   config_sha_now: string | null;
   next: Stage | null;
-  decision: { allowed: boolean; reason: string };
+  /** Why the next step is closed, in both languages, from the gate. */
+  decision: { allowed: boolean; reason: { zh: string; en: string } };
 }
 
 export interface Accounts {
@@ -348,7 +353,9 @@ export interface BlackboxEvent {
   unit?: string;
   key?: string;
   message?: string;
+  message_en?: string;
   reason?: string | null;
+  reason_en?: string | null;
   result?: string | null;
   exit_status?: string | null;
   state?: string;
@@ -439,8 +446,11 @@ export interface AuditEntry {
   at_ms: number;
   actor: string;
   op: string;
+  /** What the person typed, and the agent's own words: both renderings. */
   reason: string;
+  reason_en?: string | null;
   result: string;
+  result_en?: string | null;
   hash: string;
 }
 
@@ -453,6 +463,7 @@ export interface StagedRelease {
   id: string;
   verified: boolean;
   problem?: string;
+  problem_en?: string | null;
   manifest?: { id: string; files: Record<string, string>; [k: string]: unknown };
 }
 
@@ -465,7 +476,8 @@ export interface Releases {
     running: boolean;
     id: string;
     outcome: string | null;
-    steps: { at_ms: number; step: string }[];
+    outcome_en?: string | null;
+    steps: { at_ms: number; step: string; step_en?: string | null }[];
   };
 }
 
@@ -540,7 +552,7 @@ function fromShadow(raw: Record<string, unknown>): AttributionReport {
     method: "shadow",
     missing_inputs: components
       .filter((c) => c.amount === null && c.unavailable)
-      .map((c) => `${c.name}：${c.unavailable}`),
+      .map((c) => tr(`${c.name}：${c.unavailable}`, `${c.name}: ${c.unavailable}`)),
     matched_fills: Number(raw.matched_fills ?? 0),
     unmatched_fills: Number(raw.unmatched_fills ?? 0),
   };

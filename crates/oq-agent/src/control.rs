@@ -5,6 +5,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use oq_deck_core::lang::Said;
 use serde_json::Value;
 
 /// The one control socket in `dir`.
@@ -13,10 +14,10 @@ use serde_json::Value;
 /// None there (the trader is not running, or has no port), or more than
 /// one — which would mean two traders, and a guess about which to command
 /// is not one to make.
-pub fn socket_in(dir: &Path) -> Result<PathBuf, String> {
+pub fn socket_in(dir: &Path) -> Result<PathBuf, Said> {
     use std::os::unix::fs::FileTypeExt;
     let socks: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .map_err(|e| Said::same(format!("{}: {e}", dir.display())))?
         .filter_map(Result::ok)
         .filter(|e| {
             e.file_name().to_string_lossy().ends_with(".sock")
@@ -25,11 +26,17 @@ pub fn socket_in(dir: &Path) -> Result<PathBuf, String> {
         .map(|e| e.path())
         .collect();
     match socks.len() {
-        0 => Err("the trader has no control socket: it is not running, or runs without one".into()),
+        0 => Err(Said::new(
+            "交易进程没有控制端口：它没有在运行，或者启动时没带。",
+            "the trader has no control socket: it is not running, or runs without one",
+        )),
         1 => Ok(socks.into_iter().next().unwrap_or_default()),
-        n => Err(format!(
-            "{n} control sockets in {}; refusing to choose",
-            dir.display()
+        n => Err(Said::new(
+            format!("{} 里有 {n} 个控制端口，不猜哪一个。", dir.display()),
+            format!(
+                "{n} control sockets in {}; refusing to choose",
+                dir.display()
+            ),
         )),
     }
 }
@@ -54,22 +61,28 @@ fn clean(s: &str) -> String {
 ///
 /// # Errors
 /// No socket, a connection or read failure, or an answer that is not JSON.
-pub fn ask(dir: &Path, command: &str, origin: &str, reason: &str) -> Result<Value, String> {
+pub fn ask(dir: &Path, command: &str, origin: &str, reason: &str) -> Result<Value, Said> {
     let path = socket_in(dir)?;
-    let mut stream = UnixStream::connect(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut stream =
+        UnixStream::connect(&path).map_err(|e| Said::same(format!("{}: {e}", path.display())))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     stream
         .set_write_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Said::same(e.to_string()))?;
     writeln!(stream, "{command}\t{}\t{}", clean(origin), clean(reason))
-        .map_err(|e| format!("write: {e}"))?;
+        .map_err(|e| Said::same(format!("write: {e}")))?;
     let mut line = String::new();
     BufReader::new(&stream)
         .take_line(&mut line)
-        .map_err(|e| format!("read: {e}"))?;
-    serde_json::from_str(&line).map_err(|e| format!("the port answered something unreadable: {e}"))
+        .map_err(|e| Said::same(format!("read: {e}")))?;
+    serde_json::from_str(&line).map_err(|e| {
+        Said::new(
+            format!("控制端口回了一段读不懂的内容：{e}"),
+            format!("the port answered something unreadable: {e}"),
+        )
+    })
 }
 
 trait TakeLine {
@@ -119,6 +132,7 @@ mod tests {
         assert!(
             socket_in(dir.path())
                 .unwrap_err()
+                .en
                 .contains("refusing to choose")
         );
     }

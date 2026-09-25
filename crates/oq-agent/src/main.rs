@@ -25,6 +25,7 @@ mod system;
 
 use std::sync::{Arc, Mutex};
 
+use oq_deck_core::lang::Said;
 use oq_deck_core::ops::{AgentRequest, AgentResponse, Op, Risk};
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -164,14 +165,20 @@ async fn serve(state: Arc<State>) -> Result<(), String> {
                                 .await
                                 .unwrap_or_else(|e| AgentResponse::refused(e.to_string()))
                         }
-                        _ => AgentResponse::refused("no request line"),
+                        _ => AgentResponse::refused(Said::new("没有请求内容。", "no request line")),
                     }
                 }
                 Some(uid) => {
                     eprintln!("oq-agent: refused uid {uid}");
-                    AgentResponse::refused("this uid may not use the agent")
+                    AgentResponse::refused(Said::new(
+                        "这个 uid 无权使用主机代理。",
+                        "this uid may not use the agent",
+                    ))
                 }
-                None => AgentResponse::refused("the peer could not be identified"),
+                None => AgentResponse::refused(Said::new(
+                    "无法确认对端身份。",
+                    "the peer could not be identified",
+                )),
             };
             let mut out = serde_json::to_string(&answer).unwrap_or_else(|_| "{}".into());
             out.push('\n');
@@ -183,13 +190,18 @@ async fn serve(state: Arc<State>) -> Result<(), String> {
 fn handle(state: &State, line: &str) -> AgentResponse {
     let req: AgentRequest = match serde_json::from_str(line) {
         Ok(r) => r,
-        Err(e) => return AgentResponse::refused(format!("unreadable request: {e}")),
+        Err(e) => {
+            return AgentResponse::refused(Said::new(
+                format!("请求读不出来：{e}"),
+                format!("unreadable request: {e}"),
+            ));
+        }
     };
     let now = system::now_ms();
     if let Err(e) = state
         .replay
         .lock()
-        .map_err(|_| "replay state poisoned".to_string())
+        .map_err(|_| Said::new("重放状态已损坏。", "replay state poisoned"))
         .and_then(|mut r| r.admit(&req.nonce, req.expires_ms, now))
     {
         return AgentResponse::refused(e);
@@ -198,19 +210,25 @@ fn handle(state: &State, line: &str) -> AgentResponse {
     let reason = req.reason.clone().unwrap_or_default();
     let what = req.op.describe();
     if risk >= Risk::Reduce && reason.trim().is_empty() {
-        return AgentResponse::refused("a reason is required");
+        return AgentResponse::refused(Said::new("需要填写原因。", "a reason is required"));
     }
     let mut credential = String::new();
     if risk == Risk::High {
         let verdict = state
             .step_up
             .lock()
-            .map_err(|_| "step-up state poisoned".to_string())
+            .map_err(|_| Said::new("二次验证状态已损坏。", "step-up state poisoned"))
             .and_then(|mut s| s.verify(req.step_up.as_deref(), now / 1000));
         if let Err(e) = verdict {
             // Refusals of risky requests are recorded too: repeated wrong
             // codes are what an intrusion looks like from here.
-            let _ = record(state, &req.actor, &what, &reason, &format!("refused: {e}"));
+            let _ = record(
+                state,
+                &req.actor,
+                &what,
+                &Said::same(&reason),
+                &Said::new(format!("已拒绝：{}", e.zh), format!("refused: {}", e.en)),
+            );
             return AgentResponse::refused(e);
         }
         credential = " (step-up ok)".into();
@@ -218,7 +236,7 @@ fn handle(state: &State, line: &str) -> AgentResponse {
     let origin = format!("{}{credential}", req.actor);
     let cfg = &state.cfg;
 
-    let result: Result<serde_json::Value, String> = match &req.op {
+    let result: Result<serde_json::Value, Said> = match &req.op {
         Op::Host => {
             // The host's name as alerts carry it, so the console names the
             // machine it is operating rather than leaving that implicit.
@@ -251,17 +269,17 @@ fn handle(state: &State, line: &str) -> AgentResponse {
             .audit
             .lock()
             .map(|a| a.tail(*lines))
-            .map_err(|_| "audit state poisoned".to_string()),
+            .map_err(|_| Said::new("审计状态已损坏。", "audit state poisoned")),
         Op::Alerts => state
             .raised
             .lock()
             .map(|r| json!({"active": alerts::list(&r), "history": alerts::history(&r)}))
-            .map_err(|_| "alert state poisoned".to_string()),
+            .map_err(|_| Said::new("告警状态已损坏。", "alert state poisoned")),
         Op::Releases => state
             .progress
             .lock()
             .map(|p| deploy::list(cfg, &p))
-            .map_err(|_| "deploy state poisoned".to_string()),
+            .map_err(|_| Said::new("部署状态已损坏。", "deploy state poisoned")),
         Op::Accounts => Ok(accounts(&cfg.log_dir, &cfg.manageable)),
         Op::Resources { hours } => Ok(blackbox::resources(
             &cfg.state_dir,
@@ -293,7 +311,10 @@ fn handle(state: &State, line: &str) -> AgentResponse {
             grep,
         } => {
             if !cfg.units.contains(unit) {
-                return AgentResponse::refused(format!("{unit} is not a unit this agent watches"));
+                return AgentResponse::refused(Said::new(
+                    format!("{unit} 不是本代理监视的服务。"),
+                    format!("{unit} is not a unit this agent watches"),
+                ));
             }
             system::journal(unit, *since_ms, *until_ms, *lines, grep.as_deref())
         }
@@ -302,15 +323,23 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         Op::Strategies => {
             let mut s = match state.strategies.lock() {
                 Ok(s) => s,
-                Err(_) => return AgentResponse::refused("strategy state poisoned"),
+                Err(_) => {
+                    return AgentResponse::refused(Said::new(
+                        "策略状态已损坏。",
+                        "strategy state poisoned",
+                    ));
+                }
             };
             for (id, why) in s.void_changed(&cfg.config_dir, now) {
                 let _ = record(
                     state,
                     "oq-agent",
                     &format!("strategy {id} back to draft"),
-                    &why,
-                    "voided",
+                    &Said::new("没有，是代理自己判定的。", "none; the agent decided it"),
+                    &Said::new(
+                        format!("证据作废：{}", why.zh),
+                        format!("voided: {}", why.en),
+                    ),
                 );
             }
             Ok(s.list(&cfg.config_dir, &cfg.journals, now))
@@ -318,23 +347,31 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         // State-changing requests are written down before they are done,
         // and not done if they cannot be written down.
         mutating => {
-            if let Err(e) = record(state, &req.actor, &what, &reason, "requested") {
-                return AgentResponse::refused(format!(
-                    "not done: the audit trail could not be written: {e}"
+            if let Err(e) = record(
+                state,
+                &req.actor,
+                &what,
+                &Said::same(&reason),
+                &Said::new("已请求", "requested"),
+            ) {
+                return AgentResponse::refused(Said::new(
+                    format!("没有执行：审计记录写不下去：{e}"),
+                    format!("not done: the audit trail could not be written: {e}"),
                 ));
             }
             let outcome = act(state, mutating, &origin, &reason);
             let result = match &outcome {
-                Ok(_) => "done".to_string(),
-                Err(e) => format!("failed: {e}"),
+                Ok(_) => Said::new("已完成", "done"),
+                Err(e) => Said::new(format!("失败：{}", e.zh), format!("failed: {}", e.en)),
             };
-            let _ = record(state, &req.actor, &what, &reason, &result);
+            let _ = record(state, &req.actor, &what, &Said::same(&reason), &result);
             outcome
         }
     };
     match result {
         Ok(data) => {
             if let Some(false) = data.get("ok").and_then(serde_json::Value::as_bool) {
+                // The trader's own words: one language, shown as they are.
                 return AgentResponse::refused(
                     data["error"]
                         .as_str()
@@ -348,7 +385,7 @@ fn handle(state: &State, line: &str) -> AgentResponse {
     }
 }
 
-fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json::Value, String> {
+fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json::Value, Said> {
     let cfg = &state.cfg;
     let set_stopped = |on: bool| {
         if let Ok(mut r) = state.raised.lock() {
@@ -364,7 +401,10 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
         }
         Op::Unit { unit, verb } => {
             if !cfg.manageable.contains(unit) {
-                return Err(format!("{unit} is not a unit this agent manages"));
+                return Err(Said::new(
+                    format!("{unit} 不是本代理管理的服务。"),
+                    format!("{unit} is not a unit this agent manages"),
+                ));
             }
             if *unit == cfg.trader_unit {
                 set_stopped(verb == "stop");
@@ -394,7 +434,7 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
                     r.silenced.insert(key.clone(), until);
                     json!({"key": key, "silenced_until_ms": until})
                 })
-                .map_err(|_| "alert state poisoned".to_string())
+                .map_err(|_| Said::new("告警状态已损坏。", "alert state poisoned"))
         }
         Op::ConfigPut {
             name,
@@ -409,26 +449,35 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
         Op::StrategyCreate { name, config } => state
             .strategies
             .lock()
-            .map_err(|_| "strategy state poisoned".to_string())
+            .map_err(|_| Said::new("策略状态已损坏。", "strategy state poisoned"))
             .and_then(|mut s| s.create(name, config, &cfg.config_dir, origin, system::now_ms())),
         Op::StrategyBacktest { id, run, passed } => state
             .strategies
             .lock()
-            .map_err(|_| "strategy state poisoned".to_string())
+            .map_err(|_| Said::new("策略状态已损坏。", "strategy state poisoned"))
             .and_then(|mut s| {
                 s.evidence_backtest(id, run, *passed, &cfg.config_dir, &cfg.journals)
             }),
         Op::StrategyAdvance { id } => state
             .strategies
             .lock()
-            .map_err(|_| "strategy state poisoned".to_string())
+            .map_err(|_| Said::new("策略状态已损坏。", "strategy state poisoned"))
             .and_then(|mut s| s.advance(id, origin, reason, &cfg.journals, system::now_ms())),
-        other => Err(format!("{} is not an action", other.describe())),
+        other => Err(Said::new(
+            format!("{} 不是一个操作。", other.describe()),
+            format!("{} is not an action", other.describe()),
+        )),
     }
 }
 
 /// Append to the audit trail and mirror it off the host.
-fn record(state: &State, actor: &str, op: &str, reason: &str, result: &str) -> Result<(), String> {
+fn record(
+    state: &State,
+    actor: &str,
+    op: &str,
+    reason: &Said,
+    result: &Said,
+) -> Result<(), String> {
     let entry = state
         .audit
         .lock()
@@ -437,7 +486,9 @@ fn record(state: &State, actor: &str, op: &str, reason: &str, result: &str) -> R
     let _ = state.notify.send(Message {
         title: format!("操作 · {op}"),
         body: format!(
-            "{actor}：{reason}\n结果：{result}\n审计 #{} {}",
+            "{actor}：{}\n结果：{}\n审计 #{} {}",
+            reason.zh,
+            result.zh,
             entry["seq"],
             entry["hash"]
                 .as_str()

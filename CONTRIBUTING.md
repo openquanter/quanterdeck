@@ -26,8 +26,20 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p oq-deck-core --example make_fixtures && git diff --exit-code examples/fixtures/runs
 scripts/check-incoming.sh
+scripts/check-i18n.py
 cd web && npm ci && npm run build
 ```
+
+## Interface copy is written in both languages
+
+The console is in Chinese and English. Every piece of interface copy is
+written as `tr("中文", "English")` where it is used, both languages
+side by side, so one cannot be added without the other;
+`scripts/check-i18n.py` fails on Chinese anywhere else. Text the deck or
+the agent writes for a person follows the same rule: the deck answers in
+the request's `Accept-Language`, and the agent sends `message` with
+`message_en` beside it. Data — log lines, journal fields, a venue's own
+error text — is shown as it is.
 
 ## The invariants
 

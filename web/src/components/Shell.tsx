@@ -27,6 +27,7 @@ import { api, type CapabilityName } from "@/api/client";
 import { Skeleton } from "@/components/States";
 import { Badge, IconTile, StatusDot, cx, type Hue } from "@/ui/kit";
 import { ThemeToggle } from "@/ui/theme";
+import { LanguageToggle, tr } from "@/i18n";
 
 type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; capability: CapabilityName | null };
 
@@ -36,51 +37,52 @@ type Item = { to: string; label: string; icon: ComponentType<{ className?: strin
  * capabilities: an item the deck cannot back has no link, and a group
  * with nothing in it has no heading.
  */
-const NAV: { group: string | null; hue: Hue; items: Item[] }[] = [
-  { group: null, hue: "blue", items: [{ to: "/", label: "总览", icon: LayoutDashboard, capability: null }] },
+/** Built when drawn, so the labels are in the language of the moment. */
+const nav = (): { group: string | null; hue: Hue; items: Item[] }[] => [
+  { group: null, hue: "blue", items: [{ to: "/", label: tr("总览", "Overview"), icon: LayoutDashboard, capability: null }] },
   {
-    group: "交易",
+    group: tr("交易", "Trading"),
     hue: "blue",
     items: [
-      { to: "/live", label: "实盘", icon: Activity, capability: "ops" },
-      { to: "/reconcile", label: "对账与归因", icon: GitCompareArrows, capability: "live" },
+      { to: "/live", label: tr("实盘", "Live"), icon: Activity, capability: "ops" },
+      { to: "/reconcile", label: tr("对账与归因", "Reconciliation"), icon: GitCompareArrows, capability: "live" },
     ],
   },
   {
-    group: "诊断",
+    group: tr("诊断", "Diagnose"),
     hue: "red",
     items: [
-      { to: "/alerts", label: "告警", icon: Bell, capability: "ops" },
-      { to: "/blackbox", label: "黑匣子复盘", icon: History, capability: "ops" },
-      { to: "/logs", label: "日志", icon: TerminalSquare, capability: "ops" },
-      { to: "/journal", label: "事件回放", icon: ListTree, capability: "live" },
+      { to: "/alerts", label: tr("告警", "Alerts"), icon: Bell, capability: "ops" },
+      { to: "/blackbox", label: tr("黑匣子复盘", "Black box"), icon: History, capability: "ops" },
+      { to: "/logs", label: tr("日志", "Logs"), icon: TerminalSquare, capability: "ops" },
+      { to: "/journal", label: tr("事件回放", "Journal replay"), icon: ListTree, capability: "live" },
     ],
   },
   {
-    group: "变更",
+    group: tr("变更", "Change"),
     hue: "purple",
     items: [
-      { to: "/strategies", label: "策略与上线", icon: Target, capability: "ops" },
-      { to: "/config", label: "配置", icon: FileCog, capability: "ops" },
-      { to: "/deploy", label: "发布", icon: Rocket, capability: "ops" },
+      { to: "/strategies", label: tr("策略与上线", "Strategies"), icon: Target, capability: "ops" },
+      { to: "/config", label: tr("配置", "Configuration"), icon: FileCog, capability: "ops" },
+      { to: "/deploy", label: tr("发布", "Releases"), icon: Rocket, capability: "ops" },
     ],
   },
   {
-    group: "研究",
+    group: tr("研究", "Research"),
     hue: "teal",
     items: [
-      { to: "/runs", label: "回测记录", icon: BarChart3, capability: "runs" },
-      { to: "/sweeps", label: "参数扫描", icon: FlaskConical, capability: "runs" },
+      { to: "/runs", label: tr("回测记录", "Runs"), icon: BarChart3, capability: "runs" },
+      { to: "/sweeps", label: tr("参数扫描", "Sweeps"), icon: FlaskConical, capability: "runs" },
     ],
   },
   {
-    group: "系统",
+    group: tr("系统", "System"),
     hue: "green",
     items: [
-      { to: "/host", label: "主机与服务", icon: Server, capability: "ops" },
-      { to: "/accounts", label: "交易所账户", icon: KeyRound, capability: "ops" },
-      { to: "/audit", label: "审计日志", icon: ShieldCheck, capability: "ops" },
-      { to: "/settings", label: "设置", icon: SettingsIcon, capability: null },
+      { to: "/host", label: tr("主机与服务", "Host & services"), icon: Server, capability: "ops" },
+      { to: "/accounts", label: tr("交易所账户", "Venue accounts"), icon: KeyRound, capability: "ops" },
+      { to: "/audit", label: tr("审计日志", "Audit log"), icon: ShieldCheck, capability: "ops" },
+      { to: "/settings", label: tr("设置", "Settings"), icon: SettingsIcon, capability: null },
     ],
   },
 ];
@@ -101,7 +103,7 @@ export function Shell() {
   const { data: caps } = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
   const allowed = (i: Item) => i.capability === null || caps?.[i.capability]?.available === true;
   const location = useLocation();
-  const current = NAV.flatMap((g) => g.items.map((i) => ({ ...i, hue: g.hue }))).find((i) =>
+  const current = nav().flatMap((g) => g.items.map((i) => ({ ...i, hue: g.hue }))).find((i) =>
     i.to === "/" ? location.pathname === "/" : location.pathname.startsWith(i.to),
   );
 
@@ -115,7 +117,7 @@ export function Shell() {
           </span>
         </Link>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          {NAV.map(({ group, hue, items }) => {
+          {nav().map(({ group, hue, items }) => {
             const visible = items.filter(allowed);
             if (visible.length === 0) return null;
             return (
@@ -198,7 +200,7 @@ function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writ
       <div className="ml-auto flex items-center gap-2.5">
         {ops && (s || host.data) && (
           <Badge tone={live ? "bad" : "accent"}>
-            {live ? "主网" : s ? "测试网" : "环境未知"}
+            {live ? tr("主网", "Mainnet") : s ? tr("测试网", "Testnet") : tr("环境未知", "Unknown environment")}
             {host.data?.name && <span className="text-ink-muted">· {host.data.name}</span>}
           </Badge>
         )}
@@ -207,26 +209,26 @@ function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writ
             {status.isError ? (
               <>
                 <StatusDot tone="bad" />
-                <span className="text-bad">交易进程无应答</span>
+                <span className="text-bad">{tr("交易进程无应答", "Trader not answering")}</span>
               </>
             ) : !s ? (
-              <span className="text-ink-faint">读取中…</span>
+              <span className="text-ink-faint">{tr("读取中…", "Loading…")}</span>
             ) : s.halted ? (
               <>
                 <StatusDot tone="bad" />
-                <span className="text-bad">已停机</span>
+                <span className="text-bad">{tr("已停机", "Halted")}</span>
               </>
             ) : (
               <>
                 <StatusDot tone="good" pulse />
-                <span className="text-ink">交易中</span>
+                <span className="text-ink">{tr("交易中", "Trading")}</span>
                 <span className="text-ink-faint">{s.symbol}</span>
               </>
             )}
           </Link>
         )}
         {ops && (
-          <Link to="/alerts" className="relative rounded-md p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink" title="告警">
+          <Link to="/alerts" className="relative rounded-md p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink" title={tr("告警", "Alerts")}>
             <Bell className="h-4 w-4" />
             {active.length > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-bad px-1 text-[10px] font-semibold text-white">
@@ -235,7 +237,8 @@ function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writ
             )}
           </Link>
         )}
-        {!writable && <Badge>只读</Badge>}
+        {!writable && <Badge>{tr("只读", "Read-only")}</Badge>}
+        <LanguageToggle />
         <ThemeToggle />
         <UserMenu />
       </div>
@@ -261,20 +264,20 @@ function UserMenu() {
   return (
     <div className="relative" ref={ref}>
       <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-hue-purple text-xs font-medium text-white">操</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-hue-purple text-xs font-medium text-white">{tr("操", "Op")}</span>
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
       {open && (
         <div className="absolute right-0 z-50 mt-1 w-44 rounded-md border border-line-strong bg-surface-raised py-1 shadow-xl">
-          <div className="px-3 py-2 text-xs text-ink-faint">已登录（操作者）</div>
+          <div className="px-3 py-2 text-xs text-ink-faint">{tr("已登录（操作者）", "Signed in (operator)")}</div>
           <Link to="/settings" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-1.5 text-sm text-ink hover:bg-surface-hover">
-            <SettingsIcon className="h-4 w-4 text-ink-muted" /> 设置
+            <SettingsIcon className="h-4 w-4 text-ink-muted" /> {tr("设置", "Settings")}
           </Link>
           <Link to="/audit" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-1.5 text-sm text-ink hover:bg-surface-hover">
-            <ScrollText className="h-4 w-4 text-ink-muted" /> 审计日志
+            <ScrollText className="h-4 w-4 text-ink-muted" /> {tr("审计日志", "Audit log")}
           </Link>
           <button onClick={logOut} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-ink hover:bg-surface-hover">
-            <LogOut className="h-4 w-4 text-ink-muted" /> 登出
+            <LogOut className="h-4 w-4 text-ink-muted" /> {tr("登出", "Sign out")}
           </button>
         </div>
       )}

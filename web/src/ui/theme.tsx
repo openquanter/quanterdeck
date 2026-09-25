@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
+import { tr } from "@/i18n";
+
 import { cx } from "./kit";
 
 /**
@@ -95,9 +97,9 @@ export function useThemeColors() {
 export function ThemeToggle() {
   const { choice, setChoice } = useTheme();
   const opts: { v: ThemeChoice; icon: ReactNode; label: string }[] = [
-    { v: "light", icon: <Sun className="h-3.5 w-3.5" />, label: "浅色" },
-    { v: "dark", icon: <Moon className="h-3.5 w-3.5" />, label: "深色" },
-    { v: "system", icon: <Monitor className="h-3.5 w-3.5" />, label: "跟随系统" },
+    { v: "light", icon: <Sun className="h-3.5 w-3.5" />, label: tr("浅色", "Light") },
+    { v: "dark", icon: <Moon className="h-3.5 w-3.5" />, label: tr("深色", "Dark") },
+    { v: "system", icon: <Monitor className="h-3.5 w-3.5" />, label: tr("跟随系统", "System") },
   ];
   return (
     <div className="inline-flex rounded-full border border-line bg-surface p-0.5">

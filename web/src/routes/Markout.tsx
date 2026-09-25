@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 
 import { api, type Horizon, type MarkoutComparison } from "@/api/client";
 import { ErrorState, Skeleton, Term } from "@/components/States";
+import { tr } from "@/i18n";
 import { useThemeColors } from "@/ui/theme";
 import { Card, Table, cx } from "@/ui/kit";
 
@@ -42,7 +43,9 @@ export function MarkoutPanel({ baseline, candidate }: { baseline: string; candid
 
   const title = (
     <>
-      成交后价格走势（<Term name="markout">markout</Term>）
+      {tr("成交后价格走势（", "Price after fills (")}
+      <Term name="markout">markout</Term>
+      {tr("）", ")")}
     </>
   );
 
@@ -59,7 +62,7 @@ export function MarkoutPanel({ baseline, candidate }: { baseline: string; candid
       title={title}
       extra={
         <label className="flex items-center gap-2">
-          <span>定价用的 tick 文件</span>
+          <span>{tr("定价用的 tick 文件", "Tick file for pricing")}</span>
           <select
             value={ticks}
             onChange={(event) => setTicks(event.target.value)}
@@ -75,10 +78,18 @@ export function MarkoutPanel({ baseline, candidate }: { baseline: string; candid
         </label>
       }
     >
-      <p className="text-sm text-ink-muted">每笔成交之后价格朝有利方向走了多少个基点。实盘比回测更负，说明回测没模拟到的逆向选择。</p>
+      <p className="text-sm text-ink-muted">
+        {tr(
+          "每笔成交之后价格朝有利方向走了多少个基点。实盘比回测更负，说明回测没模拟到的逆向选择。",
+          "How many basis points the price moved in the fill's favour after each fill. Live more negative than backtest means adverse selection the backtest did not model.",
+        )}
+      </p>
       {!ticks && (
         <p className="mt-3 text-sm text-ink-faint">
-          先在右上角选一份 tick 文件：run 只记下了它成交了什么，没有记下当时的行情；拿另一天的行情去定价，比较的是空气。
+          {tr(
+            "先在右上角选一份 tick 文件：run 只记下了它成交了什么，没有记下当时的行情；拿另一天的行情去定价，比较的是空气。",
+            "Pick a tick file at the top right first: a run records what it filled, not the market at the time, and pricing it against another day's ticks compares nothing.",
+          )}
         </p>
       )}
       {error ? (
@@ -153,8 +164,8 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
       },
       series: [
         // Series colours, not state colours: amber would read as a warning.
-        series(`基准 ${data.baseline.id}`, data.baseline.horizons, theme.series[0]),
-        series(`待测 ${data.candidate.id}`, data.candidate.horizons, theme.series[1]),
+        series(tr(`基准 ${data.baseline.id}`, `Baseline ${data.baseline.id}`), data.baseline.horizons, theme.series[0]),
+        series(tr(`待测 ${data.candidate.id}`, `Candidate ${data.candidate.id}`), data.candidate.horizons, theme.series[1]),
         band(data.baseline.horizons, -1),
         band(data.candidate.horizons, 1),
       ],
@@ -167,10 +178,16 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
       <Table
         dense
         head={[
-          "期限",
-          <span key="b" className="block text-right">基准 均值 / 不利占比 / 笔数</span>,
-          <span key="c" className="block text-right">待测 均值 / 不利占比 / 笔数</span>,
-          <span key="d" className="block text-right">差（待测 − 基准）</span>,
+          tr("期限", "Horizon"),
+          <span key="b" className="block text-right">
+            {tr("基准 均值 / 不利占比 / 笔数", "Baseline mean / adverse share / fills")}
+          </span>,
+          <span key="c" className="block text-right">
+            {tr("待测 均值 / 不利占比 / 笔数", "Candidate mean / adverse share / fills")}
+          </span>,
+          <span key="d" className="block text-right">
+            {tr("差（待测 − 基准）", "Difference (candidate − baseline)")}
+          </span>,
         ]}
       >
         {data.contrast.map((c, i) => (
@@ -180,13 +197,18 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
             <td className={cx("text-right font-mono text-xs", !data.candidate.horizons[i]?.measured && "text-warn")}>{describe(data.candidate.horizons[i])}</td>
             {/* One side too thin to measure is "cannot tell", never a 0 bp difference. */}
             <td className={cx("text-right font-mono text-xs", c.difference_bps === null ? "text-warn" : "text-ink")}>
-              {c.difference_bps === null ? "无法判断：一侧样本不足" : `${c.difference_bps >= 0 ? "+" : ""}${c.difference_bps.toFixed(2)} bp`}
+              {c.difference_bps === null ? tr("无法判断：一侧样本不足", "Cannot tell: one side has too few fills") : `${c.difference_bps >= 0 ? "+" : ""}${c.difference_bps.toFixed(2)} bp`}
             </td>
           </tr>
         ))}
       </Table>
       <p className="text-xs text-ink-faint">
-        价格来自 <span className="font-mono">{data.ticks}</span>；竖线为 10%–90% 分位；样本不足的期限不画柱，而不是画成 0。
+        {tr("价格来自 ", "Prices from ")}
+        <span className="font-mono">{data.ticks}</span>
+        {tr(
+          "；竖线为 10%–90% 分位；样本不足的期限不画柱，而不是画成 0。",
+          "; whiskers show the 10th–90th percentile; a horizon with too few fills gets no bar rather than a zero.",
+        )}
       </p>
     </div>
   );
@@ -194,7 +216,7 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
 
 function describe(h: Horizon | undefined): string {
   if (!h) return "—";
-  if (!h.measured) return `样本不足（${h.samples} 笔）`;
+  if (!h.measured) return tr(`样本不足（${h.samples} 笔）`, `Too few fills (${h.samples})`);
   // A statistic the server did not send is unknown, not zero.
   const mean = h.mean_bps === null ? "—" : `${h.mean_bps >= 0 ? "+" : ""}${h.mean_bps.toFixed(2)} bp`;
   const adverse = h.adverse_share === null ? "—" : `${(h.adverse_share * 100).toFixed(0)}%`;

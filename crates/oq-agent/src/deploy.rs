@@ -22,6 +22,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use oq_deck_core::lang::Said;
+
 use crate::config::Config;
 use crate::notify::{BLUE, GREEN, Message, RED};
 use crate::system;
@@ -34,12 +36,16 @@ pub const ALLOWED: &[&str] = &["oqp-live", "oq-recon"];
 pub const NAMESPACE: &str = "oq-release";
 
 /// A deployment in progress or the last one, for the deck to show.
+///
+/// Steps and the outcome are held in both languages: a deployment is
+/// read while it runs and again weeks later, and a reader should not
+/// need the language of whoever started it.
 #[derive(Debug, Default, Clone)]
 pub struct Progress {
     pub running: bool,
     pub id: String,
-    pub steps: Vec<(i64, String)>,
-    pub outcome: Option<String>,
+    pub steps: Vec<(i64, Said)>,
+    pub outcome: Option<Said>,
 }
 
 impl Progress {
@@ -51,8 +57,10 @@ impl Progress {
     /// the agent restarting — which a deployment of the agent itself does.
     fn save(&self, state: &Path) {
         let v = json!({
-            "running": self.running, "id": self.id, "outcome": self.outcome,
-            "steps": self.steps.iter().map(|(t, s)| json!([t, s])).collect::<Vec<_>>(),
+            "running": self.running, "id": self.id,
+            "outcome": self.outcome.as_ref().map(|o| o.zh.clone()),
+            "outcome_en": self.outcome.as_ref().map(|o| o.en.clone()),
+            "steps": self.steps.iter().map(|(t, s)| json!([t, s.zh, s.en])).collect::<Vec<_>>(),
         });
         let tmp = Self::file(state).with_extension("tmp");
         if std::fs::write(&tmp, v.to_string())
@@ -79,16 +87,20 @@ impl Progress {
             id: v["id"].as_str().unwrap_or_default().to_string(),
             steps: v["steps"]
                 .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| Some((x[0].as_i64()?, x[1].as_str()?.to_string())))
-                        .collect()
-                })
+                .map(|a| a.iter().filter_map(step_from).collect())
                 .unwrap_or_default(),
-            outcome: v["outcome"].as_str().map(str::to_string),
+            outcome: v["outcome"].as_str().map(|zh| {
+                // A step written before outcomes carried two languages has
+                // one, and is read as the same sentence in both rather
+                // than being given a translation nobody made.
+                Said::new(zh, v["outcome_en"].as_str().unwrap_or(zh))
+            }),
         };
         if v["running"] == true {
-            p.outcome = Some("interrupted: the agent stopped during this deployment".to_string());
+            p.outcome = Some(Said::new(
+                "中断：代理在这次部署期间停止了。",
+                "interrupted: the agent stopped during this deployment",
+            ));
         }
         p
     }
@@ -122,13 +134,17 @@ fn valid_id(id: &str) -> bool {
 ///
 /// # Errors
 /// Anything that does not match, named.
-pub fn verify(cfg: &Config, id: &str) -> Result<Value, String> {
+pub fn verify(cfg: &Config, id: &str) -> Result<Value, Said> {
     if !valid_id(id) {
-        return Err(format!("{id:?} is not a release id"));
+        return Err(Said::new(
+            format!("{id:?} 不是一个发布编号"),
+            format!("{id:?} is not a release id"),
+        ));
     }
     let dir = cfg.incoming.join(id);
     let manifest_path = dir.join("manifest.json");
-    let manifest_bytes = std::fs::read(&manifest_path).map_err(|e| format!("manifest: {e}"))?;
+    let manifest_bytes =
+        std::fs::read(&manifest_path).map_err(|e| Said::same(format!("manifest: {e}")))?;
     let mut child = Command::new("ssh-keygen")
         .args(["-Y", "verify", "-f"])
         .arg(&cfg.signers)
@@ -138,43 +154,58 @@ pub fn verify(cfg: &Config, id: &str) -> Result<Value, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("ssh-keygen: {e}"))?;
+        .map_err(|e| Said::same(format!("ssh-keygen: {e}")))?;
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
         stdin
             .write_all(&manifest_bytes)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Said::same(e.to_string()))?;
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let out = child
+        .wait_with_output()
+        .map_err(|e| Said::same(e.to_string()))?;
     if !out.status.success() {
-        return Err(format!(
-            "the signature does not verify: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(Said::new(
+            format!("签名验证不通过：{why}"),
+            format!("the signature does not verify: {why}"),
         ));
     }
-    let manifest: Value =
-        serde_json::from_slice(&manifest_bytes).map_err(|e| format!("manifest: {e}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| Said::same(format!("manifest: {e}")))?;
     if manifest["id"].as_str() != Some(id) {
-        return Err("the manifest names a different release".into());
+        return Err(Said::new(
+            "manifest 指向的是另一个发布",
+            "the manifest names a different release",
+        ));
     }
-    let files = manifest["files"]
-        .as_object()
-        .ok_or("the manifest lists no files")?;
+    let missing = Said::new("manifest 没有列出任何文件", "the manifest lists no files");
+    let files = manifest["files"].as_object().ok_or(missing.clone())?;
     if files.is_empty() {
-        return Err("the manifest lists no files".into());
+        return Err(missing);
     }
     for (name, want) in files {
         if !ALLOWED.contains(&name.as_str()) {
-            return Err(format!("{name} is not a binary a release may carry"));
+            return Err(Said::new(
+                format!("{name} 不是发布可以携带的程序"),
+                format!("{name} is not a binary a release may carry"),
+            ));
         }
         let path = dir.join(name);
-        let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{name}: {e}"))?;
+        let meta =
+            std::fs::symlink_metadata(&path).map_err(|e| Said::same(format!("{name}: {e}")))?;
         if !meta.file_type().is_file() {
-            return Err(format!("{name} is not a regular file"));
+            return Err(Said::new(
+                format!("{name} 不是一个普通文件"),
+                format!("{name} is not a regular file"),
+            ));
         }
-        let got = sha256_file(&path)?;
+        let got = sha256_file(&path).map_err(Said::same)?;
         if Some(got.as_str()) != want.as_str() {
-            return Err(format!("{name} does not match the manifest"));
+            return Err(Said::new(
+                format!("{name} 与 manifest 对不上"),
+                format!("{name} does not match the manifest"),
+            ));
         }
     }
     Ok(manifest)
@@ -207,7 +238,7 @@ pub fn list(cfg: &Config, progress: &Progress) -> Value {
         .into_iter()
         .map(|id| match verify(cfg, &id) {
             Ok(m) => json!({"id": id, "verified": true, "manifest": m}),
-            Err(e) => json!({"id": id, "verified": false, "problem": e}),
+            Err(e) => json!({"id": id, "verified": false, "problem": e.zh, "problem_en": e.en}),
         })
         .collect();
     json!({
@@ -216,22 +247,26 @@ pub fn list(cfg: &Config, progress: &Progress) -> Value {
         "current": link_target(&cfg.releases.join("current")),
         "previous": link_target(&cfg.releases.join("previous")),
         "progress": {
-            "running": progress.running, "id": progress.id, "outcome": progress.outcome,
-            "steps": progress.steps.iter().map(|(t, s)| json!({"at_ms": t, "step": s})).collect::<Vec<_>>(),
+            "running": progress.running, "id": progress.id,
+            "outcome": progress.outcome.as_ref().map(|o| o.zh.clone()),
+            "outcome_en": progress.outcome.as_ref().map(|o| o.en.clone()),
+            "steps": progress.steps.iter().map(|(t, s)| json!({
+                "at_ms": t, "step": s.zh, "step_en": s.en,
+            })).collect::<Vec<_>>(),
         },
     })
 }
 
 /// Point `link` at `target` by creating a new link and renaming it over.
-fn relink(dir: &Path, link: &str, target: &str) -> Result<(), String> {
+fn relink(dir: &Path, link: &str, target: &str) -> Result<(), Said> {
     let tmp = dir.join(format!(".{link}.new"));
     let _ = std::fs::remove_file(&tmp);
-    std::os::unix::fs::symlink(target, &tmp).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, dir.join(link)).map_err(|e| e.to_string())
+    std::os::unix::fs::symlink(target, &tmp).map_err(|e| Said::same(e.to_string()))?;
+    std::fs::rename(&tmp, dir.join(link)).map_err(|e| Said::same(e.to_string()))
 }
 
 /// Copy a verified release into place under its id.
-fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, String> {
+fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, Said> {
     use std::os::unix::fs::PermissionsExt;
     let dest = cfg.releases.join(id);
     if dest.exists() {
@@ -239,7 +274,7 @@ fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, String> 
     }
     let tmp = cfg.releases.join(format!(".{id}.tmp"));
     let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&tmp).map_err(|e| Said::same(e.to_string()))?;
     for name in manifest["files"]
         .as_object()
         .map(|o| o.keys().cloned().collect::<Vec<_>>())
@@ -247,12 +282,15 @@ fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, String> 
     {
         let to = tmp.join(&name);
         std::fs::copy(cfg.incoming.join(id).join(&name), &to)
-            .map_err(|e| format!("{name}: {e}"))?;
+            .map_err(|e| Said::same(format!("{name}: {e}")))?;
         std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Said::same(e.to_string()))?;
         // Checked again where it will run from: the copy is what executes.
         if Some(sha256_file(&to)?.as_str()) != manifest["files"][&name].as_str() {
-            return Err(format!("{name} changed while being installed"));
+            return Err(Said::new(
+                format!("{name} 在安装过程中被改动了"),
+                format!("{name} changed while being installed"),
+            ));
         }
     }
     // A release carrying only some binaries keeps the others from the one
@@ -262,13 +300,13 @@ fn install(cfg: &Config, id: &str, manifest: &Value) -> Result<PathBuf, String> 
             let to = tmp.join(name);
             let from = cfg.releases.join(&cur).join(name);
             if !to.exists() && from.exists() {
-                std::fs::copy(&from, &to).map_err(|e| format!("{name}: {e}"))?;
+                std::fs::copy(&from, &to).map_err(|e| Said::same(format!("{name}: {e}")))?;
                 std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755))
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| Said::same(e.to_string()))?;
             }
         }
     }
-    std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &dest).map_err(|e| Said::same(e.to_string()))?;
     Ok(dest)
 }
 
@@ -292,34 +330,57 @@ fn positions(status: &Value) -> Vec<String> {
     v
 }
 
+/// A step as stored: `[at_ms, zh]`, or `[at_ms, zh, en]` for one written
+/// since steps carried both. The older shape has one sentence and is read
+/// as the same in both, rather than being given a translation that was
+/// never made.
+fn step_from(x: &Value) -> Option<(i64, Said)> {
+    let a = x.as_array()?;
+    let at = a.first()?.as_i64()?;
+    let zh = a.get(1)?.as_str()?.to_string();
+    let en = a.get(2).and_then(Value::as_str).unwrap_or(&zh).to_string();
+    Some((at, Said::new(zh, en)))
+}
+
 /// How long a new release has to show it is healthy.
 pub const HEALTH_WINDOW: Duration = Duration::from_secs(300);
 
 /// Wait until the trader is up, answering, trading data, not halted and
 /// holding what it held before; or say what never came right.
-fn healthy(cfg: &Config, before: &[String]) -> Result<(), String> {
+fn healthy(cfg: &Config, before: &[String]) -> Result<(), Said> {
     let deadline = std::time::Instant::now() + HEALTH_WINDOW;
-    let mut last = String::from("never answered");
+    let mut last = Said::new("一直没有回应", "never answered");
     while std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_secs(10));
         if !system::is_active(&cfg.trader_unit) {
-            last = format!("{} is not running", cfg.trader_unit);
+            last = Said::new(
+                format!("{} 没有在运行", cfg.trader_unit),
+                format!("{} is not running", cfg.trader_unit),
+            );
             continue;
         }
         match crate::control::ask(&cfg.control_dir, "status", "oq-agent deploy", "") {
-            Err(e) => last = format!("status: {e}"),
+            Err(e) => {
+                last = Said::new(format!("状态查询：{}", e.zh), format!("status: {}", e.en));
+            }
             Ok(s) if s["halted"] == true => {
-                return Err(format!(
-                    "halted: {}",
-                    s["halt_reason"].as_str().unwrap_or("")
+                let why = s["halt_reason"].as_str().unwrap_or("");
+                return Err(Said::new(
+                    format!("已停机：{why}"),
+                    format!("halted: {why}"),
                 ));
             }
             Ok(s) if s["feed"]["unreadable"].as_u64().unwrap_or(0) > 0 => {
-                return Err("market data it cannot read".into());
+                return Err(Said::new("行情读不出来", "market data it cannot read"));
             }
-            Ok(s) if s["ticks"].as_u64().unwrap_or(0) == 0 => last = "no market data yet".into(),
+            Ok(s) if s["ticks"].as_u64().unwrap_or(0) == 0 => {
+                last = Said::new("还没有行情数据", "no market data yet");
+            }
             Ok(s) if positions(&s) != before => {
-                last = format!("positions {:?}, before {:?}", positions(&s), before);
+                last = Said::new(
+                    format!("持仓 {:?}，之前是 {:?}", positions(&s), before),
+                    format!("positions {:?}, before {:?}", positions(&s), before),
+                );
             }
             Ok(_) => return Ok(()),
         }
@@ -329,13 +390,16 @@ fn healthy(cfg: &Config, before: &[String]) -> Result<(), String> {
 
 /// Stop the trader and require that it stopped cleanly: its own shutdown
 /// withdrew every order and verified it, which is what exit 0 means.
-fn stop_trader(cfg: &Config) -> Result<(), String> {
+fn stop_trader(cfg: &Config) -> Result<(), Said> {
     system::unit_action(&cfg.trader_unit, "stop")?;
     let state = system::unit_state(&cfg.trader_unit);
     let status = state["ExecMainStatus"].as_str().unwrap_or("?").to_string();
     if !matches!(status.as_str(), "0" | "98") {
-        return Err(format!(
-            "the trader exited {status} while stopping: orders may still rest at the venue"
+        return Err(Said::new(
+            format!("交易进程停止时退出码是 {status}：交易所那边可能还有挂单"),
+            format!(
+                "the trader exited {status} while stopping: orders may still rest at the venue"
+            ),
         ));
     }
     Ok(())
@@ -351,14 +415,14 @@ pub fn switch(
     notify: std::sync::mpsc::Sender<Message>,
     raised: Arc<Mutex<crate::alerts::Raised>>,
 ) {
-    let step = |s: String| {
-        eprintln!("deploy: {s}");
+    let step = |s: Said| {
+        eprintln!("deploy: {}", s.en);
         if let Ok(mut p) = progress.lock() {
             p.steps.push((system::now_ms(), s));
             p.save(&cfg.state_dir);
         }
     };
-    let finish = |outcome: String, ok: bool| {
+    let finish = |outcome: Said, ok: bool| {
         if let Ok(mut p) = progress.lock() {
             p.running = false;
             p.outcome = Some(outcome.clone());
@@ -370,7 +434,9 @@ pub fn switch(
             } else {
                 format!("{what} 失败")
             },
-            body: outcome,
+            // The notification channel is read by a person at the time,
+            // in Chinese; the record keeps both.
+            body: outcome.zh,
             color: if ok { GREEN } else { RED },
         });
     };
@@ -383,16 +449,29 @@ pub fn switch(
     let before = crate::control::ask(&cfg.control_dir, "status", "oq-agent deploy", "")
         .map(|s| positions(&s))
         .unwrap_or_default();
-    step(format!("positions before: {before:?}"));
+    step(Said::new(
+        format!("切换前的持仓：{before:?}"),
+        format!("positions before: {before:?}"),
+    ));
     let old = link_target(&cfg.releases.join("current"));
     if let Ok(mut r) = raised.lock() {
         r.trader_stopped_on_purpose = true;
     }
-    step("stopping the trader (it withdraws its own orders)".into());
+    step(Said::new(
+        "停止交易进程（它会先撤掉自己的挂单）",
+        "stopping the trader (it withdraws its own orders)",
+    ));
     if let Err(e) = stop_trader(&cfg) {
         finish(
-            format!(
-                "stopped: {e}. Nothing was switched; the trader is left stopped for a person to look at."
+            Said::new(
+                format!(
+                    "已停止：{}。没有切换任何东西；交易进程保持停止，等人来看。",
+                    e.zh
+                ),
+                format!(
+                    "stopped: {}. Nothing was switched; the trader is left stopped for a person to look at.",
+                    e.en
+                ),
             ),
             false,
         );
@@ -401,29 +480,59 @@ pub fn switch(
     if let Some(o) = &old
         && let Err(e) = relink(&cfg.releases, "previous", o)
     {
-        finish(format!("could not record the previous release: {e}"), false);
+        finish(
+            Said::new(
+                format!("记不下上一个发布：{}", e.zh),
+                format!("could not record the previous release: {}", e.en),
+            ),
+            false,
+        );
         return;
     }
     if let Err(e) = relink(&cfg.releases, "current", &target) {
-        finish(format!("could not switch: {e}"), false);
+        finish(
+            Said::new(
+                format!("切换不了：{}", e.zh),
+                format!("could not switch: {}", e.en),
+            ),
+            false,
+        );
         return;
     }
-    step(format!("current -> {target}; starting"));
+    step(Said::new(
+        format!("current -> {target}；正在启动"),
+        format!("current -> {target}; starting"),
+    ));
     let started = system::unit_action(&cfg.trader_unit, "start");
     if let Ok(mut r) = raised.lock() {
         r.trader_stopped_on_purpose = false;
     }
     let verdict = started.and_then(|()| {
-        step("checking health".into());
+        step(Said::new("检查健康状态", "checking health"));
         healthy(&cfg, &before)
     });
     match verdict {
-        Ok(()) => finish(format!("{target} is running and healthy"), true),
+        Ok(()) => finish(
+            Said::new(
+                format!("{target} 正在运行，健康"),
+                format!("{target} is running and healthy"),
+            ),
+            true,
+        ),
         Err(why) => {
-            step(format!("unhealthy: {why}; rolling back"));
+            step(Said::new(
+                format!("不健康：{}；正在回滚", why.zh),
+                format!("unhealthy: {}; rolling back", why.en),
+            ));
             let Some(o) = old else {
                 finish(
-                    format!("{target} is unhealthy ({why}) and there is nothing to roll back to"),
+                    Said::new(
+                        format!("{target} 不健康（{}），而且没有可以回滚的版本", why.zh),
+                        format!(
+                            "{target} is unhealthy ({}) and there is nothing to roll back to",
+                            why.en
+                        ),
+                    ),
                     false,
                 );
                 return;
@@ -433,11 +542,20 @@ pub fn switch(
                 .and_then(|()| system::unit_action(&cfg.trader_unit, "start"));
             match back {
                 Ok(()) => finish(
-                    format!("{target} was unhealthy ({why}); rolled back to {o}"),
+                    Said::new(
+                        format!("{target} 不健康（{}）；已回滚到 {o}", why.zh),
+                        format!("{target} was unhealthy ({}); rolled back to {o}", why.en),
+                    ),
                     false,
                 ),
                 Err(e) => finish(
-                    format!("{target} was unhealthy ({why}) and the rollback failed: {e}"),
+                    Said::new(
+                        format!("{target} 不健康（{}），而且回滚失败：{}", why.zh, e.zh),
+                        format!(
+                            "{target} was unhealthy ({}) and the rollback failed: {}",
+                            why.en, e.en
+                        ),
+                    ),
                     false,
                 ),
             }
@@ -455,7 +573,7 @@ pub fn start_deploy(
     progress: &Arc<Mutex<Progress>>,
     notify: &std::sync::mpsc::Sender<Message>,
     raised: &Arc<Mutex<crate::alerts::Raised>>,
-) -> Result<(), String> {
+) -> Result<(), Said> {
     claim(progress, id)?;
     let installed = verify(cfg, id).and_then(|m| install(cfg, id, &m));
     if let Err(e) = installed {
@@ -495,8 +613,11 @@ pub fn start_rollback(
     progress: &Arc<Mutex<Progress>>,
     notify: &std::sync::mpsc::Sender<Message>,
     raised: &Arc<Mutex<crate::alerts::Raised>>,
-) -> Result<(), String> {
-    let prev = link_target(&cfg.releases.join("previous")).ok_or("there is no previous release")?;
+) -> Result<(), Said> {
+    let prev = link_target(&cfg.releases.join("previous")).ok_or(Said::new(
+        "没有上一个发布可以回滚",
+        "there is no previous release",
+    ))?;
     claim(progress, &prev)?;
     let (cfg, progress, notify, raised) = (
         cfg.clone(),
@@ -517,10 +638,15 @@ pub fn start_rollback(
     Ok(())
 }
 
-fn claim(progress: &Arc<Mutex<Progress>>, id: &str) -> Result<(), String> {
-    let mut p = progress.lock().map_err(|_| "deploy state poisoned")?;
+fn claim(progress: &Arc<Mutex<Progress>>, id: &str) -> Result<(), Said> {
+    let mut p = progress
+        .lock()
+        .map_err(|_| Said::new("部署状态已损坏。", "deploy state poisoned"))?;
     if p.running {
-        return Err(format!("a deployment of {} is already running", p.id));
+        return Err(Said::new(
+            format!("{} 的部署已经在进行中", p.id),
+            format!("a deployment of {} is already running", p.id),
+        ));
     }
     *p = Progress {
         running: true,
@@ -539,7 +665,7 @@ mod tests {
         let mut p = super::Progress {
             running: true,
             id: "r1".into(),
-            steps: vec![(1, "stopping the trader".into())],
+            steps: vec![(1, Said::new("正在停掉交易进程", "stopping the trader"))],
             outcome: None,
         };
         p.save(d.path());
@@ -548,11 +674,11 @@ mod tests {
         assert_eq!(back.steps, p.steps);
         assert!(
             back.outcome
-                .as_deref()
-                .is_some_and(|o| o.starts_with("interrupted"))
+                .as_ref()
+                .is_some_and(|o| o.en.starts_with("interrupted"))
         );
         p.running = false;
-        p.outcome = Some("r1 is running and healthy".into());
+        p.outcome = Some(Said::new("r1 正在运行，健康", "r1 is running and healthy"));
         p.save(d.path());
         assert_eq!(super::Progress::load(d.path()).outcome, p.outcome);
         assert!(super::Progress::load(&d.path().join("none")).id.is_empty());
@@ -640,12 +766,12 @@ mod tests {
         let root = tempfile::tempdir().expect("root");
         let c = cfg(root.path());
         stage(root.path(), "r2", true, true);
-        assert!(verify(&c, "r2").unwrap_err().contains("does not match"));
+        assert!(verify(&c, "r2").unwrap_err().en.contains("does not match"));
 
         let other = tempfile::tempdir().expect("other");
         let c = cfg(other.path());
         stage(other.path(), "r3", false, false);
-        assert!(verify(&c, "r3").unwrap_err().contains("signature"));
+        assert!(verify(&c, "r3").unwrap_err().en.contains("signature"));
     }
 
     #[test]

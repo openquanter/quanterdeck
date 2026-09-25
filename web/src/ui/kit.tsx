@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Info, Loader2, RefreshCw, X } from "lucide-react";
 
-import { GLOSSARY } from "@/components/States";
+import { glossary } from "@/components/States";
+import { intlLocale, tr } from "@/i18n";
 
 /**
  * The console's building blocks. Pages assemble these and do not style
@@ -264,7 +265,7 @@ export function Button({
 
 /** A term's plain-language meaning, on hover. Replaces the novice mode. */
 export function Help({ term, text }: { term?: string; text?: string }) {
-  const body = text ?? (term ? GLOSSARY[term] : undefined);
+  const body = text ?? (term ? glossary(term) : undefined);
   if (!body) return null;
   return (
     <span className="group relative inline-flex">
@@ -374,7 +375,7 @@ export function Drawer({ title, onClose, children, width = "max-w-2xl" }: { titl
       <div className={cx("flex h-full w-full flex-col border-l border-line bg-surface shadow-2xl", width)} onClick={(e) => e.stopPropagation()}>
         <header className="flex items-center border-b border-line px-5 py-3.5">
           <h2 className="text-base font-medium text-ink">{title}</h2>
-          <button className="ml-auto rounded p-1 text-ink-muted hover:bg-surface-hover hover:text-ink" onClick={onClose} aria-label="关闭">
+          <button className="ml-auto rounded p-1 text-ink-muted hover:bg-surface-hover hover:text-ink" onClick={onClose} aria-label={tr("关闭", "Close")}>
             <X className="h-4 w-4" />
           </button>
         </header>
@@ -424,11 +425,11 @@ export function Freshness({ at, fetching, staleAfterS = 60, onRefresh }: { at: n
   return (
     <button
       onClick={onRefresh}
-      title="刷新"
+      title={tr("刷新", "Refresh")}
       className={cx("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-surface-hover", age > staleAfterS ? "text-warn" : "text-ink-faint")}
     >
       {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-      {age < 2 ? "刚刚更新" : `${fmtDuration(age)}前更新`}
+      {age < 2 ? tr("刚刚更新", "Just updated") : tr(`${fmtDuration(age)}前更新`, `Updated ${fmtDuration(age)} ago`)}
     </button>
   );
 }
@@ -437,14 +438,20 @@ export function Freshness({ at, fetching, staleAfterS = 60, onRefresh }: { at: n
 
 export function fmtDuration(seconds: number): string {
   const s = Math.round(Math.abs(seconds));
-  if (s < 60) return `${s} 秒`;
-  if (s < 3600) return `${Math.floor(s / 60)} 分钟`;
-  if (s < 86400) return `${Math.floor(s / 3600)} 小时${Math.floor((s % 3600) / 60) ? ` ${Math.floor((s % 3600) / 60)} 分` : ""}`;
-  return `${Math.floor(s / 86400)} 天${Math.floor((s % 86400) / 3600) ? ` ${Math.floor((s % 86400) / 3600)} 小时` : ""}`;
+  const [h, m, d, hd] = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), Math.floor(s / 86400), Math.floor((s % 86400) / 3600)];
+  if (s < 60) return tr(`${s} 秒`, `${s}s`);
+  if (s < 3600) return tr(`${Math.floor(s / 60)} 分钟`, `${Math.floor(s / 60)} min`);
+  if (s < 86400) return m ? tr(`${h} 小时 ${m} 分`, `${h}h ${m}m`) : tr(`${h} 小时`, `${h}h`);
+  return hd ? tr(`${d} 天 ${hd} 小时`, `${d}d ${hd}h`) : tr(`${d} 天`, `${d}d`);
 }
 
 export function fmtTime(ms: number, withDate = true): string {
-  return new Date(ms).toLocaleString("zh-CN", withDate ? { hour12: false } : { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(ms).toLocaleString(intlLocale(), withDate ? { hour12: false } : { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/** How long ago, as a phrase: "3 分钟前" / "3 min ago". */
+export function agoText(seconds: number): string {
+  return seconds < 5 ? tr("刚刚", "just now") : tr(`${fmtDuration(seconds)}前`, `${fmtDuration(seconds)} ago`);
 }
 
 /** "3 分钟前", with the exact time on hover. */
@@ -455,7 +462,7 @@ export function Ago({ ms }: { ms: number }) {
     return () => clearInterval(t);
   }, []);
   const s = (now - ms) / 1000;
-  return <span title={fmtTime(ms)}>{s < 5 ? "刚刚" : `${fmtDuration(s)}前`}</span>;
+  return <span title={fmtTime(ms)}>{agoText(s)}</span>;
 }
 
 export function fmtBytes(b: number | null | undefined): string {
@@ -470,7 +477,7 @@ export function fmtBytes(b: number | null | undefined): string {
 export function Money({ value, signed }: { value: string | number | null | undefined; signed?: boolean }) {
   if (value == null || value === "") return <span className="text-ink-faint">—</span>;
   const n = Number(value);
-  const text = Number.isFinite(n) ? n.toLocaleString("zh-CN", { maximumFractionDigits: 4 }) : String(value);
+  const text = Number.isFinite(n) ? n.toLocaleString(intlLocale(), { maximumFractionDigits: 4 }) : String(value);
   if (!signed || !Number.isFinite(n) || n === 0) return <span>{text}</span>;
   return <span className={n > 0 ? "text-good" : "text-bad"}>{n > 0 ? `+${text}` : text}</span>;
 }

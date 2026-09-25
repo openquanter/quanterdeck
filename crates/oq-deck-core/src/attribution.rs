@@ -119,6 +119,10 @@ pub struct Inputs {
     pub funding: Option<VenueVsModel>,
     /// Fees the venue charged against fees the model computed.
     pub fees: Option<VenueVsModel>,
+    /// The language `missing_inputs` is written in. Not part of a
+    /// request's body: it comes from the request's Accept-Language.
+    #[serde(skip)]
+    pub lang: crate::lang::Lang,
 }
 
 fn to_cash(units: f64) -> Cash {
@@ -296,17 +300,40 @@ pub fn from_runs(
             && !matches!(c, Component::Funding | Component::FeeTier)
     }) {
         missing_inputs.push(
-            "成交发生时的市场价（reference price）——run 文件没有这一列，\
-             缺了它 slippage 与 latency 无法分开。要补上它，需要一次 shadow \
-             运行的证据，或让 run 格式记录它。"
+            inputs
+                .lang
+                .pick(
+                    "成交发生时的市场价（reference price）——run 文件没有这一列，\
+                     缺了它 slippage 与 latency 无法分开。要补上它，需要一次 shadow \
+                     运行的证据，或让 run 格式记录它。",
+                    "The market price when each fill happened (the reference price). Run files \
+                     have no such column, and without it slippage and latency cannot be told \
+                     apart. It needs evidence from a shadow run, or a run format that records it.",
+                )
                 .to_owned(),
         );
     }
     if inputs.funding.is_none() {
-        missing_inputs.push("交易所的资金费结算，与模型计算的资金费。".to_owned());
+        missing_inputs.push(
+            inputs
+                .lang
+                .pick(
+                    "交易所的资金费结算，与模型计算的资金费。",
+                    "The venue's funding settlements, and the funding the model computed.",
+                )
+                .to_owned(),
+        );
     }
     if inputs.fees.is_none() {
-        missing_inputs.push("交易所的手续费结算，与模型计算的手续费。".to_owned());
+        missing_inputs.push(
+            inputs
+                .lang
+                .pick(
+                    "交易所的手续费结算，与模型计算的手续费。",
+                    "The venue's fee charges, and the fees the model computed.",
+                )
+                .to_owned(),
+        );
     }
 
     Ok(Report {

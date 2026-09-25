@@ -4,6 +4,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 
 import { UNAUTHENTICATED, api } from "@/api/client";
+import { tr } from "@/i18n";
 
 import { LoginForm } from "./LoginForm";
 
@@ -45,8 +46,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 <LockKeyhole className="h-4.5 w-4.5" />
               </span>
               <div>
-                <h2 className="text-base font-semibold text-ink">会话已结束</h2>
-                <p className="mt-0.5 text-xs text-ink-muted">重新登录后回到这一页，内容不会丢。</p>
+                <h2 className="text-base font-semibold text-ink">{tr("会话已结束", "Session ended")}</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  {tr("重新登录后回到这一页，内容不会丢。", "Sign in again to return to this page. Nothing is lost.")}
+                </p>
               </div>
             </div>
             <div className="px-5 py-4">

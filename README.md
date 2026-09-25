@@ -153,7 +153,7 @@ The interface is organised by what an operator does — trading,
 diagnosis, change, research, system — with the environment, the
 trader's state and the alert count always in the top bar, and every
 term's meaning a hover away (see [docs/UI-V4.zh-CN.md](docs/UI-V4.zh-CN.md)).
-It is Chinese-only for now.
+The interface is in Chinese and English, switched from the top bar or Settings.
 
 ## Getting started
 

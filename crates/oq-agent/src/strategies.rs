@@ -14,6 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use oq_deck_core::gate::{self, Evidence, Stage};
+use oq_deck_core::lang::Said;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -27,7 +28,27 @@ pub struct Step {
     pub from: Stage,
     pub to: Stage,
     pub actor: String,
+    /// Why this step was taken, in Chinese — or, when the operator typed
+    /// it, in their own words, which [`Step::reason_en`] repeats.
     pub reason: String,
+    /// The same reason in English. Steps written before the console had
+    /// two languages carry only one; a reader falls back to `reason`.
+    #[serde(default)]
+    pub reason_en: String,
+}
+
+impl Step {
+    /// The step's reason as the pair it is.
+    fn said(at_ms: i64, from: Stage, to: Stage, actor: &str, why: &Said) -> Self {
+        Self {
+            at_ms,
+            from,
+            to,
+            actor: actor.into(),
+            reason: why.zh.clone(),
+            reason_en: why.en.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,14 +127,14 @@ impl Strategies {
         Ok(Self { path, store })
     }
 
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), Said> {
         let tmp = self.path.with_extension("json.new");
         std::fs::write(
             &tmp,
-            serde_json::to_vec_pretty(&self.store).map_err(|e| e.to_string())?,
+            serde_json::to_vec_pretty(&self.store).map_err(|e| Said::same(e.to_string()))?,
         )
         .and_then(|()| std::fs::rename(&tmp, &self.path))
-        .map_err(|e| e.to_string())
+        .map_err(|e| Said::same(e.to_string()))
     }
 
     fn evidence(i: &Instance, journals: &Path, now_ms: i64) -> Evidence {
@@ -133,7 +154,7 @@ impl Strategies {
 
     /// Send back to draft every instance whose configuration moved since
     /// its evidence. Returns what was voided, for the audit trail.
-    pub fn void_changed(&mut self, config_dir: &Path, now_ms: i64) -> Vec<(String, String)> {
+    pub fn void_changed(&mut self, config_dir: &Path, now_ms: i64) -> Vec<(String, Said)> {
         let mut voided = Vec::new();
         for i in &mut self.store.instances {
             let (Some(at), Some(now)) = (i.config_sha.clone(), config_sha(config_dir, &i.config))
@@ -141,14 +162,20 @@ impl Strategies {
                 continue;
             };
             if i.stage != Stage::Draft && at != now {
-                let reason = format!("配置文件 {} 在取得证据之后改过，证据作废", i.config);
-                i.history.push(Step {
-                    at_ms: now_ms,
-                    from: i.stage,
-                    to: Stage::Draft,
-                    actor: "oq-agent".into(),
-                    reason: reason.clone(),
-                });
+                let reason = Said::new(
+                    format!("配置文件 {} 在取得证据之后改过，证据作废", i.config),
+                    format!(
+                        "the config file {} changed after the evidence was taken; that evidence is void",
+                        i.config
+                    ),
+                );
+                i.history.push(Step::said(
+                    now_ms,
+                    i.stage,
+                    Stage::Draft,
+                    "oq-agent",
+                    &reason,
+                ));
                 i.stage = Stage::Draft;
                 i.backtest_run = None;
                 i.backtest_passed = false;
@@ -191,12 +218,17 @@ impl Strategies {
         )
     }
 
-    fn find(&mut self, id: &str) -> Result<&mut Instance, String> {
+    fn find(&mut self, id: &str) -> Result<&mut Instance, Said> {
         self.store
             .instances
             .iter_mut()
             .find(|i| i.id == id)
-            .ok_or_else(|| format!("no instance {id}"))
+            .ok_or_else(|| {
+                Said::new(
+                    format!("没有实例 {id}。"),
+                    format!("there is no instance {id}"),
+                )
+            })
     }
 
     /// # Errors
@@ -208,8 +240,13 @@ impl Strategies {
         config_dir: &Path,
         actor: &str,
         now_ms: i64,
-    ) -> Result<Value, String> {
-        config_sha(config_dir, config).ok_or_else(|| format!("no config file {config}"))?;
+    ) -> Result<Value, Said> {
+        config_sha(config_dir, config).ok_or_else(|| {
+            Said::new(
+                format!("没有配置文件 {config}。"),
+                format!("there is no config file {config}"),
+            )
+        })?;
         let id: String = name
             .chars()
             .map(|c| {
@@ -221,7 +258,10 @@ impl Strategies {
             })
             .collect();
         if id.trim_matches('-').is_empty() || self.store.instances.iter().any(|i| i.id == id) {
-            return Err(format!("instance id {id:?} is empty or taken"));
+            return Err(Said::new(
+                format!("实例 id {id:?} 是空的，或者已经有人用了。"),
+                format!("the instance id {id:?} is empty or already taken"),
+            ));
         }
         let i = Instance {
             id: id.clone(),
@@ -233,13 +273,13 @@ impl Strategies {
             config_sha: None,
             observing_since_ms: None,
             confirmed_by: None,
-            history: vec![Step {
-                at_ms: now_ms,
-                from: Stage::Draft,
-                to: Stage::Draft,
-                actor: actor.into(),
-                reason: "created".into(),
-            }],
+            history: vec![Step::said(
+                now_ms,
+                Stage::Draft,
+                Stage::Draft,
+                actor,
+                &Said::new("已建立", "created"),
+            )],
         };
         self.store.instances.push(i);
         self.save()?;
@@ -257,11 +297,15 @@ impl Strategies {
         passed: bool,
         config_dir: &Path,
         runs_dir: &Path,
-    ) -> Result<Value, String> {
-        oq_deck_core::runs::detail(runs_dir, run).map_err(|e| format!("run {run}: {e}"))?;
+    ) -> Result<Value, Said> {
+        oq_deck_core::runs::detail(runs_dir, run)
+            .map_err(|e| Said::same(format!("run {run}: {e}")))?;
         let sha = {
             let config = self.find(id)?.config.clone();
-            config_sha(config_dir, &config).ok_or("config file missing")?
+            config_sha(config_dir, &config).ok_or(Said::new(
+                "配置文件不在了。",
+                "the config file is not there",
+            ))?
         };
         let i = self.find(id)?;
         i.backtest_run = Some(run.into());
@@ -282,7 +326,7 @@ impl Strategies {
         reason: &str,
         journals: &Path,
         now_ms: i64,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, Said> {
         let e = {
             let i = self.find(id)?;
             Self::evidence(i, journals, now_ms)
@@ -292,7 +336,10 @@ impl Strategies {
         if !decision.allowed {
             return Err(decision.reason);
         }
-        let to = i.stage.next().ok_or("already live")?;
+        let to = i.stage.next().ok_or(Said::new(
+            "这个实例已经是实盘了。",
+            "this instance is already live",
+        ))?;
         // Confirmation is a person's act, recorded as the step itself.
         if to == Stage::Confirmed {
             i.confirmed_by = Some(actor.into());
@@ -300,13 +347,9 @@ impl Strategies {
         if to == Stage::Observing {
             i.observing_since_ms = Some(now_ms);
         }
-        i.history.push(Step {
-            at_ms: now_ms,
-            from: i.stage,
-            to,
-            actor: actor.into(),
-            reason: reason.into(),
-        });
+        // A person's reason for the step, in the words they used.
+        i.history
+            .push(Step::said(now_ms, i.stage, to, actor, &Said::same(reason)));
         i.stage = to;
         self.save()?;
         Ok(json!({"id": id, "stage": to}))
@@ -331,7 +374,7 @@ mod tests {
         let refused = s
             .advance("stable-ag", "deck", "go", journals.path(), 1)
             .unwrap_err();
-        assert!(refused.contains("no backtest"), "{refused}");
+        assert!(refused.en.contains("no backtest"), "{refused:?}");
 
         // A backtest from the runs directory: fixtures stand in.
         let runs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -345,7 +388,7 @@ mod tests {
         let early = s
             .advance("stable-ag", "deck", "too soon", journals.path(), 4)
             .unwrap_err();
-        assert!(early.contains("observation window"), "{early}");
+        assert!(early.en.contains("observation window"), "{early:?}");
 
         // The config file changes: everything goes back to draft.
         let sha = crate::configs::get(config.path(), "s.json", None).expect("get")["sha"]
@@ -357,11 +400,19 @@ mod tests {
         assert_eq!(voided.len(), 1);
         let listed = s.list(config.path(), journals.path(), 7);
         assert_eq!(listed[0]["instance"]["stage"], "draft");
+        // The gate's refusal travels as a pair, so the console reads it
+        // in the language its reader asked for.
         assert!(
-            listed[0]["decision"]["reason"]
+            listed[0]["decision"]["reason"]["en"]
                 .as_str()
                 .expect("reason")
                 .contains("no backtest")
+        );
+        assert!(
+            listed[0]["decision"]["reason"]["zh"]
+                .as_str()
+                .expect("reason")
+                .contains("回测")
         );
 
         // And the store survives a restart.

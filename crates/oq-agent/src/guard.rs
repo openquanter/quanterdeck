@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use oq_deck_core::auth;
+use oq_deck_core::lang::Said;
 
 /// Longest a request may live, in milliseconds.
 pub const MAX_TTL_MS: i64 = 60_000;
@@ -19,19 +20,28 @@ impl Replay {
     ///
     /// # Errors
     /// Expired, too far in the future, empty, or seen before.
-    pub fn admit(&mut self, nonce: &str, expires_ms: i64, now_ms: i64) -> Result<(), String> {
+    pub fn admit(&mut self, nonce: &str, expires_ms: i64, now_ms: i64) -> Result<(), Said> {
         self.seen.retain(|_, exp| *exp >= now_ms);
         if nonce.len() < 16 {
-            return Err("the request carries no usable nonce".into());
+            return Err(Said::new(
+                "请求没有可用的 nonce。",
+                "the request carries no usable nonce",
+            ));
         }
         if expires_ms < now_ms {
-            return Err("the request has expired".into());
+            return Err(Said::new("请求已过期。", "the request has expired"));
         }
         if expires_ms > now_ms + MAX_TTL_MS {
-            return Err("the request claims to be valid for too long".into());
+            return Err(Said::new(
+                "请求声明的有效期过长。",
+                "the request claims to be valid for too long",
+            ));
         }
         if self.seen.insert(nonce.to_string(), expires_ms).is_some() {
-            return Err("this request was already answered".into());
+            return Err(Said::new(
+                "这个请求已经执行过了。",
+                "this request was already answered",
+            ));
         }
         Ok(())
     }
@@ -65,27 +75,31 @@ impl StepUp {
 
     /// # Errors
     /// No secret configured, no code, a wrong one, or one already used.
-    pub fn verify(&mut self, code: Option<&str>, now_seconds: i64) -> Result<(), String> {
-        let secret = self
-            .secret
-            .as_deref()
-            .ok_or("no step-up secret is configured on this host; high-risk actions are off")?;
+    pub fn verify(&mut self, code: Option<&str>, now_seconds: i64) -> Result<(), Said> {
+        let secret = self.secret.as_deref().ok_or(Said::new(
+            "这台主机没有配置二次验证密钥，高风险操作已关闭。",
+            "no step-up secret is configured on this host; high-risk actions are off",
+        ))?;
         let code = code
             .map(str::trim)
             .filter(|c| !c.is_empty())
-            .ok_or("a step-up code is required")?;
+            .ok_or(Said::new("需要二次验证码。", "a step-up code is required"))?;
         let step = now_seconds.div_euclid(30);
         for s in (step - auth::TOTP_SKEW_STEPS)..=(step + auth::TOTP_SKEW_STEPS) {
-            let expected = auth::totp_code(secret, s * 30).map_err(|e| e.to_string())?;
+            let expected =
+                auth::totp_code(secret, s * 30).map_err(|e| Said::same(e.to_string()))?;
             if auth::secrets_match(&expected, code) {
                 if s <= self.last_step {
-                    return Err("that code was already used; wait for the next one".into());
+                    return Err(Said::new(
+                        "该验证码已经用过了，请等下一个。",
+                        "that code was already used; wait for the next one",
+                    ));
                 }
                 self.last_step = s;
                 return Ok(());
             }
         }
-        Err("the step-up code is wrong".into())
+        Err(Said::new("二次验证码不正确。", "the step-up code is wrong"))
     }
 }
 
@@ -118,6 +132,7 @@ mod tests {
         assert!(
             s.verify(Some(&code), now)
                 .unwrap_err()
+                .en
                 .contains("already used")
         );
         assert!(s.verify(None, now).is_err());

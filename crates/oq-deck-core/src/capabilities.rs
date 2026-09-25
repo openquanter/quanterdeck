@@ -9,6 +9,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::lang::Lang;
+
 /// One capability, and when it is off, why.
 #[derive(Debug, Clone, Serialize)]
 pub struct Capability {
@@ -60,17 +62,26 @@ pub struct Capabilities {
     pub writes: Capability,
 }
 
-fn directory(configured: Option<&Path>, variable: &str) -> Capability {
+fn directory(configured: Option<&Path>, variable: &str, lang: Lang) -> Capability {
     match configured {
         // A directory that exists and cannot be read is not available:
         // reported as on, its pages showed "nothing here" for "could not
         // look".
         Some(dir) if dir.is_dir() => match std::fs::read_dir(dir) {
             Ok(_) => Capability::on(),
-            Err(e) => Capability::off(format!("{} 无法读取：{e}", dir.display())),
+            Err(e) => Capability::off(lang.pick(
+                format!("{} 无法读取：{e}", dir.display()),
+                format!("{} cannot be read: {e}", dir.display()),
+            )),
         },
-        Some(dir) => Capability::off(format!("{} 不是一个目录", dir.display())),
-        None => Capability::off(format!("尚未配置目录；请设置 {variable}")),
+        Some(dir) => Capability::off(lang.pick(
+            format!("{} 不是一个目录", dir.display()),
+            format!("{} is not a directory", dir.display()),
+        )),
+        None => Capability::off(lang.pick(
+            format!("尚未配置目录；请设置 {variable}"),
+            format!("No directory is configured; set {variable}"),
+        )),
     }
 }
 
@@ -82,21 +93,31 @@ pub fn detect(
     ticks_dir: Option<&Path>,
     agent_socket: Option<&Path>,
     writes_allowed: bool,
+    lang: Lang,
 ) -> Capabilities {
     let ops = match agent_socket {
         Some(sock) => {
             use std::os::unix::fs::FileTypeExt;
             match std::fs::metadata(sock) {
                 Ok(m) if m.file_type().is_socket() => Capability::on(),
-                Ok(_) => Capability::off(format!("{} 不是 socket", sock.display())),
-                Err(e) => Capability::off(format!("连不上主机代理 {}：{e}", sock.display())),
+                Ok(_) => Capability::off(lang.pick(
+                    format!("{} 不是 socket", sock.display()),
+                    format!("{} is not a socket", sock.display()),
+                )),
+                Err(e) => Capability::off(lang.pick(
+                    format!("连不上主机代理 {}：{e}", sock.display()),
+                    format!("Cannot reach the host agent at {}: {e}", sock.display()),
+                )),
             }
         }
-        None => Capability::off("尚未配置主机代理；请设置 OQ_DECK_AGENT_SOCKET"),
+        None => Capability::off(lang.pick(
+            "尚未配置主机代理；请设置 OQ_DECK_AGENT_SOCKET",
+            "No host agent is configured; set OQ_DECK_AGENT_SOCKET",
+        )),
     };
-    let runs = directory(runs_dir, "OQ_DECK_RUNS_DIR");
-    let live = directory(journals_dir, "OQ_DECK_JOURNALS_DIR");
-    let ticks = directory(ticks_dir, "OQ_DECK_TICKS_DIR");
+    let runs = directory(runs_dir, "OQ_DECK_RUNS_DIR", lang);
+    let live = directory(journals_dir, "OQ_DECK_JOURNALS_DIR", lang);
+    let ticks = directory(ticks_dir, "OQ_DECK_TICKS_DIR", lang);
 
     Capabilities {
         version: env!("CARGO_PKG_VERSION"),
@@ -105,18 +126,20 @@ pub fn detect(
         attribution: if runs.available || ops.available {
             Capability::on()
         } else {
-            Capability::off(
+            Capability::off(lang.pick(
                 "归因要把实盘与模型相比：需要 run 文件目录（OQ_DECK_RUNS_DIR）或主机代理（OQ_DECK_AGENT_SOCKET）",
-            )
+                "Attribution compares live with the model: it needs the run files directory (OQ_DECK_RUNS_DIR) or the host agent (OQ_DECK_AGENT_SOCKET)",
+            ))
         },
         markout: match (runs.available, ticks.available) {
             (true, true) => Capability::on(),
-            (false, _) => {
-                Capability::off("markout 要读 run 文件里的成交；请先配置 OQ_DECK_RUNS_DIR")
-            }
-            (true, false) => Capability::off(format!(
-                "markout 要用 tick 文件给成交定价：{}",
-                ticks.reason
+            (false, _) => Capability::off(lang.pick(
+                "markout 要读 run 文件里的成交；请先配置 OQ_DECK_RUNS_DIR",
+                "Markouts read the fills in run files; configure OQ_DECK_RUNS_DIR first",
+            )),
+            (true, false) => Capability::off(lang.pick(
+                format!("markout 要用 tick 文件给成交定价：{}", ticks.reason),
+                format!("Markouts price fills from tick files: {}", ticks.reason),
             )),
         },
         runs,
@@ -125,12 +148,14 @@ pub fn detect(
         // still nothing to write with.
         writes: match (writes_allowed, ops.available) {
             (true, true) => Capability::on(),
-            (true, false) => {
-                Capability::off(format!("已设置 OQ_DECK_ALLOW_WRITES，但{}", ops.reason))
-            }
-            (false, _) => {
-                Capability::off("本 deck 处于只读模式；设置 OQ_DECK_ALLOW_WRITES=1 才能操作")
-            }
+            (true, false) => Capability::off(lang.pick(
+                format!("已设置 OQ_DECK_ALLOW_WRITES，但{}", ops.reason),
+                format!("OQ_DECK_ALLOW_WRITES is set, but: {}", ops.reason),
+            )),
+            (false, _) => Capability::off(lang.pick(
+                "本 deck 处于只读模式；设置 OQ_DECK_ALLOW_WRITES=1 才能操作",
+                "This deck is read-only; set OQ_DECK_ALLOW_WRITES=1 to act",
+            )),
         },
         ops,
     }
@@ -138,14 +163,14 @@ pub fn detect(
 
 #[cfg(test)]
 mod writes {
-    use super::detect;
+    use super::{Lang, detect};
 
     /// Allowed is not available without an agent: every write goes
     /// through it, and a capability reported on is a promise that a route
     /// delivers.
     #[test]
     fn writes_are_not_offered_before_there_is_anything_to_write_with() {
-        let caps = detect(None, None, None, None, true);
+        let caps = detect(None, None, None, None, true, Lang::Zh);
         assert!(!caps.writes.available);
         assert!(
             caps.writes.reason.contains("主机代理"),
@@ -153,5 +178,11 @@ mod writes {
             caps.writes.reason
         );
         assert!(!caps.ops.available);
+        let en = detect(None, None, None, None, true, Lang::En);
+        assert!(
+            en.writes.reason.contains("host agent"),
+            "{}",
+            en.writes.reason
+        );
     }
 }

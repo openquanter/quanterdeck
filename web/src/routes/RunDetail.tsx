@@ -4,6 +4,7 @@ import { ArrowLeft, Fingerprint } from "lucide-react";
 
 import { api } from "@/api/client";
 import { Copy, ErrorState, Skeleton } from "@/components/States";
+import { tr } from "@/i18n";
 import { Card, PageHeader, Stat, Table } from "@/ui/kit";
 
 /**
@@ -20,7 +21,7 @@ export function RunDetail() {
   const back = (
     <Link to="/runs" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink">
       <ArrowLeft className="h-4 w-4" />
-      回测记录
+      {tr("回测记录", "Backtest runs")}
     </Link>
   );
 
@@ -47,15 +48,19 @@ export function RunDetail() {
       <PageHeader title={<span className="font-mono">{data.id}</span>} description={<span className="font-mono text-xs">{data.path}</span>} actions={back} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="已实现盈亏" value={data.pnl.toFixed(6)} />
-        <Stat label="成交" value={String(data.fills.length)} sub={symbols.length ? symbols.join(" · ") : undefined} />
-        <Stat label="档位" value={data.identity.label || "—"} />
+        <Stat label={tr("已实现盈亏", "Realized P&L")} value={data.pnl.toFixed(6)} />
+        <Stat label={tr("成交", "Fills")} value={String(data.fills.length)} sub={symbols.length ? symbols.join(" · ") : undefined} />
+        <Stat label={tr("档位", "Label")} value={data.identity.label || "—"} />
       </div>
 
       {/* The identity triple is shown together and in full. Truncated to
           eight characters it reads as decoration; at full length it is
           the thing a third party checks a claim against. */}
-      <Card title="身份" icon={<Fingerprint className="h-4 w-4" />} extra="代码、数据、配置的指纹：同样三者跑出的结果应当一致">
+      <Card
+        title={tr("身份", "Identity")}
+        icon={<Fingerprint className="h-4 w-4" />}
+        extra={tr("代码、数据、配置的指纹：同样三者跑出的结果应当一致", "Fingerprints of code, data and config: the same three should give the same result")}
+      >
         <dl className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
           {(
             [
@@ -75,22 +80,22 @@ export function RunDetail() {
         </dl>
       </Card>
 
-      <Card title={`成交（${data.fills.length}）`} bodyClassName="p-0">
+      <Card title={tr(`成交（${data.fills.length}）`, `Fills (${data.fills.length})`)} bodyClassName="p-0">
         {data.fills.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-ink-faint">这次运行没有成交。</p>
+          <p className="px-4 py-6 text-center text-sm text-ink-faint">{tr("这次运行没有成交。", "This run had no fills.")}</p>
         ) : (
           <div className="max-h-[40rem] overflow-auto">
             <Table
               dense
               head={[
-                "时间 (ns)",
-                "品种",
-                "方向",
+                tr("时间 (ns)", "Time (ns)"),
+                tr("品种", "Symbol"),
+                tr("方向", "Side"),
                 <span key="p" className="block text-right">
-                  价格 (ticks)
+                  {tr("价格 (ticks)", "Price (ticks)")}
                 </span>,
                 <span key="q" className="block text-right">
-                  数量 (lots)
+                  {tr("数量 (lots)", "Qty (lots)")}
                 </span>,
                 "tag",
               ]}

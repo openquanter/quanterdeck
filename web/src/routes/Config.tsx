@@ -6,6 +6,7 @@ import { api, type OpsAction } from "@/api/client";
 import { ActionDialog } from "@/components/ActionDialog";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
 import { useCaps } from "@/features/trading";
+import { tr } from "@/i18n";
 import { Ago, Badge, Button, Card, PageHeader, Segmented, Table, cx, fmtBytes, fmtTime } from "@/ui/kit";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -32,19 +33,28 @@ export function Config() {
   return (
     <div>
       <PageHeader
-        title="配置"
-        description="策略配置文件：保存前先看差异，旧版本自动备份，任一备份都可以回滚。交易进程重启后才会用新配置。"
-        meta={!writable && caps.data ? <Badge tone="neutral">只读：写入模式未开启</Badge> : undefined}
+        title={tr("配置", "Config")}
+        description={tr(
+          "策略配置文件：保存前先看差异，旧版本自动备份，任一备份都可以回滚。交易进程重启后才会用新配置。",
+          "Strategy config files: review the diff before saving, the old version is backed up automatically, and any backup can be rolled back to. The trading process uses a new config only after it restarts.",
+        )}
+        meta={!writable && caps.data ? <Badge tone="neutral">{tr("只读：写入模式未开启", "Read-only: write mode is off")}</Badge> : undefined}
       />
       {files.isLoading ? (
         <Skeleton rows={6} />
       ) : files.isError ? (
-        <ErrorState error={files.error} what="配置文件列表" />
+        <ErrorState error={files.error} what={tr("配置文件列表", "config file list")} />
       ) : !files.data?.length ? (
-        <Empty title="主机代理管理的配置目录里还没有文件。" next="策略配置放在 /var/lib/oq/config/（由 provision.sh 迁移），之后在这里查看和修改。" />
+        <Empty
+          title={tr("主机代理管理的配置目录里还没有文件。", "The config directory the host agent manages has no files yet.")}
+          next={tr(
+            "策略配置放在 /var/lib/oq/config/（由 provision.sh 迁移），之后在这里查看和修改。",
+            "Strategy configs live in /var/lib/oq/config/ (migrated by provision.sh); view and edit them here afterwards.",
+          )}
+        />
       ) : (
         <div className="grid gap-5 lg:grid-cols-[16rem_1fr]">
-          <Card title="文件" icon={<FileCog className="h-4 w-4" />} bodyClassName="p-1.5" className="self-start">
+          <Card title={tr("文件", "Files")} icon={<FileCog className="h-4 w-4" />} bodyClassName="p-1.5" className="self-start">
             <ul className="space-y-0.5">
               {files.data.map((f) => (
                 <li key={f.name}>
@@ -117,16 +127,16 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
         title={<span className="font-mono">{name}</span>}
         extra={
           <>
-            {changed && <Badge tone="warn">未保存的修改</Badge>}
+            {changed && <Badge tone="warn">{tr("未保存的修改", "Unsaved changes")}</Badge>}
             <span className="font-mono" title={d.sha}>
-              版本 {d.sha.slice(0, 12)}
+              {tr(`版本 ${d.sha.slice(0, 12)}`, `Version ${d.sha.slice(0, 12)}`)}
             </span>
             <Segmented
               value={view}
               onChange={setView}
               options={[
-                { value: "form", label: "表单" },
-                { value: "json", label: "原始 JSON" },
+                { value: "form", label: tr("表单", "Form") },
+                { value: "json", label: tr("原始 JSON", "Raw JSON") },
               ]}
             />
           </>
@@ -135,7 +145,10 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
       >
         {view === "form" ? (
           parsed.error ? (
-            <p className="px-4 py-3 text-sm text-warn">JSON 有错，先在「原始 JSON」里改好：{parsed.error}</p>
+            <p className="px-4 py-3 text-sm text-warn">
+              {tr("JSON 有错，先在「原始 JSON」里改好：", "The JSON has an error; fix it in Raw JSON first: ")}
+              {parsed.error}
+            </p>
           ) : (
             <div className="max-h-[32rem] overflow-auto px-4 py-3">
               <Field value={parsed.value} path={[]} onChange={(v) => setRaw(JSON.stringify(v, null, 2))} />
@@ -155,12 +168,12 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
 
         <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
           <Button size="sm" icon={<GitCompare className="h-3.5 w-3.5" />} disabled={!changed} onClick={() => setShowDiff(!showDiff)}>
-            {showDiff ? "收起差异" : "查看差异"}
+            {showDiff ? tr("收起差异", "Hide diff") : tr("查看差异", "Show diff")}
           </Button>
           <Button size="sm" variant="ghost" icon={<Undo2 className="h-3.5 w-3.5" />} disabled={!changed} onClick={() => setRaw(original)}>
-            放弃修改
+            {tr("放弃修改", "Discard changes")}
           </Button>
-          <span className="text-xs text-ink-faint">{changed ? "保存前先看一眼差异。" : "没有修改。"}</span>
+          <span className="text-xs text-ink-faint">{changed ? tr("保存前先看一眼差异。", "Check the diff before saving.") : tr("没有修改。", "No changes.")}</span>
           {writable && (
             <div className="ml-auto">
               <Button
@@ -170,30 +183,35 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
                 disabled={!changed || Boolean(parsed.error)}
                 onClick={() =>
                   setPending({
-                    title: `保存 ${name}`,
-                    consequence: "旧版本会自动备份。交易进程重启后才会用新配置；用这份配置的上线门控实例会因证据作废回到草稿。",
+                    title: tr(`保存 ${name}`, `Save ${name}`),
+                    consequence: tr(
+                      "旧版本会自动备份。交易进程重启后才会用新配置；用这份配置的上线门控实例会因证据作废回到草稿。",
+                      "The old version is backed up automatically. The trading process uses the new config only after it restarts; go-live gate instances using this config lose their evidence and return to draft.",
+                    ),
                     action: { action: "config_put", name, content: raw, base_sha: d.sha },
                   })
                 }
               >
-                保存…
+                {tr("保存…", "Save…")}
               </Button>
             </div>
           )}
         </div>
         {changed && showDiff && (
           <div className="border-t border-line p-4">
-            <DiffLegend before="当前文件" after="你的修改" />
+            <DiffLegend before={tr("当前文件", "Current file")} after={tr("你的修改", "Your changes")} />
             <Diff before={original} after={raw} />
           </div>
         )}
       </Card>
 
-      <Card title={`历史版本（${d.backups.length}）`} icon={<History className="h-4 w-4" />} bodyClassName="p-0">
+      <Card title={tr(`历史版本（${d.backups.length}）`, `History (${d.backups.length})`)} icon={<History className="h-4 w-4" />} bodyClassName="p-0">
         {d.backups.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-ink-muted">还没有改过。每次保存前的版本都会留在这里。</p>
+          <p className="px-4 py-4 text-sm text-ink-muted">
+            {tr("还没有改过。每次保存前的版本都会留在这里。", "Never changed. The version before each save is kept here.")}
+          </p>
         ) : (
-          <Table head={["备份时间", "备份编号", ""]}>
+          <Table head={[tr("备份时间", "Backed up"), tr("备份编号", "Backup ID"), ""]}>
             {d.backups.map((b) => (
               <tr key={b.id} className={backup === b.id ? "bg-accent/5" : undefined}>
                 <td className="whitespace-nowrap text-ink">{b.at_ms ? <><Ago ms={b.at_ms} /><span className="ml-2 text-xs text-ink-faint">{fmtTime(b.at_ms)}</span></> : "—"}</td>
@@ -201,7 +219,7 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
                 <td className="text-right">
                   <div className="inline-flex gap-2">
                     <Button size="sm" variant="ghost" icon={<GitCompare className="h-3.5 w-3.5" />} onClick={() => setBackup(backup === b.id ? null : b.id)}>
-                      {backup === b.id ? "收起" : "与当前比较"}
+                      {backup === b.id ? tr("收起", "Hide") : tr("与当前比较", "Compare with current")}
                     </Button>
                     {writable && (
                       <Button
@@ -210,13 +228,16 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
                         icon={<RotateCcw className="h-3.5 w-3.5" />}
                         onClick={() =>
                           setPending({
-                            title: `把 ${name} 回滚到 ${b.id}`,
-                            consequence: "当前版本同样会先备份。交易进程重启后生效。",
+                            title: tr(`把 ${name} 回滚到 ${b.id}`, `Roll ${name} back to ${b.id}`),
+                            consequence: tr(
+                              "当前版本同样会先备份。交易进程重启后生效。",
+                              "The current version is backed up first as well. Takes effect after the trading process restarts.",
+                            ),
                             action: { action: "config_rollback", name, backup: b.id, base_sha: d.sha },
                           })
                         }
                       >
-                        回滚到这个版本…
+                        {tr("回滚到这个版本…", "Roll back to this version…")}
                       </Button>
                     )}
                   </div>
@@ -230,10 +251,10 @@ function Editor({ name, writable }: { name: string; writable: boolean }) {
             {backupDoc.isLoading ? (
               <Skeleton rows={4} />
             ) : backupDoc.isError ? (
-              <ErrorState error={backupDoc.error} what={`备份 ${backup}`} />
+              <ErrorState error={backupDoc.error} what={tr(`备份 ${backup}`, `backup ${backup}`)} />
             ) : backupDoc.data?.backup_content != null ? (
               <>
-                <DiffLegend before={`备份 ${backup}`} after="当前文件" />
+                <DiffLegend before={tr(`备份 ${backup}`, `Backup ${backup}`)} after={tr("当前文件", "Current file")} />
                 <Diff before={pretty(backupDoc.data.backup_content)} after={original} />
               </>
             ) : null}

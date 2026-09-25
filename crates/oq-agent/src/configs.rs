@@ -10,6 +10,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use oq_deck_core::lang::Said;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -55,16 +56,26 @@ pub fn list(dir: &Path) -> Value {
     json!(out)
 }
 
-fn read(dir: &Path, name: &str) -> Result<Vec<u8>, String> {
+fn not_a_config_name(name: &str) -> Said {
+    Said::new(
+        format!("{name:?} 不是配置文件名。"),
+        format!("{name:?} is not a config name"),
+    )
+}
+
+fn read(dir: &Path, name: &str) -> Result<Vec<u8>, Said> {
     if !valid(name) {
-        return Err(format!("{name:?} is not a config name"));
+        return Err(not_a_config_name(name));
     }
     let path = dir.join(name);
-    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{name}: {e}"))?;
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| Said::same(format!("{name}: {e}")))?;
     if !meta.file_type().is_file() {
-        return Err(format!("{name} is not a regular file"));
+        return Err(Said::new(
+            format!("{name} 不是一个普通文件。"),
+            format!("{name} is not a regular file"),
+        ));
     }
-    std::fs::read(&path).map_err(|e| format!("{name}: {e}"))
+    std::fs::read(&path).map_err(|e| Said::same(format!("{name}: {e}")))
 }
 
 /// One file, its hash, and its backups newest first; or one backup's
@@ -72,7 +83,7 @@ fn read(dir: &Path, name: &str) -> Result<Vec<u8>, String> {
 ///
 /// # Errors
 /// A bad name, or a file or backup that is not there.
-pub fn get(dir: &Path, name: &str, backup: Option<&str>) -> Result<Value, String> {
+pub fn get(dir: &Path, name: &str, backup: Option<&str>) -> Result<Value, Said> {
     let current = read(dir, name)?;
     let mut kept: Vec<Value> = std::fs::read_dir(backups(dir))
         .map(|rd| {
@@ -90,9 +101,13 @@ pub fn get(dir: &Path, name: &str, backup: Option<&str>) -> Result<Value, String
     let backup_content = match backup {
         Some(id) => {
             if !id.starts_with(&format!("{name}.")) || id.contains('/') || id.contains("..") {
-                return Err(format!("{id:?} is not a backup of {name}"));
+                return Err(Said::new(
+                    format!("{id:?} 不是 {name} 的备份。"),
+                    format!("{id:?} is not a backup of {name}"),
+                ));
             }
-            let bytes = std::fs::read(backups(dir).join(id)).map_err(|e| format!("{id}: {e}"))?;
+            let bytes = std::fs::read(backups(dir).join(id))
+                .map_err(|e| Said::same(format!("{id}: {e}")))?;
             Some(String::from_utf8_lossy(&bytes).to_string())
         }
         None => None,
@@ -117,20 +132,27 @@ pub fn put(
     content: &str,
     base_sha: &str,
     now_ms: i64,
-) -> Result<Value, String> {
+) -> Result<Value, Said> {
     let current = read(dir, name)?;
     if sha(&current) != base_sha {
-        return Err(
-            "the file changed since you read it; reload, look again, and redo the change".into(),
-        );
+        return Err(Said::new(
+            "这个文件在你读它之后改过；重新载入、再看一遍，然后重做这次修改。",
+            "the file changed since you read it; reload, look again, and redo the change",
+        ));
     }
-    serde_json::from_str::<Value>(content).map_err(|e| format!("not valid JSON: {e}"))?;
+    serde_json::from_str::<Value>(content).map_err(|e| {
+        Said::new(
+            format!("不是合法的 JSON：{e}"),
+            format!("not valid JSON: {e}"),
+        )
+    })?;
     if content.as_bytes() == current.as_slice() {
-        return Err("nothing changed".into());
+        return Err(Said::new("内容没有变化。", "nothing changed"));
     }
-    std::fs::create_dir_all(backups(dir)).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(backups(dir)).map_err(|e| Said::same(e.to_string()))?;
     let backup = format!("{name}.{now_ms}");
-    std::fs::write(backups(dir).join(&backup), &current).map_err(|e| format!("backup: {e}"))?;
+    std::fs::write(backups(dir).join(&backup), &current)
+        .map_err(|e| Said::same(format!("backup: {e}")))?;
     let tmp = dir.join(format!(".{name}.new"));
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -140,11 +162,12 @@ pub fn put(
             .truncate(true)
             .mode(0o640)
             .open(&tmp)
-            .map_err(|e| e.to_string())?;
-        f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
-        f.sync_all().map_err(|e| e.to_string())?;
+            .map_err(|e| Said::same(e.to_string()))?;
+        f.write_all(content.as_bytes())
+            .map_err(|e| Said::same(e.to_string()))?;
+        f.sync_all().map_err(|e| Said::same(e.to_string()))?;
     }
-    std::fs::rename(&tmp, dir.join(name)).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dir.join(name)).map_err(|e| Said::same(e.to_string()))?;
     Ok(json!({
         "name": name, "backup": backup,
         "from_sha": sha(&current), "to_sha": sha(content.as_bytes()),
@@ -162,11 +185,11 @@ pub fn rollback(
     backup: &str,
     base_sha: &str,
     now_ms: i64,
-) -> Result<Value, String> {
+) -> Result<Value, Said> {
     let got = get(dir, name, Some(backup))?;
     let content = got["backup_content"]
         .as_str()
-        .ok_or("backup unreadable")?
+        .ok_or(Said::new("备份读不出来。", "the backup could not be read"))?
         .to_string();
     put(dir, name, &content, base_sha, now_ms)
 }
@@ -185,6 +208,7 @@ mod tests {
         assert!(
             put(dir.path(), "s.json", "{not json", &base, 1)
                 .unwrap_err()
+                .zh
                 .contains("JSON")
         );
         let done = put(dir.path(), "s.json", r#"{"a":2}"#, &base, 10).expect("put");
@@ -192,6 +216,7 @@ mod tests {
         assert!(
             put(dir.path(), "s.json", r#"{"a":3}"#, &base, 11)
                 .unwrap_err()
+                .en
                 .contains("changed since")
         );
 

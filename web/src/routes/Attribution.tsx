@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, CircleDashed, CircleHelp, Equal, FileStack
 
 import { api, type AttributionComponent, type AttributionReport, type RunEntry } from "@/api/client";
 import { Empty, ErrorState, Skeleton } from "@/components/States";
+import { tr } from "@/i18n";
 import { Badge, Card, Help, PageHeader, Segmented, Stat, cx } from "@/ui/kit";
 
 /**
@@ -24,21 +25,32 @@ export function Attribution({ embedded }: { embedded?: boolean } = {}) {
 
   return (
     <div className="space-y-5">
-      {!embedded && <PageHeader title="盈亏归因" description="实盘盈亏与模型盈亏的差额，拆成五个成因和残差。" />}
+      {!embedded && (
+        <PageHeader
+          title={tr("盈亏归因", "P&L attribution")}
+          description={tr("实盘盈亏与模型盈亏的差额，拆成五个成因和残差。", "The gap between live and model P&L, split into five causes and a residual.")}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-ink-muted">来源</span>
+        <span className="text-sm text-ink-muted">{tr("来源", "Source")}</span>
         <Segmented
           value={source}
           onChange={setSource}
           options={[
-            ...(caps.data?.ops.available ? [{ value: "shadow" as const, label: "交易进程实时（shadow）" }] : []),
-            ...(caps.data?.runs.available ? [{ value: "runs" as const, label: "两份 run 文件" }] : []),
+            ...(caps.data?.ops.available ? [{ value: "shadow" as const, label: tr("交易进程实时（shadow）", "Trading process, live (shadow)") }] : []),
+            ...(caps.data?.runs.available ? [{ value: "runs" as const, label: tr("两份 run 文件", "Two run files") }] : []),
           ]}
         />
         <span className="text-xs text-ink-faint">
           {source === "shadow"
-            ? "来源最强：交易进程自己的 shadow 回测和实盘成交，带每笔成交时的市价，滑点和延迟可以分开算。"
-            : "来源较弱：run 文件没有成交时的市价，滑点和延迟会是「不可得」。费用和资金费需要你提供交易所账单上的数。"}
+            ? tr(
+                "来源最强：交易进程自己的 shadow 回测和实盘成交，带每笔成交时的市价，滑点和延迟可以分开算。",
+                "Strongest source: the trading process's own shadow backtest and live fills, with the market price at each fill, so slippage and latency can be separated.",
+              )
+            : tr(
+                "来源较弱：run 文件没有成交时的市价，滑点和延迟会是「不可得」。费用和资金费需要你提供交易所账单上的数。",
+                "Weaker source: run files lack the market price at each fill, so slippage and latency will be \"not available\". Fees and funding need the figures from the venue's statement.",
+              )}
         </span>
       </div>
       {source === "shadow" ? <ShadowSource /> : <RunsSource />}
@@ -49,7 +61,7 @@ export function Attribution({ embedded }: { embedded?: boolean } = {}) {
 function ShadowSource() {
   const q = useQuery({ queryKey: ["ops", "attribution"], queryFn: api.opsAttribution, refetchInterval: 60_000 });
   if (q.isLoading) return <Skeleton tiles={4} rows={5} />;
-  if (q.isError) return <ErrorState error={q.error} what="交易进程的归因" />;
+  if (q.isError) return <ErrorState error={q.error} what={tr("交易进程的归因", "the trading process's attribution")} />;
   if (!q.data) return null;
   return <Report r={q.data} />;
 }
@@ -92,56 +104,64 @@ function RunsSource() {
   });
 
   if (runs.isLoading) return <Skeleton rows={4} />;
-  if (runs.isError) return <ErrorState error={runs.error} what="运行记录" />;
+  if (runs.isError) return <ErrorState error={runs.error} what={tr("运行记录", "runs")} />;
   if (readable.length < 2) {
     return (
       <Empty
-        title="需要至少两份可读的 run 文件：一份实盘、一份模型。"
-        next="交易进程每 15 分钟会在 journal 旁写出 .live.run 和 .model.run；刚启动的进程要等第一次写出。"
+        title={tr("需要至少两份可读的 run 文件：一份实盘、一份模型。", "Needs at least two readable run files: one live, one model.")}
+        next={tr(
+          "交易进程每 15 分钟会在 journal 旁写出 .live.run 和 .model.run；刚启动的进程要等第一次写出。",
+          "The trading process writes .live.run and .model.run beside its journal every 15 minutes; a process that just started has to wait for its first write.",
+        )}
       />
     );
   }
   return (
     <div className="space-y-5">
-      <Card title="选择 run 文件" icon={<FileStack className="h-4 w-4" />}>
+      <Card title={tr("选择 run 文件", "Choose run files")} icon={<FileStack className="h-4 w-4" />}>
         <div className="grid gap-4 text-xs text-ink-muted sm:grid-cols-2">
-          <Field label="实盘 run">
+          <Field label={tr("实盘 run", "Live run")}>
             <select className={cx(INPUT, "w-full")} value={live} onChange={(e) => setLive(e.target.value)}>
               {readable.map((r) => (
                 <option key={r.id}>{r.id}</option>
               ))}
             </select>
           </Field>
-          <Field label="模型 run">
+          <Field label={tr("模型 run", "Model run")}>
             <select className={cx(INPUT, "w-full")} value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">选择…</option>
+              <option value="">{tr("选择…", "Choose…")}</option>
               {readable.map((r) => (
                 <option key={r.id}>{r.id}</option>
               ))}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="价格精度（小数位，必填）">
+            <Field label={tr("价格精度（小数位，必填）", "Price scale (decimals, required)")}>
               <input className={cx(INPUT, "w-24")} inputMode="numeric" value={priceScale} onChange={(e) => setPriceScale(e.target.value.replace(/\D/g, ""))} />
             </Field>
-            <Field label="数量精度（小数位，必填）">
+            <Field label={tr("数量精度（小数位，必填）", "Quantity scale (decimals, required)")}>
               <input className={cx(INPUT, "w-24")} inputMode="numeric" value={qtyScale} onChange={(e) => setQtyScale(e.target.value.replace(/\D/g, ""))} />
             </Field>
           </div>
           <div />
-          <Pair label="手续费（交易所账单 / 模型）" value={fees} onChange={setFees} />
-          <Pair label="资金费（交易所账单 / 模型）" value={funding} onChange={setFunding} />
+          <Pair label={tr("手续费（交易所账单 / 模型）", "Fees (venue statement / model)")} value={fees} onChange={setFees} />
+          <Pair label={tr("资金费（交易所账单 / 模型）", "Funding (venue statement / model)")} value={funding} onChange={setFunding} />
         </div>
         <p className="mt-4 border-t border-line pt-3 text-xs text-ink-muted">
-          精度没有默认值：填错会让每个成因差一个数量级。手续费和资金费要成对填；只填一半等于没填。
+          {tr(
+            "精度没有默认值：填错会让每个成因差一个数量级。手续费和资金费要成对填；只填一半等于没填。",
+            "Scales have no default: a wrong one puts every cause off by an order of magnitude. Fees and funding go in pairs; half a pair counts as none.",
+          )}
         </p>
       </Card>
       {!ready ? (
-        <p className="text-sm text-ink-faint">选好两份 run 并填上价格精度和数量精度后，这里显示归因。</p>
+        <p className="text-sm text-ink-faint">
+          {tr("选好两份 run 并填上价格精度和数量精度后，这里显示归因。", "Choose two runs and fill in the price and quantity scales to see the attribution here.")}
+        </p>
       ) : q.isLoading ? (
         <Skeleton tiles={4} rows={5} />
       ) : q.isError ? (
-        <ErrorState error={q.error} what="归因" />
+        <ErrorState error={q.error} what={tr("归因", "attribution")} />
       ) : q.data ? (
         <Report r={q.data} />
       ) : null}
@@ -173,20 +193,20 @@ function Pair({
   return (
     <Field label={label}>
       <div className="flex gap-2">
-        <input className={cx(INPUT, "w-28")} placeholder="交易所" value={value.venue} onChange={(e) => onChange({ ...value, venue: num(e.target.value) })} />
-        <input className={cx(INPUT, "w-28")} placeholder="模型" value={value.model} onChange={(e) => onChange({ ...value, model: num(e.target.value) })} />
+        <input className={cx(INPUT, "w-28")} placeholder={tr("交易所", "Venue")} value={value.venue} onChange={(e) => onChange({ ...value, venue: num(e.target.value) })} />
+        <input className={cx(INPUT, "w-28")} placeholder={tr("模型", "Model")} value={value.model} onChange={(e) => onChange({ ...value, model: num(e.target.value) })} />
       </div>
     </Field>
   );
 }
 
-const NAMES: Record<string, string> = {
-  slippage: "滑点",
-  "queue position": "排队位置",
-  latency: "延迟",
-  "funding vs model": "资金费",
-  "fee tier": "手续费档位",
-};
+const names = (): Record<string, string> => ({
+  slippage: tr("滑点", "Slippage"),
+  "queue position": tr("排队位置", "Queue position"),
+  latency: tr("延迟", "Latency"),
+  "funding vs model": tr("资金费", "Funding"),
+  "fee tier": tr("手续费档位", "Fee tier"),
+});
 
 function fmt(n: number) {
   return (n >= 0 ? "+" : "") + n.toFixed(4);
@@ -200,12 +220,22 @@ function stateOf(c: AttributionComponent): CauseState {
 
 function Report({ r }: { r: AttributionReport }) {
   const missing = r.components.filter((c) => c.amount === null);
+  const method = r.method === "shadow" ? tr("交易进程 shadow（实时）", "trading process shadow (live)") : tr("run 文件", "run files");
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="实盘盈亏" value={<Signed n={r.live_pnl} />} sub={r.live_run ?? "交易进程的实盘成交"} />
-        <Stat label="模型盈亏" value={<Signed n={r.model_pnl} />} sub={r.model_run ?? "同样行情下的 shadow 回测"} help="shadow" />
-        <Stat label="差额（实盘 − 模型）" value={<span className="tabular-nums">{fmt(r.gap)}</span>} sub="要解释的部分" />
+        <Stat label={tr("实盘盈亏", "Live P&L")} value={<Signed n={r.live_pnl} />} sub={r.live_run ?? tr("交易进程的实盘成交", "The trading process's live fills")} />
+        <Stat
+          label={tr("模型盈亏", "Model P&L")}
+          value={<Signed n={r.model_pnl} />}
+          sub={r.model_run ?? tr("同样行情下的 shadow 回测", "Shadow backtest on the same market")}
+          help="shadow"
+        />
+        <Stat
+          label={tr("差额（实盘 − 模型）", "Gap (live − model)")}
+          value={<span className="tabular-nums">{fmt(r.gap)}</span>}
+          sub={tr("要解释的部分", "What needs explaining")}
+        />
         <ResidualStat r={r} missing={missing.length} />
       </div>
 
@@ -213,7 +243,7 @@ function Report({ r }: { r: AttributionReport }) {
         <div className="flex gap-3 rounded-[var(--radius-card)] border border-warn/40 bg-warn/8 px-5 py-4">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warn" />
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-ink">要看到完整答案，还缺：</div>
+            <div className="text-sm font-semibold text-ink">{tr("要看到完整答案，还缺：", "For a complete answer, still missing:")}</div>
             <ul className="mt-1.5 space-y-1 text-sm text-ink">
               {r.missing_inputs.map((m) => (
                 <li key={m} className="flex gap-2">
@@ -227,19 +257,20 @@ function Report({ r }: { r: AttributionReport }) {
       )}
 
       <div className="grid gap-5 xl:grid-cols-5">
-        <Card title="五个成因" icon={<Layers className="h-4 w-4" />} className="xl:col-span-2" bodyClassName="space-y-2 p-3">
+        <Card title={tr("五个成因", "Five causes")} icon={<Layers className="h-4 w-4" />} className="xl:col-span-2" bodyClassName="space-y-2 p-3">
           {r.components.map((c) => (
             <Cause key={c.name} c={c} />
           ))}
         </Card>
-        <Card title="从模型到实盘" className="xl:col-span-3" extra={<Legend />}>
+        <Card title={tr("从模型到实盘", "From model to live")} className="xl:col-span-3" extra={<Legend />}>
           <Waterfall r={r} />
         </Card>
       </div>
 
       <p className="text-xs text-ink-faint">
-        来源 {r.method === "shadow" ? "交易进程 shadow（实时）" : "run 文件"} · 匹配成交 {r.matched_fills} · 单边成交 {r.unmatched_fills}
-        {r.live_run && ` · ${r.live_run} 对 ${r.model_run}`}
+        {tr(`来源 ${method}`, `Source: ${method}`)} · {tr(`匹配成交 ${r.matched_fills}`, `Matched fills ${r.matched_fills}`)} ·{" "}
+        {tr(`单边成交 ${r.unmatched_fills}`, `Unmatched fills ${r.unmatched_fills}`)}
+        {r.live_run && tr(` · ${r.live_run} 对 ${r.model_run}`, ` · ${r.live_run} vs ${r.model_run}`)}
       </p>
     </div>
   );
@@ -259,20 +290,29 @@ function ResidualStat({ r, missing }: { r: AttributionReport; missing: number })
       <div className="rounded-[var(--radius-card)] border border-dashed border-warn/60 bg-warn/8 px-4 py-3.5">
         <div className="flex items-center gap-1.5 text-xs text-warn">
           <CircleHelp className="h-3.5 w-3.5" />
-          <span>残差</span>
+          <span>{tr("残差", "Residual")}</span>
           <Help term="residual" />
         </div>
-        <div className="mt-1.5 text-2xl font-semibold tracking-tight text-warn">未知</div>
-        <div className="mt-1 text-xs text-ink-muted">有 {missing} 个成因没测到，残差无法计算——不是 0</div>
+        <div className="mt-1.5 text-2xl font-semibold tracking-tight text-warn">{tr("未知", "Unknown")}</div>
+        <div className="mt-1 text-xs text-ink-muted">
+          {tr(
+            `有 ${missing} 个成因没测到，残差无法计算——不是 0`,
+            `${missing} cause${missing === 1 ? "" : "s"} not measured, so the residual cannot be computed — it is not 0`,
+          )}
+        </div>
       </div>
     );
   }
   return (
     <Stat
-      label="残差"
+      label={tr("残差", "Residual")}
       help="residual"
       value={<span className="tabular-nums">{fmt(r.residual)}</span>}
-      sub={r.residual_share !== null ? `占实盘盈亏 ${(r.residual_share * 100).toFixed(1)}%` : "五个成因都解释不了的部分"}
+      sub={
+        r.residual_share !== null
+          ? tr(`占实盘盈亏 ${(r.residual_share * 100).toFixed(1)}%`, `${(r.residual_share * 100).toFixed(1)}% of live P&L`)
+          : tr("五个成因都解释不了的部分", "What none of the five causes explains")
+      }
     />
   );
 }
@@ -280,7 +320,7 @@ function ResidualStat({ r, missing }: { r: AttributionReport; missing: number })
 /** One cause, in one of three looks that cannot be mistaken for each other. */
 function Cause({ c }: { c: AttributionComponent }) {
   const state = stateOf(c);
-  const nature = c.observed ? "两个观测量之差" : "需要判断价值";
+  const nature = c.observed ? tr("两个观测量之差", "Difference of two observed quantities") : tr("需要判断价值", "Needs a judgement of value");
   return (
     <div
       className={cx(
@@ -298,8 +338,14 @@ function Cause({ c }: { c: AttributionComponent }) {
         ) : (
           <CircleDashed className="h-4 w-4 shrink-0 text-warn" />
         )}
-        <span className="text-sm text-ink">{NAMES[c.name] ?? c.name}</span>
-        {state === "measured" ? <Badge>已测得</Badge> : state === "zero" ? <Badge>已测得为零</Badge> : <Badge tone="warn">不可得</Badge>}
+        <span className="text-sm text-ink">{names()[c.name] ?? c.name}</span>
+        {state === "measured" ? (
+          <Badge>{tr("已测得", "Measured")}</Badge>
+        ) : state === "zero" ? (
+          <Badge>{tr("已测得为零", "Measured zero")}</Badge>
+        ) : (
+          <Badge tone="warn">{tr("不可得", "Not available")}</Badge>
+        )}
         <span
           className={cx(
             "ml-auto font-mono text-sm tabular-nums",
@@ -327,10 +373,10 @@ function Legend() {
   );
   return (
     <span className="hidden flex-wrap gap-3 md:flex">
-      {item(<span className="h-2.5 w-2.5 rounded-sm bg-ink-muted" />, "已测得")}
-      {item(<span className="h-0.5 w-3 bg-ink" />, "为零")}
-      {item(<span className="h-2.5 w-2.5 rounded-sm border border-dashed border-warn" />, "不可得")}
-      {item(<span className="h-2.5 w-2.5 rounded-sm border border-warn bg-[repeating-linear-gradient(45deg,var(--color-warn)_0_2px,transparent_2px_4px)]" />, "未知")}
+      {item(<span className="h-2.5 w-2.5 rounded-sm bg-ink-muted" />, tr("已测得", "Measured"))}
+      {item(<span className="h-0.5 w-3 bg-ink" />, tr("为零", "Zero"))}
+      {item(<span className="h-2.5 w-2.5 rounded-sm border border-dashed border-warn" />, tr("不可得", "Not available"))}
+      {item(<span className="h-2.5 w-2.5 rounded-sm border border-warn bg-[repeating-linear-gradient(45deg,var(--color-warn)_0_2px,transparent_2px_4px)]" />, tr("未知", "Unknown"))}
     </span>
   );
 }
@@ -343,21 +389,22 @@ function Legend() {
  */
 function Waterfall({ r }: { r: AttributionReport }) {
   const steps = useMemo(() => {
+    const n = names();
     const out: { label: string; from: number; to: number; kind: "end" | "measured" | "zero" | "unavailable" | "unknown" }[] = [];
-    out.push({ label: "模型", from: 0, to: r.model_pnl, kind: "end" });
+    out.push({ label: tr("模型", "Model"), from: 0, to: r.model_pnl, kind: "end" });
     let level = r.model_pnl;
     for (const c of r.components) {
-      if (c.amount === null) out.push({ label: NAMES[c.name] ?? c.name, from: level, to: level, kind: "unavailable" });
+      if (c.amount === null) out.push({ label: n[c.name] ?? c.name, from: level, to: level, kind: "unavailable" });
       else {
-        out.push({ label: NAMES[c.name] ?? c.name, from: level, to: level + c.amount, kind: c.amount === 0 ? "zero" : "measured" });
+        out.push({ label: n[c.name] ?? c.name, from: level, to: level + c.amount, kind: c.amount === 0 ? "zero" : "measured" });
         level += c.amount;
       }
     }
-    if (r.residual === null) out.push({ label: "残差", from: level, to: r.live_pnl, kind: "unknown" });
+    if (r.residual === null) out.push({ label: tr("残差", "Residual"), from: level, to: r.live_pnl, kind: "unknown" });
     else {
-      out.push({ label: "残差", from: level, to: level + r.residual, kind: r.residual === 0 ? "zero" : "measured" });
+      out.push({ label: tr("残差", "Residual"), from: level, to: level + r.residual, kind: r.residual === 0 ? "zero" : "measured" });
     }
-    out.push({ label: "实盘", from: 0, to: r.live_pnl, kind: "end" });
+    out.push({ label: tr("实盘", "Live"), from: 0, to: r.live_pnl, kind: "end" });
     return out;
   }, [r]);
 
@@ -372,7 +419,7 @@ function Waterfall({ r }: { r: AttributionReport }) {
   const y = (v: number) => pad + ((hi - v) / span) * (H - pad * 2);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H + 22}`} className="w-full" role="img" aria-label="归因瀑布图">
+    <svg viewBox={`0 0 ${W} ${H + 22}`} className="w-full" role="img" aria-label={tr("归因瀑布图", "Attribution waterfall")}>
       <defs>
         <pattern id="attribution-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-warn)" strokeWidth="2" strokeOpacity="0.7" />
@@ -388,7 +435,7 @@ function Waterfall({ r }: { r: AttributionReport }) {
         // A thin connector from where this step ends to where the next begins.
         const joinY = s.kind === "end" && i > 0 ? null : y(s.to);
         const tag =
-          s.kind === "unknown" ? "未知" : s.kind === "unavailable" ? "不可得" : s.kind === "zero" ? "0" : fmt(s.kind === "end" ? s.to : s.to - s.from);
+          s.kind === "unknown" ? tr("未知", "Unknown") : s.kind === "unavailable" ? tr("不可得", "N/A") : s.kind === "zero" ? "0" : fmt(s.kind === "end" ? s.to : s.to - s.from);
         return (
           <g key={s.label + i}>
             {next && joinY !== null && (

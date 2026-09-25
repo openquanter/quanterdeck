@@ -34,6 +34,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use oq_deck_core::lang::Said;
 use serde_json::{Value, json};
 
 /// How often everything is sampled.
@@ -171,7 +172,7 @@ impl Recorder {
         &mut self,
         now_ms: i64,
         units: &[String],
-        status: Result<&Value, &str>,
+        status: Result<&Value, &Said>,
     ) -> Result<Value, String> {
         if now_ms - self.disks_at >= DISK_EVERY_MS {
             self.disks = json!(crate::system::host_health()["disks"]);
@@ -230,9 +231,10 @@ impl Recorder {
             }
             Err(why) => {
                 if self.control_ok != Some(false) {
-                    lines.push(
-                        json!({"at": now_ms, "k": "event", "what": "control_lost", "reason": why}),
-                    );
+                    // The reason is the agent's own sentence, so the
+                    // review reads it in the language it is being read in.
+                    lines.push(json!({"at": now_ms, "k": "event", "what": "control_lost",
+                        "reason": why.zh, "reason_en": why.en}));
                 }
                 self.control_ok = Some(false);
             }
@@ -242,9 +244,9 @@ impl Recorder {
     }
 
     /// Record one event now: an alert raised or cleared.
-    pub fn event(&self, now_ms: i64, what: &str, key: &str, message: &str) {
-        let line =
-            json!({"at": now_ms, "k": "event", "what": what, "key": key, "message": message});
+    pub fn event(&self, now_ms: i64, what: &str, key: &str, message: &crate::alerts::Said) {
+        let line = json!({"at": now_ms, "k": "event", "what": what, "key": key,
+            "message": message.zh, "message_en": message.en});
         if let Err(e) = self.write(now_ms, &[line]) {
             eprintln!("oq-agent: black box event not written: {e}");
         }
@@ -489,7 +491,7 @@ pub fn resources(state: &Path, now_ms: i64, hours: i64, units: &[String]) -> Val
 /// does not need a verdict every 30 seconds, and a day of samples is not
 /// free to read.
 #[must_use]
-pub fn growing(state: &Path, units: &[String], now_ms: i64) -> Vec<(String, String)> {
+pub fn growing(state: &Path, units: &[String], now_ms: i64) -> Vec<(String, crate::alerts::Said)> {
     let mut samples: BTreeMap<&str, Vec<UnitSample>> =
         units.iter().map(|u| (u.as_str(), Vec::new())).collect();
     scan(
@@ -511,7 +513,7 @@ pub fn growing(state: &Path, units: &[String], now_ms: i64) -> Vec<(String, Stri
         .collect()
 }
 
-fn grown(unit: &str, s: &[UnitSample], now_ms: i64) -> Option<String> {
+fn grown(unit: &str, s: &[UnitSample], now_ms: i64) -> Option<crate::alerts::Said> {
     // Only since it last started: a restart resets memory.
     let start = s.iter().rposition(|v| !v.active).map_or(0, |i| i + 1);
     let run = &s[start..];
@@ -532,11 +534,18 @@ fn grown(unit: &str, s: &[UnitSample], now_ms: i64) -> Option<String> {
     let late = avg(now_ms - 3_600_000, now_ms + 1)?;
     #[allow(clippy::cast_precision_loss)]
     (late >= early * 2.0 && late - early >= 32.0 * 1_048_576.0).then(|| {
-        format!(
-            "{unit} 的内存在持续上涨：{:.1} MiB → {:.1} MiB（{:.0} 小时内，期间没有重启）",
+        let (from, to, hours) = (
             early / 1_048_576.0,
             late / 1_048_576.0,
-            (last - first) as f64 / 3.6e6
+            (last - first) as f64 / 3.6e6,
+        );
+        crate::alerts::Said::new(
+            format!(
+                "{unit} 的内存在持续上涨：{from:.1} MiB → {to:.1} MiB（{hours:.0} 小时内，期间没有重启）"
+            ),
+            format!(
+                "{unit}'s memory keeps rising: {from:.1} MiB → {to:.1} MiB over {hours:.0} h, with no restart"
+            ),
         )
     })
 }
@@ -598,13 +607,10 @@ mod tests {
             .map(|h| unit_line(base + h * hour, (10 + 10 * h as u64) << 20, 0, true))
             .collect();
         write(d.path(), &leak);
-        assert!(
-            growing(d.path(), &["u".to_string()], base + 8 * hour)
-                .first()
-                .expect("growth")
-                .1
-                .contains("持续上涨")
-        );
+        let found = growing(d.path(), &["u".to_string()], base + 8 * hour);
+        let said = &found.first().expect("growth").1;
+        assert!(said.zh.contains("持续上涨"), "{}", said.zh);
+        assert!(said.en.contains("keeps rising"), "{}", said.en);
         let d = tempfile::tempdir().expect("dir");
         let mut restarted = leak.clone();
         restarted[7] = unit_line(base + 7 * hour, 0, 0, false);
