@@ -4,8 +4,13 @@
     OQ_DECK_SCREENSHOT_PASSWORD=… scripts/screenshots.py \\
         --url http://127.0.0.1:8899 --redact ../private/screenshot-redact.json
 
-Signs in, visits each screen in SCREENS, and writes docs/screenshots/<name>.png
-at 1440x900. Rerun it after a UI change and commit the pictures that moved.
+Signs in, visits each screen in SCREENS, and writes
+docs/screenshots/<lang>/<name>.png at 1440x900. Rerun it after a UI change and
+commit the pictures that moved.
+
+The pictures are taken in the language of the README they illustrate, so each
+README shows a console reading in its own — run it twice, once per language,
+and the two sets are kept apart rather than one standing in for both.
 
 Pictures of a real deployment would carry its names — the strategy, the host,
 the order prefix, a key's fingerprint. `--redact` names a JSON file of
@@ -49,15 +54,21 @@ SCREENS = [
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "screenshots"
 
+# The locale name kept in `oq-deck-lang`, and the directory its pictures go in.
+LANGS = {"zh-CN": "zh", "en": "en"}
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://127.0.0.1:8899", help="the deck, as the browser reaches it")
     ap.add_argument("--redact", type=Path, help="JSON file: {\"replace\": [[pattern, replacement], …]}")
-    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--out", type=Path, help="where the pictures go; defaults to docs/screenshots/<lang>")
     ap.add_argument("--only", nargs="*", help="take only these screens, by name")
     ap.add_argument("--theme", choices=["light", "dark"], default="light")
+    ap.add_argument("--lang", choices=sorted(LANGS), default="zh-CN", help="the language the console is read in")
     args = ap.parse_args()
+    if args.out is None:
+        args.out = OUT / args.lang
 
     password = os.environ.get("OQ_DECK_SCREENSHOT_PASSWORD")
     if not password:
@@ -105,8 +116,13 @@ def main() -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
-        # The theme the pictures are taken in; light is the console's default.
-        page.add_init_script(f"try {{ localStorage.setItem('oq-deck-theme', '{args.theme}') }} catch (e) {{}}")
+        # The theme and the language the pictures are taken in; light is the
+        # console's default, and the language is stored before the first
+        # render so the page and its requests are both in it from the start.
+        page.add_init_script(
+            f"try {{ localStorage.setItem('oq-deck-theme', '{args.theme}');"
+            f" localStorage.setItem('oq-deck-lang', '{LANGS[args.lang]}'); }} catch (e) {{}}"
+        )
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         if rules:

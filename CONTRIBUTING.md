@@ -41,6 +41,12 @@ the request's `Accept-Language`, and the agent sends `message` with
 `message_en` beside it. Data — log lines, journal fields, a venue's own
 error text — is shown as it is.
 
+The READMEs' pictures follow the same split: each README shows the
+console reading in its own language, so `scripts/screenshots.py` is run
+once per `--lang` and the sets live apart under `docs/screenshots/<lang>/`.
+One set standing in for both is how the English README came to show
+Chinese screens.
+
 ## The invariants
 
 `AGENTS.md` lists ten rules that hold regardless of what the tests say.
