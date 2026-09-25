@@ -7,8 +7,9 @@ import ReactEChartsCore from "echarts-for-react/lib/core";
 import { useMemo, useState } from "react";
 
 import { api, type Horizon, type MarkoutComparison } from "@/api/client";
-
-import { Failure } from "./Runs";
+import { ErrorState, Skeleton, Term } from "@/components/States";
+import { SERIES } from "@/ui/charts";
+import { Card, Table, cx } from "@/ui/kit";
 
 // Only what this chart draws. The full build is a megabyte, most of it
 // chart types nobody here uses.
@@ -39,40 +40,59 @@ export function MarkoutPanel({ baseline, candidate }: { baseline: string; candid
     enabled: available && ticks !== "" && baseline !== "" && candidate !== "",
   });
 
+  const title = (
+    <>
+      成交后价格走势（<Term name="markout">markout</Term>）
+    </>
+  );
+
   if (caps && !available) {
     return (
-      <section className="mt-8 text-sm">
-        <h2 className="mb-2 text-ink">成交后价格走势（markout）</h2>
-        <p className="text-ink-muted">{caps.markout.reason}</p>
-      </section>
+      <Card title={title}>
+        <p className="text-sm text-ink-muted">{caps.markout.reason}</p>
+      </Card>
     );
   }
 
   return (
-    <section className="mt-8 text-sm">
-      <h2 className="mb-2 text-ink">成交后价格走势（markout）</h2>
-      <p className="mb-3 text-ink-muted">
-        每笔成交之后价格朝有利方向走了多少个基点。实盘比回测更负，说明回测没模拟到的逆向选择。
-      </p>
-      <label className="mb-4 flex items-center gap-2">
-        <span className="text-ink-muted">定价用的 tick 文件</span>
-        <select
-          value={ticks}
-          onChange={(event) => setTicks(event.target.value)}
-          className="rounded border border-line bg-ground px-2 py-1 font-mono text-sm text-ink"
-        >
-          <option value="">—</option>
-          {(files ?? []).map((id) => (
-            <option key={id} value={id}>
-              {id}
-            </option>
-          ))}
-        </select>
-      </label>
-      {error && <Failure error={error} />}
-      {isFetching && <p className="text-ink-muted">计算中…</p>}
+    <Card
+      title={title}
+      extra={
+        <label className="flex items-center gap-2">
+          <span>定价用的 tick 文件</span>
+          <select
+            value={ticks}
+            onChange={(event) => setTicks(event.target.value)}
+            className="h-7 rounded-md border border-line-strong bg-surface-raised px-2 font-mono text-xs text-ink"
+          >
+            <option value="">—</option>
+            {(files ?? []).map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </label>
+      }
+    >
+      <p className="text-sm text-ink-muted">每笔成交之后价格朝有利方向走了多少个基点。实盘比回测更负，说明回测没模拟到的逆向选择。</p>
+      {!ticks && (
+        <p className="mt-3 text-sm text-ink-faint">
+          先在右上角选一份 tick 文件：run 只记下了它成交了什么，没有记下当时的行情；拿另一天的行情去定价，比较的是空气。
+        </p>
+      )}
+      {error ? (
+        <div className="mt-4">
+          <ErrorState error={error} what="markout" />
+        </div>
+      ) : null}
+      {isFetching && !data && (
+        <div className="mt-4">
+          <Skeleton rows={4} />
+        </div>
+      )}
       {data && <MarkoutResult data={data} />}
-    </section>
+    </Card>
   );
 }
 
@@ -102,21 +122,27 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
         const low = api.coord([x, api.value(1)]);
         const high = api.coord([x, api.value(2)]);
         const width = api.size([1, 0])[0] * 0.2;
-        const cx = low[0] + offset * width;
+        const mid = low[0] + offset * width;
         return {
           type: "line",
-          shape: { x1: cx, y1: low[1], x2: cx, y2: high[1] },
+          shape: { x1: mid, y1: low[1], x2: mid, y2: high[1] },
           style: { stroke: token("ink-muted"), lineWidth: 1 },
         };
       },
       data: horizons.flatMap((h, i) =>
-        h.measured ? [[i, h.p10_bps ?? 0, h.p90_bps ?? 0]] : [],
+        h.measured && h.p10_bps !== null && h.p90_bps !== null ? [[i, h.p10_bps, h.p90_bps]] : [],
       ),
     });
     return {
       backgroundColor: "transparent",
       textStyle: { color: token("ink-muted") },
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: token("surface-raised"),
+        borderColor: token("line-strong"),
+        textStyle: { color: token("ink"), fontSize: 12 },
+      },
+      grid: { left: 8, right: 12, top: 36, bottom: 8, containLabel: true },
       legend: { textStyle: { color: token("ink-muted") } },
       xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: token("line") } } },
       yAxis: {
@@ -125,8 +151,9 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
         splitLine: { lineStyle: { color: token("line") } },
       },
       series: [
-        series(`基准 ${data.baseline.id}`, data.baseline.horizons, token("accent")),
-        series(`待测 ${data.candidate.id}`, data.candidate.horizons, token("warn")),
+        // Series colours, not state colours: amber would read as a warning.
+        series(`基准 ${data.baseline.id}`, data.baseline.horizons, SERIES[0]),
+        series(`待测 ${data.candidate.id}`, data.candidate.horizons, SERIES[1]),
         band(data.baseline.horizons, -1),
         band(data.candidate.horizons, 1),
       ],
@@ -134,40 +161,41 @@ function MarkoutResult({ data }: { data: MarkoutComparison }) {
   }, [data]);
 
   return (
-    <>
+    <div className="mt-4 space-y-4">
       <ReactEChartsCore echarts={echarts} option={option} style={{ height: 280 }} notMerge />
-      <table className="mt-4 w-full font-mono text-xs">
-        <thead className="text-ink-muted">
-          <tr>
-            <th className="text-left">期限</th>
-            <th className="text-right">基准 均值 / 不利占比 / 笔数</th>
-            <th className="text-right">待测 均值 / 不利占比 / 笔数</th>
-            <th className="text-right">差（待测 − 基准）</th>
+      <Table
+        dense
+        head={[
+          "期限",
+          <span key="b" className="block text-right">基准 均值 / 不利占比 / 笔数</span>,
+          <span key="c" className="block text-right">待测 均值 / 不利占比 / 笔数</span>,
+          <span key="d" className="block text-right">差（待测 − 基准）</span>,
+        ]}
+      >
+        {data.contrast.map((c, i) => (
+          <tr key={c.seconds}>
+            <td className="font-mono text-xs">{c.seconds}s</td>
+            <td className={cx("text-right font-mono text-xs", !data.baseline.horizons[i]?.measured && "text-warn")}>{describe(data.baseline.horizons[i])}</td>
+            <td className={cx("text-right font-mono text-xs", !data.candidate.horizons[i]?.measured && "text-warn")}>{describe(data.candidate.horizons[i])}</td>
+            {/* One side too thin to measure is "cannot tell", never a 0 bp difference. */}
+            <td className={cx("text-right font-mono text-xs", c.difference_bps === null ? "text-warn" : "text-ink")}>
+              {c.difference_bps === null ? "无法判断：一侧样本不足" : `${c.difference_bps >= 0 ? "+" : ""}${c.difference_bps.toFixed(2)} bp`}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {data.contrast.map((c, i) => (
-            <tr key={c.seconds}>
-              <td>{c.seconds}s</td>
-              <td className="text-right">{describe(data.baseline.horizons[i])}</td>
-              <td className="text-right">{describe(data.candidate.horizons[i])}</td>
-              <td className="text-right">
-                {c.difference_bps === null
-                  ? "无法判断：一侧样本不足"
-                  : `${c.difference_bps >= 0 ? "+" : ""}${c.difference_bps.toFixed(2)} bp`}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-ink-muted">价格来自 {data.ticks}；竖线为 10%–90% 分位。</p>
-    </>
+        ))}
+      </Table>
+      <p className="text-xs text-ink-faint">
+        价格来自 <span className="font-mono">{data.ticks}</span>；竖线为 10%–90% 分位；样本不足的期限不画柱，而不是画成 0。
+      </p>
+    </div>
   );
 }
 
 function describe(h: Horizon | undefined): string {
   if (!h) return "—";
   if (!h.measured) return `样本不足（${h.samples} 笔）`;
-  const mean = h.mean_bps ?? 0;
-  return `${mean >= 0 ? "+" : ""}${mean.toFixed(2)} bp / ${((h.adverse_share ?? 0) * 100).toFixed(0)}% / ${h.samples}`;
+  // A statistic the server did not send is unknown, not zero.
+  const mean = h.mean_bps === null ? "—" : `${h.mean_bps >= 0 ? "+" : ""}${h.mean_bps.toFixed(2)} bp`;
+  const adverse = h.adverse_share === null ? "—" : `${(h.adverse_share * 100).toFixed(0)}%`;
+  return `${mean} / ${adverse} / ${h.samples}`;
 }

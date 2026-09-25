@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { LineChart } from "echarts/charts";
 import { DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
@@ -6,6 +6,9 @@ import { CanvasRenderer } from "echarts/renderers";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 
 echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
+
+/** The instance type echarts-for-react hands to `onChartReady`. */
+type ChartInstance = Parameters<NonNullable<React.ComponentProps<typeof ReactEChartsCore>["onChartReady"]>>[0];
 
 /** Series colours, in order. Distinct from the state colours on purpose. */
 export const SERIES = ["#5b9bff", "#a78bfa", "#2dd4bf", "#f472b6", "#fbbf24", "#94a3b8"];
@@ -95,19 +98,29 @@ export function TimeSeries({
     };
   }, [series, from, to, marks, bands, unit, zoom, decimals]);
 
+  // A click anywhere in the plot picks the time under it, not only a
+  // click that lands on a data point: the moment wanted is often between
+  // samples or where a line has a gap.
+  const pick = useRef(onPick);
+  useEffect(() => {
+    pick.current = onPick;
+  }, [onPick]);
+  const onReady = (chart: ChartInstance) => {
+    chart.getZr().on("click", (e: { offsetX: number; offsetY: number }) => {
+      const at: [number, number] = [e.offsetX, e.offsetY];
+      if (!pick.current || !chart.containPixel("grid", at)) return;
+      const [ms] = chart.convertFromPixel({ gridIndex: 0 }, at) as number[];
+      if (Number.isFinite(ms)) pick.current(Math.round(ms));
+    });
+  };
+
   return (
     <ReactEChartsCore
       echarts={echarts}
       option={option}
       notMerge
       style={{ height, cursor: onPick ? "crosshair" : undefined }}
-      onEvents={
-        onPick
-          ? {
-              click: (p: { value?: [number, number] }) => p.value && onPick(p.value[0]),
-            }
-          : undefined
-      }
+      onChartReady={onPick ? onReady : undefined}
     />
   );
 }

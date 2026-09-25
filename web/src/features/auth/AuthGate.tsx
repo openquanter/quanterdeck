@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useLocation } from "react-router-dom";
+import { LockKeyhole } from "lucide-react";
 
 import { UNAUTHENTICATED, api } from "@/api/client";
 
@@ -37,17 +38,26 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     <>
       {children}
       {expired && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ground/80 p-6">
-          <div className="w-full max-w-sm rounded border border-line bg-surface p-6">
-            <h2 className="mb-1 font-mono text-sm text-ink">会话已结束</h2>
-            <p className="mb-4 text-xs text-ink-muted">重新登录后回到这一页，内容不会丢。</p>
-            <LoginForm
-              totpRequired={session.totp_required}
-              onDone={() => {
-                setExpired(false);
-                void queryClient.invalidateQueries();
-              }}
-            />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-line-strong bg-surface shadow-2xl">
+            <div className="flex gap-3 border-b border-line px-5 py-4">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warn/15 text-warn">
+                <LockKeyhole className="h-4.5 w-4.5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-ink">会话已结束</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">重新登录后回到这一页，内容不会丢。</p>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <LoginForm
+                totpRequired={session.totp_required}
+                onDone={() => {
+                  setExpired(false);
+                  void queryClient.invalidateQueries();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

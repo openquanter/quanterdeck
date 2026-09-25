@@ -95,6 +95,7 @@ fn main() {
             std::process::exit(3);
         }
     };
+    let last_deploy = deploy::Progress::load(&cfg.state_dir);
     let state = Arc::new(State {
         strategies: Mutex::new(strategies),
         cfg,
@@ -102,7 +103,7 @@ fn main() {
         step_up: Mutex::new(step_up),
         audit: Mutex::new(audit),
         raised,
-        progress: Arc::new(Mutex::new(deploy::Progress::default())),
+        progress: Arc::new(Mutex::new(last_deploy)),
         notify,
     });
 

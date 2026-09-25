@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 
 import { api, type CapabilityName } from "@/api/client";
+import { Skeleton } from "@/components/States";
 import { Badge, StatusDot, cx } from "@/ui/kit";
 
 type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; capability: CapabilityName | null };
@@ -136,7 +137,9 @@ export function Shell() {
         <TopBar title={current?.label ?? ""} ops={caps?.ops?.available === true} writable={caps?.writes.available === true} />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1440px] px-6 py-6">
-            <Outlet />
+            <Suspense fallback={<Skeleton tiles={4} rows={6} />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>

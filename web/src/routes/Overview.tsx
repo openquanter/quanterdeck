@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { Suspense, lazy, useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Bell, CheckCircle2, Clock, Cpu, Radio } from "lucide-react";
@@ -6,8 +6,11 @@ import { AlertTriangle, ArrowRight, Bell, CheckCircle2, Clock, Cpu, Radio } from
 import { api, type TraderStatus } from "@/api/client";
 import { ErrorState } from "@/components/States";
 import { KIND_NAMES, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
-import { TimeSeries } from "@/ui/charts";
 import { Ago, Badge, Card, Freshness, Money, PageHeader, Stat, StatusDot, cx, fmtDuration, type Tone } from "@/ui/kit";
+
+// The chart library is most of the bundle; the overview's numbers should
+// not wait for it.
+const TimeSeries = lazy(() => import("@/ui/charts").then((m) => ({ default: m.TimeSeries })));
 
 /**
  * The first screen answers one question — is everything all right — and
@@ -352,6 +355,7 @@ function Resources() {
       ) : !w ? (
         <div className="h-[180px] animate-pulse rounded bg-surface-raised" />
       ) : (
+        <Suspense fallback={<div className="h-[190px] animate-pulse rounded bg-surface-raised" />}>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <div className="mb-1 text-xs text-ink-muted">各服务内存（MiB）</div>
@@ -371,6 +375,7 @@ function Resources() {
             <TimeSeries height={170} from={start} to={to} series={[{ name: "负载", area: true, points: w.host.map((h) => [h.at, h.host.load?.[0] ?? null]) }]} />
           </div>
         </div>
+        </Suspense>
       )}
     </Card>
   );

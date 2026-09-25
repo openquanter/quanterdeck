@@ -190,6 +190,8 @@ export interface UnitState {
   Result?: string;
   NRestarts?: string;
   ExecMainStartTimestamp?: string;
+  /** When the unit's main process started, from systemd's unix timestamp. */
+  started_ms?: number;
   ExecMainPID?: string;
   ExecMainStatus?: string;
   UnitFileState?: string;

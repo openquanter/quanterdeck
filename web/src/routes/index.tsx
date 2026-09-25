@@ -1,3 +1,4 @@
+import { lazy, type ComponentType } from "react";
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { Shell } from "@/components/Shell";
@@ -5,21 +6,17 @@ import { AuthGate } from "@/features/auth/AuthGate";
 import { Login } from "@/features/auth/Login";
 import { Setup } from "@/features/auth/Setup";
 
-import { Accounts, Alerts } from "./Watch";
-import { Blackbox } from "./Blackbox";
-import { Compare } from "./Compare";
-import { Config } from "./Config";
-import { Journal } from "./Journal";
-import { Ops } from "./Ops";
-import { OpsAudit, OpsDeploy, OpsLogs } from "./OpsPages";
 import { Overview } from "./Overview";
-import { Reconcile } from "./Reconcile";
-import { RunDetail } from "./RunDetail";
-import { Runs } from "./Runs";
-import { Settings } from "./Settings";
-import { Strategies } from "./Strategies";
-import { Sweeps } from "./Sweeps";
-import { Trading } from "./Trading";
+
+/**
+ * Each screen is its own chunk, loaded when first visited: the overview
+ * opens without first downloading the chart library every research
+ * screen needs.
+ */
+function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  const Lazy = lazy<ComponentType>(() => load().then((m) => ({ default: m[name] as ComponentType })));
+  return <Lazy />;
+}
 
 /**
  * Every screen in the plan, one entry each. The navigation is drawn from
@@ -39,27 +36,27 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Overview /> },
       // 交易
-      { path: "live", element: <Trading /> },
-      { path: "reconcile", element: <Reconcile /> },
+      { path: "live", element: page(() => import("./Trading"), "Trading") },
+      { path: "reconcile", element: page(() => import("./Reconcile"), "Reconcile") },
       // 诊断
-      { path: "alerts", element: <Alerts /> },
-      { path: "blackbox", element: <Blackbox /> },
-      { path: "logs", element: <OpsLogs /> },
-      { path: "journal", element: <Journal /> },
+      { path: "alerts", element: page(() => import("./Alerts"), "Alerts") },
+      { path: "blackbox", element: page(() => import("./Blackbox"), "Blackbox") },
+      { path: "logs", element: page(() => import("./Logs"), "Logs") },
+      { path: "journal", element: page(() => import("./Journal"), "Journal") },
       // 变更
-      { path: "strategies", element: <Strategies /> },
-      { path: "config", element: <Config /> },
-      { path: "deploy", element: <OpsDeploy /> },
+      { path: "strategies", element: page(() => import("./Strategies"), "Strategies") },
+      { path: "config", element: page(() => import("./Config"), "Config") },
+      { path: "deploy", element: page(() => import("./Deploy"), "Deploy") },
       // 研究
-      { path: "runs", element: <Runs /> },
-      { path: "runs/compare", element: <Compare /> },
-      { path: "runs/:id", element: <RunDetail /> },
-      { path: "sweeps", element: <Sweeps /> },
+      { path: "runs", element: page(() => import("./Runs"), "Runs") },
+      { path: "runs/compare", element: page(() => import("./Compare"), "Compare") },
+      { path: "runs/:id", element: page(() => import("./RunDetail"), "RunDetail") },
+      { path: "sweeps", element: page(() => import("./Sweeps"), "Sweeps") },
       // 系统
-      { path: "host", element: <Ops /> },
-      { path: "accounts", element: <Accounts /> },
-      { path: "audit", element: <OpsAudit /> },
-      { path: "settings", element: <Settings /> },
+      { path: "host", element: page(() => import("./Host"), "Host") },
+      { path: "accounts", element: page(() => import("./Accounts"), "Accounts") },
+      { path: "audit", element: page(() => import("./Audit"), "Audit") },
+      { path: "settings", element: page(() => import("./Settings"), "Settings") },
       // Where things were before docs/UI-V4, so bookmarks still land.
       { path: "ops", element: <Navigate to="/host" replace /> },
       { path: "ops/orders", element: <Navigate to="/live?tab=positions" replace /> },

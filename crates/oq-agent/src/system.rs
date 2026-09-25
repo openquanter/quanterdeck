@@ -21,7 +21,14 @@ pub fn unit_state(unit: &str) -> Value {
 #[must_use]
 pub fn unit_state_with(unit: &str, properties: &str) -> Value {
     let out = Command::new("systemctl")
-        .args(["show", unit, &format!("--property={properties}")])
+        // Unix timestamps: the local rendering ("Fri … CST") names a zone
+        // abbreviation a reader elsewhere cannot resolve.
+        .args([
+            "show",
+            unit,
+            "--timestamp=unix",
+            &format!("--property={properties}"),
+        ])
         .output();
     let mut obj = serde_json::Map::new();
     obj.insert("unit".into(), json!(unit));
@@ -31,6 +38,15 @@ pub fn unit_state_with(unit: &str, properties: &str) -> Value {
                 if let Some((k, v)) = line.split_once('=') {
                     obj.insert(k.to_string(), json!(v));
                 }
+            }
+            // "@1790…" seconds, as milliseconds a page can use directly.
+            if let Some(ms) = obj
+                .get("ExecMainStartTimestamp")
+                .and_then(Value::as_str)
+                .and_then(|v| v.strip_prefix('@'))
+                .and_then(|v| v.parse::<i64>().ok())
+            {
+                obj.insert("started_ms".into(), json!(ms * 1000));
             }
         }
         Ok(o) => {

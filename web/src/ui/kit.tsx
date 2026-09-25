@@ -396,7 +396,8 @@ export function fmtBytes(b: number | null | undefined): string {
   if (b == null) return "—";
   if (b >= 2 ** 30) return `${(b / 2 ** 30).toFixed(1)} GiB`;
   if (b >= 2 ** 20) return `${(b / 2 ** 20).toFixed(1)} MiB`;
-  return `${(b / 2 ** 10).toFixed(0)} KiB`;
+  if (b >= 2 ** 10) return `${(b / 2 ** 10).toFixed(1)} KiB`;
+  return `${b} B`;
 }
 
 /** A signed money amount, coloured by sign only when asked. */
