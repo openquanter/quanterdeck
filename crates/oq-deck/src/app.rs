@@ -991,18 +991,21 @@ fn actor_of(
     peer: Option<&axum::Extension<ConnectInfo<SocketAddr>>>,
     headers: &HeaderMap,
 ) -> String {
-    // Behind the proxy the socket peer is the proxy; the address it
-    // forwards is the person's.
+    // Behind the proxy the socket peer is the proxy, so the address it
+    // forwards is the only one there is — and a header is something the
+    // caller wrote, not something this deck observed. It goes in marked
+    // as a claim: the trail is read months later as evidence of who did
+    // what, and an unmarked claim reads as a fact.
     let forwarded = headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(',').next())
         .map(str::trim)
         .filter(|v| !v.is_empty());
-    format!(
-        "deck:operator@{}",
-        forwarded.map_or_else(|| source_of(peer), str::to_owned)
-    )
+    match forwarded {
+        Some(claimed) => format!("deck:operator@forwarded({claimed})"),
+        None => format!("deck:operator@{}", source_of(peer)),
+    }
 }
 
 macro_rules! ops_read {

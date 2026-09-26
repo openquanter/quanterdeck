@@ -184,6 +184,14 @@ fn a_symbolic_link_is_not_resolved() {
     assert!(runs::resolve(&dir, "escape").is_none());
     assert!(runs::resolve(&dir, "plain").is_some());
 
+    // And the listing agrees with the resolver. It did not: `is_file`
+    // follows a link, so `escape` was offered on the page and then
+    // refused when it was opened — and the page is the half that was
+    // reached by anyone.
+    let listed = format!("{:?}", runs::list(&dir).expect("the directory reads"));
+    assert!(listed.contains("plain"), "{listed}");
+    assert!(!listed.contains("escape"), "{listed}");
+
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_file(&outside).ok();
 }

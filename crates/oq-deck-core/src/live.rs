@@ -112,8 +112,8 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
 
     let mut paths: Vec<PathBuf> = entries
         .filter_map(Result::ok)
+        .filter(|e| crate::regular_with(e, "oqj"))
         .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "oqj"))
         .collect();
     paths.sort();
 
