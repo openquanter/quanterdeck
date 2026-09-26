@@ -97,21 +97,30 @@ fn main() {
     // truncation — which is most of what happens.
     if let Some(d) = discord.as_ref() {
         match d.recent(50) {
-            Ok(bodies) => {
-                if let Some((seq, short)) = audit::anchored_in(&bodies)
-                    && let Some(why) = audit.anchor_mismatch(seq, &short)
-                {
-                    eprintln!(
-                        "oq-agent: the audit trail disagrees with the copy off this host: {}",
-                        why.zh
-                    );
-                    let _ = notify.send(notify::Message {
-                        title: "审计链与告警频道不一致".to_string(),
-                        body: why.zh.clone(),
-                        color: notify::RED,
-                    });
-                }
-            }
+            Ok(bodies) => match audit::anchored_in(&bodies) {
+                Some((seq, short)) => match audit.anchor_mismatch(seq, &short) {
+                    None => println!("oq-agent: audit entry {seq} {short} matches the channel"),
+                    Some(why) => {
+                        eprintln!(
+                            "oq-agent: the audit trail disagrees with the copy off this host: {}",
+                            why.zh
+                        );
+                        let _ = notify.send(notify::Message {
+                            title: "审计链与告警频道不一致".to_string(),
+                            body: why.zh.clone(),
+                            color: notify::RED,
+                        });
+                    }
+                },
+                // Said out loud rather than passed over: a check that
+                // found nothing to compare against and a check that
+                // agreed are not the same answer, and silence reads as
+                // the second.
+                None => println!(
+                    "oq-agent: nothing in the channel's last 50 messages names an audit entry; \
+                     the trail was not checked against anything"
+                ),
+            },
             Err(e) => eprintln!("oq-agent: the alert channel could not be read back: {e}"),
         }
     }
