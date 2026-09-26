@@ -509,6 +509,8 @@ export interface LiveReconciliation {
     venue: { symbol: string; read_at_ms: number; legs: [string, number, number][]; orders: string[] };
     differences: string[];
     verdict: "agree" | "disagree" | "cannot_tell";
+    /** Which fact stopped a verdict, when one did. */
+    cannot_tell?: "undecodable" | "no_adoption" | "reading_predates_the_run" | null;
     undecodable: number;
     hedged: boolean;
   };

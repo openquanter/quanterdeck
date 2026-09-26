@@ -193,6 +193,8 @@ pub struct Reconciliation {
     pub differences: Vec<String>,
     /// Whether the two can be said to agree, disagree, or neither.
     pub verdict: Verdict,
+    /// Which fact stopped a verdict, when one did.
+    pub cannot_tell: Option<CannotTell>,
     /// True only when `verdict` is `Agree`. Kept for readers of the old
     /// field; it no longer reads "no differences found" as agreement.
     pub agrees: bool,
@@ -211,11 +213,29 @@ pub enum Verdict {
     Agree,
     /// Something differs.
     Disagree,
-    /// Nothing differs, but the belief has holes — undecodable frames, or
-    /// no record of the position the process took over — so "no
-    /// difference" may be luck. Not agreement; `agrees` was true here, and
-    /// it is the case this console exists to not render as agreement.
+    /// The two are not comparable. `agrees` was true here once, and it is
+    /// the case this console exists to not render as agreement.
     CannotTell,
+}
+
+/// Which fact stopped a verdict, when one did.
+///
+/// A fact about the inputs rather than a sentence: the console says it
+/// in the reader's language, and says something different for each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CannotTell {
+    /// Frames in the journal did not decode, so a belief rebuilt from it
+    /// may agree by luck.
+    Undecodable,
+    /// No adoption record: a flat reconstruction means *flat* or means *a
+    /// position nobody wrote down*, and the file does not separate them.
+    NoAdoption,
+    /// The reading was taken before this run began, so it describes the
+    /// run before it. Every order the two have apart would be a
+    /// difference in both directions, and none of them would mean
+    /// anything.
+    ReadingPredatesTheRun,
 }
 
 /// Compare a process's belief against a venue record.
@@ -237,12 +257,34 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
     let believed = belief.to_record(venue.read_at_ms);
     let differences = believed.differences(&venue);
 
-    let verdict = if !differences.is_empty() {
+    // The belief is the journal's *final* state with a time stamped on it
+    // — `to_record` does not rewind — so a reading taken before this run
+    // began is a reading of the run before it. Every order the two have
+    // apart then reads as a difference in both directions: a ladder of
+    // thirteen is twenty-six disagreements, and every one of them is
+    // about which run the reader is looking at.
+    //
+    // The reading is rewritten about once a minute, so this is what a
+    // restart looks like until it catches up — and a restart must not
+    // look like a regression.
+    let reading_predates_the_run = belief
+        .adopted_at
+        .is_some_and(|at| venue.read_at_ms.saturating_mul(1_000_000) < at);
+
+    let verdict = if reading_predates_the_run {
+        Verdict::CannotTell
+    } else if !differences.is_empty() {
         Verdict::Disagree
     } else if belief.undecodable > 0 || !belief.adopted {
         Verdict::CannotTell
     } else {
         Verdict::Agree
+    };
+    let cannot_tell = match verdict {
+        Verdict::CannotTell if reading_predates_the_run => Some(CannotTell::ReadingPredatesTheRun),
+        Verdict::CannotTell if belief.undecodable > 0 => Some(CannotTell::Undecodable),
+        Verdict::CannotTell => Some(CannotTell::NoAdoption),
+        Verdict::Agree | Verdict::Disagree => None,
     };
 
     Ok(Reconciliation {
@@ -251,6 +293,7 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
         venue: RecordView::from(&venue),
         agrees: verdict == Verdict::Agree,
         verdict,
+        cannot_tell,
         differences,
         undecodable: belief.undecodable,
         hedged: belief.hedged,

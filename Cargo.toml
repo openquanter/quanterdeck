@@ -15,14 +15,14 @@ oq-deck-core = { path = "crates/oq-deck-core" }
 # The framework, pinned to a commit rather than floated. A console that
 # reads a run file has to agree with the writer about what a run file is,
 # and "whatever main was that morning" is not an agreement.
-oq-parity = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-data = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-engine = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-types = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-live = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-gateway = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-journal = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
-oq-backtest = { git = "https://github.com/openquanter/openquanter", rev = "0f9fb0b" }
+oq-parity = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-data = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-engine = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-types = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-live = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-gateway = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-journal = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
+oq-backtest = { git = "https://github.com/openquanter/openquanter", rev = "9e627e8" }
 
 argon2 = "0.5"
 axum = "0.8"

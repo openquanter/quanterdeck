@@ -169,6 +169,38 @@ function Reconciliation({ entry, newest }: { entry: JournalEntry; newest: boolea
   );
 }
 
+/**
+ * Why the two could not be compared.
+ *
+ * The core hands back which fact stopped it rather than a sentence, so
+ * the sentence is worded here, once, in both languages — and a case
+ * added there cannot arrive as a blank.
+ */
+function cannotTell(why: LiveReconciliation["reconciliation"]["cannot_tell"]) {
+  switch (why) {
+    case "undecodable":
+      return tr(
+        "journal 里有解不开的帧，重建出来的账可能只是碰巧对上。",
+        "Frames in the journal did not decode, so what was rebuilt may agree by luck.",
+      );
+    case "no_adoption":
+      return tr(
+        "journal 里没有接管记录：读出来是空仓，既可能是真空仓，也可能是持着没人写下来的仓位。",
+        "No adoption record: a flat reconstruction means flat, or means a position nobody wrote down.",
+      );
+    case "reading_predates_the_run":
+      return tr(
+        "这份交易所读数是本轮启动之前取的，它描述的是上一轮——两轮的挂单号不同，逐条比下去每一条都会「不一致」。读数每分钟重写一次，等它追上即可。",
+        "This venue reading was taken before the current run started, so it describes the run before it. The two runs' orders differ, and comparing them line by line reports every one of them as a difference. The reading is rewritten about once a minute; wait for it to catch up.",
+      );
+    default:
+      return tr(
+        "没有差异，但 journal 不完整，不能算一致。",
+        "No differences, but the journal is incomplete, so this does not count as agreement.",
+      );
+  }
+}
+
 function Verdict({ r, ageMs, source }: { r: LiveReconciliation["reconciliation"]; ageMs: number; source: string }) {
   const v = r.verdict;
   const stale = ageMs > 5 * 60_000;
@@ -192,12 +224,7 @@ function Verdict({ r, ageMs, source }: { r: LiveReconciliation["reconciliation"]
         <span className="text-xs text-ink-faint">{tr(`来源：${source}`, `Source: ${source}`)}</span>
       </div>
       {v === "cannot_tell" && (
-        <p className="mt-2 text-sm text-ink-muted">
-          {tr(
-            "没有差异，但 journal 不完整（有解不开的帧，或没有接管记录），不能算一致。",
-            "No differences, but the journal is incomplete (undecodable frames, or no adoption record), so this does not count as agreement.",
-          )}
-        </p>
+        <p className="mt-2 text-sm text-ink-muted">{cannotTell(r.cannot_tell)}</p>
       )}
       {stale && (
         <p className="mt-2 text-sm text-warn">
