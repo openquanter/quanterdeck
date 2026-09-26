@@ -71,8 +71,13 @@ impl Hosts {
 /// `http` otherwise. Compared by authority alone, `ftp://…`, a bare
 /// `127.0.0.1:8899` and — behind TLS — a plain `http://` page on the same
 /// name all passed as this console's own.
-pub fn origin_permitted(origin: Option<&str>, hosts: &Hosts, https: bool) -> bool {
-    let Some(origin) = origin else {
+pub fn origin_permitted(
+    origin: Option<&str>,
+    host: Option<&str>,
+    hosts: &Hosts,
+    https: bool,
+) -> bool {
+    let (Some(origin), Some(host)) = (origin, host) else {
         return false;
     };
     let Some((scheme, rest)) = origin.split_once("://") else {
@@ -82,7 +87,12 @@ pub fn origin_permitted(origin: Option<&str>, hosts: &Hosts, https: bool) -> boo
     if !scheme.eq_ignore_ascii_case(expected) {
         return false;
     }
-    // Compare authority to authority: `http://127.0.0.1:8899` against
-    // the same `127.0.0.1:8899` the Host check uses.
-    hosts.permits(Some(rest.trim_end_matches('/')))
+    // The authority this request was addressed to, not merely one this
+    // deck answers to. The allow-list holds names without a port beside
+    // the names with one — `localhost` next to `localhost:8899`, so that
+    // a Host header may name the machine — and an Origin of
+    // `http://localhost` is a page on port 80: a different origin from
+    // this console's, servable by anyone else on the machine, and
+    // same-site to the browser, so the session cookie rides along.
+    rest.trim_end_matches('/').eq_ignore_ascii_case(host) && hosts.permits(Some(host))
 }

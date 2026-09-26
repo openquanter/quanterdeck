@@ -269,6 +269,46 @@ async fn behind_tls_the_cookie_becomes_secure() {
     assert!(cookies.first().expect("cookie").contains("Secure"));
 }
 
+/// The origin's authority must be the one the request was addressed
+/// to.
+///
+/// The allow-list holds names without a port beside the names with one —
+/// `localhost` next to `localhost:8899` — so that a Host header may name
+/// the machine without naming a port. An Origin of `http://localhost` is
+/// a page on port **80**: a different origin from this console's, one
+/// anybody else on the machine can serve, and same-site to the browser,
+/// so the session cookie rides along on the write.
+#[tokio::test]
+async fn an_origin_without_the_port_is_not_ours() {
+    let plain = app(configured());
+    for origin in ["http://localhost", "http://127.0.0.1"] {
+        let (status, _, _) = send(
+            &plain,
+            post(
+                "/api/v1/session/login",
+                HOST,
+                Some(origin),
+                serde_json::json!({ "password": PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{origin}");
+    }
+
+    // And the authority this request was addressed to still is its own.
+    let (status, _, _) = send(
+        &plain,
+        post(
+            "/api/v1/session/login",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "password": PASSWORD }),
+        ),
+    )
+    .await;
+    assert_ne!(status, StatusCode::FORBIDDEN, "the console's own origin");
+}
+
 /// An origin is its scheme too. Compared by authority alone, a bare
 /// authority, another scheme, and plain http behind TLS all passed.
 #[tokio::test]
