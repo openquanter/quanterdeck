@@ -53,6 +53,15 @@ pub struct Settings {
     /// signing in twice a day, so it is a named setting rather than a
     /// constant that only a rebuild could move.
     pub session_absolute: Duration,
+    /// An OpenSSH `allowed_signers` file: the keys whose signature will
+    /// enrol a browser without a password.
+    ///
+    /// The same shape the host agent trusts a release with, and for the
+    /// same reason — the private key never leaves the operator's
+    /// machine, and what this file lists is what is trusted. `None`
+    /// turns the route off, which the console reports rather than
+    /// accepting a request it cannot check.
+    pub trusted_keys: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -74,6 +83,7 @@ impl Default for Settings {
             device_lifetime: Duration::from_secs(90 * 24 * 3600),
             session_idle: Duration::from_secs(60 * 60),
             session_absolute: Duration::from_secs(12 * 60 * 60),
+            trusted_keys: None,
         }
     }
 }
@@ -235,6 +245,7 @@ impl Settings {
         settings.state_dir = set("OQ_DECK_STATE_DIR")
             .or_else(|| set("STATE_DIRECTORY"))
             .map(PathBuf::from);
+        settings.trusted_keys = set("OQ_DECK_TRUSTED_KEYS").map(PathBuf::from);
         settings.behind_tls = std::env::var("OQ_DECK_BEHIND_TLS").as_deref() == Ok("1");
         settings.allow_writes = std::env::var("OQ_DECK_ALLOW_WRITES").as_deref() == Ok("1");
         // Both bounded, and the idle one below the absolute one: a

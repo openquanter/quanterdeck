@@ -3,6 +3,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { Shell } from "@/components/Shell";
 import { AuthGate } from "@/features/auth/AuthGate";
+import { Enrol } from "@/features/auth/Enrol";
 import { Login } from "@/features/auth/Login";
 import { Setup } from "@/features/auth/Setup";
 
@@ -25,6 +26,7 @@ function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, n
  */
 export const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
+  { path: "/enrol", element: <Enrol /> },
   { path: "/setup", element: <Setup /> },
   {
     path: "/",

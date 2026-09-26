@@ -212,6 +212,7 @@ The deck:
 | `OQ_DECK_SESSION_IDLE_MINUTES` | `60` | How long a session survives without use |
 | `OQ_DECK_SESSION_HOURS` | `12` | How long a session survives at all |
 | `OQ_DECK_DEVICE_DAYS` | `90` | How long an enrolled browser is trusted |
+| `OQ_DECK_TRUSTED_KEYS` | An `allowed_signers` file: the keys `scripts/deck-enrol.sh` may enrol a browser with, on a machine that has no password yet. Unset means no key can |
 | `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
 
 The agent (`oq-agent`), whose defaults fit a host laid out as the

@@ -46,6 +46,11 @@ pub struct Deck {
     /// no state directory to keep them in, which is a capability the
     /// console reports rather than one it silently lacks.
     pub devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
+    /// Challenges handed out to someone proving a key, and the claim
+    /// codes that come back from one. In memory, and deliberately: a
+    /// challenge that outlived a restart would be a credential that
+    /// outlived the process that minted it.
+    pub enrolments: Arc<crate::enrol::Enrolments>,
 }
 
 impl Deck {
@@ -163,6 +168,21 @@ fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
             "This write's Origin is not this deck; cross-site writes are refused.",
         ),
     ))
+}
+
+/// The `Origin` check, for the routes a command line calls.
+///
+/// A browser sends `Origin` on every POST it makes, so its absence means
+/// the caller is not one — and these two routes hand a caller nothing it
+/// can spend: no cookie is read, and what comes back is a challenge it
+/// would still have to sign with a key the operator holds. A caller that
+/// *is* a page gets the same check as everywhere else, so a page cannot
+/// quietly drive an enrolment either.
+fn check_origin_if_a_browser(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
+    if headers.get(header::ORIGIN).is_none() {
+        return Ok(());
+    }
+    check_origin(deck, headers)
 }
 
 fn check_session(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
@@ -309,6 +329,10 @@ struct SessionState {
     /// Told rather than guessed: a deck with no state directory cannot,
     /// and a box that silently does nothing is worse than no box.
     devices: bool,
+    /// Whether this deck can be enrolled onto a new machine by proving
+    /// an SSH key, which is the way in when there is no password on that
+    /// machine yet. Told for the same reason as `devices`.
+    enrol: bool,
 }
 
 /// Whether the caller is logged in. Safe to call without a session.
@@ -322,6 +346,9 @@ async fn whoami(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         setup_required: !deck.settings.configured(),
         totp_required: deck.settings.totp_secret.is_some(),
         devices: deck.devices.is_some(),
+        // Whether a key can enrol this browser. Both halves have to be
+        // there: somewhere to keep the device, and keys to trust.
+        enrol: deck.devices.is_some() && deck.settings.trusted_keys.is_some(),
     })
     .into_response()
 }
@@ -415,6 +442,207 @@ fn enrol(deck: &Deck, label: &str, now_ms: i64) -> Option<String> {
         .issue(label, &token, now_ms)
         .ok()
         .map(|_| token)
+}
+
+// -- enrolling by proving a key -------------------------------------------
+
+#[derive(Serialize)]
+struct Challenge {
+    /// What to sign. A nonce, good once and briefly.
+    challenge: String,
+    /// The `-n` to sign it under, so the script and this end agree
+    /// without the operator having to be told a magic string.
+    namespace: &'static str,
+}
+
+/// Hand out something to sign.
+///
+/// Unauthenticated on purpose — this is how a machine with no session
+/// gets one — and therefore bounded: a fixed number outstanding, two
+/// minutes each, and a challenge is spent by being offered rather than
+/// by being answered correctly.
+async fn enrol_challenge(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) =
+        check_host(&deck, &headers).and_then(|()| check_origin_if_a_browser(&deck, &headers))
+    {
+        return refusal.into_response();
+    }
+    if deck.settings.trusted_keys.is_none() {
+        return Refusal::not_found(t(
+            "本 deck 未配置 OQ_DECK_TRUSTED_KEYS，不能用 SSH 密钥登记。",
+            "This deck has no OQ_DECK_TRUSTED_KEYS, so a key cannot enrol a browser.",
+        ))
+        .into_response();
+    }
+    match deck.enrolments.challenge(std::time::Instant::now()) {
+        Ok(challenge) => axum::Json(Challenge {
+            challenge,
+            namespace: crate::enrol::NAMESPACE,
+        })
+        .into_response(),
+        Err(e) => Refusal::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            t(
+                format!("无法生成挑战：{e}"),
+                format!("Could not make a challenge: {e}"),
+            ),
+        )
+        .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct Enrol {
+    challenge: String,
+    /// The armored signature `ssh-keygen -Y sign` prints.
+    signature: String,
+    /// The principal in the `allowed_signers` file. Which key it is, not
+    /// what it is allowed to do.
+    identity: String,
+    /// What the operator calls the machine, for the list they revoke
+    /// from.
+    #[serde(default)]
+    label: String,
+}
+
+#[derive(Serialize)]
+struct Claimed {
+    /// What the browser redeems. Good once, for two minutes.
+    claim: String,
+    label: String,
+}
+
+/// Check the signature, and mint the claim code that replaces it.
+///
+/// The challenge is spent whatever the verdict, so a signature cannot be
+/// tried twice against the same question.
+async fn enrol_with_key(
+    State(deck): State<Deck>,
+    peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    body: axum::Json<Enrol>,
+) -> Response {
+    if let Err(refusal) =
+        check_host(&deck, &headers).and_then(|()| check_origin_if_a_browser(&deck, &headers))
+    {
+        return refusal.into_response();
+    }
+    // This route is unauthenticated and runs a subprocess per attempt, so
+    // a failed signature counts the same as a failed password and closes
+    // the door the same way. Without it, anyone who could reach the port
+    // could make the deck fork `ssh-keygen` as fast as they could ask.
+    let source = source_of(peer.as_ref());
+    if deck.sessions.lockout_remaining(&source).is_some() {
+        return locked_out(&deck, &source).into_response();
+    }
+    let Some(signers) = deck.settings.trusted_keys.clone() else {
+        return Refusal::not_found(t(
+            "本 deck 未配置 OQ_DECK_TRUSTED_KEYS，不能用 SSH 密钥登记。",
+            "This deck has no OQ_DECK_TRUSTED_KEYS, so a key cannot enrol a browser.",
+        ))
+        .into_response();
+    };
+    // What the operator called the machine, or the principal they
+    // proved — a name is what makes the revoke list usable, and the
+    // identity is the fallback that is at least about this machine.
+    let label = if body.label.trim().is_empty() {
+        body.identity.trim().to_owned()
+    } else {
+        body.label.trim().to_owned()
+    };
+    let spent = deck
+        .enrolments
+        .spend(&body.challenge, &label, std::time::Instant::now());
+    let Ok(claim) = spent else {
+        return Refusal::new(
+            StatusCode::UNAUTHORIZED,
+            t(
+                "挑战已过期或不存在；重新运行登记脚本即可。",
+                "That challenge is not one this deck issued, or it has expired; run the enrolment script again.",
+            ),
+        )
+        .into_response();
+    };
+    // Nothing is remembered from a rejected attempt but the refusal.
+    // What the operator gets back is ssh-keygen's sentence, which is
+    // the difference between "that key is not in the file" and "that
+    // signature is not over that challenge".
+    if let Err(why) =
+        crate::enrol::verify(&signers, &body.identity, &body.challenge, &body.signature)
+    {
+        deck.sessions.record_failure(&source);
+        return Refusal::new(StatusCode::UNAUTHORIZED, why).into_response();
+    }
+    axum::Json(Claimed { claim, label }).into_response()
+}
+
+#[derive(Deserialize)]
+struct Claim {
+    claim: String,
+}
+
+/// Take a claim code for a device credential.
+///
+/// The browser's half of the exchange, and the reason the two halves
+/// are separate: a code that is only ever seen here is one that never
+/// has to be typed into a terminal, and one that is spent by the first
+/// browser that presents it.
+async fn enrol_claim(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    body: axum::Json<Claim>,
+) -> Response {
+    // The code is the credential, so this is the one write that does not
+    // want a session — asking for one is asking for the thing the caller
+    // came here to get. The Origin check stays, because this half is the
+    // browser's and a browser always sends one.
+    if let Err(refusal) = check_host(&deck, &headers).and_then(|()| check_origin(&deck, &headers)) {
+        return refusal.into_response();
+    }
+    if deck.devices.is_none() {
+        return Refusal::not_found(t(
+            "本 deck 没有状态目录，记不住浏览器。",
+            "This deck has no state directory, so it cannot remember a browser.",
+        ))
+        .into_response();
+    }
+    let Some(label) = deck
+        .enrolments
+        .claim(&body.claim, std::time::Instant::now())
+    else {
+        return Refusal::new(
+            StatusCode::UNAUTHORIZED,
+            t(
+                "这个登记码已经用过或已过期。",
+                "That enrolment code has been used already, or it has expired.",
+            ),
+        )
+        .into_response();
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+    let token = match enrol(&deck, &label, now_ms) {
+        Some(token) => token,
+        None => {
+            return Refusal::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                t("无法登记这台浏览器。", "Could not enrol this browser."),
+            )
+            .into_response();
+        }
+    };
+    let cookie = session::device_cookie(
+        &token,
+        deck.settings.behind_tls,
+        deck.settings.device_lifetime,
+    );
+    let mut response =
+        axum::Json(serde_json::json!({ "enrolled": true, "label": label })).into_response();
+    if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
 }
 
 #[derive(Deserialize)]
@@ -1418,6 +1646,7 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         // cannot remember a browser, and the form must not offer it.
         "devices": deck.devices.is_some(),
         "device_days": s.device_lifetime.as_secs() / 86_400,
+        "trusted_keys": path(&s.trusted_keys),
         "version": env!("CARGO_PKG_VERSION"),
     }))
     .into_response()
@@ -1639,6 +1868,7 @@ pub fn router(
         hosts: Arc::new(hosts),
         setup_token: Arc::new(std::sync::Mutex::new(setup_token)),
         devices,
+        enrolments: Arc::new(crate::enrol::Enrolments::default()),
     };
 
     let api = Router::new()
@@ -1646,6 +1876,9 @@ pub fn router(
         .route("/session", get(whoami))
         .route("/session/login", post(login))
         .route("/session/logout", post(logout))
+        .route("/session/challenge", post(enrol_challenge))
+        .route("/session/enrol", post(enrol_with_key))
+        .route("/session/claim", post(enrol_claim))
         .route("/setup", post(setup))
         .route("/runtime/capabilities", get(caps))
         .route("/runs", get(list_runs))
