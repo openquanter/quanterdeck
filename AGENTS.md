@@ -30,7 +30,8 @@ export OQ_DECK_AGENT_SOCKET=/run/oq-agent/agent.sock # 运维功能需要，经 
 cargo run -p oq-deck                                 # http://127.0.0.1:8899
 ```
 
-首次启动没有密码时，终端会打印一次性令牌，用它走 `/setup`。
+首次启动没有密码时，终端会打印一次性令牌，用它走 `/setup`；由服务管理器启动、
+stderr 不是终端时，令牌写进 `RUNTIME_DIRECTORY/setup-token`。
 
 ## 不变量
 
