@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### The console says what it knows
+
+- **A fee the run has not measured is not a zero.** The books charge a
+  fee from a schedule, and a live run is built without one — so `fees`
+  was zero for every live run and the console drew it beside realized
+  and funding as though it were a measurement. The venue states the
+  commission on each fill; a run books that now, checks the total
+  against the venue's own trade records when it ends, and reports
+  *not measured* until it has one. A measured zero and a figure that
+  could not be measured are opposite facts, and the page no longer
+  conflates them.
+- **A venue reading older than the run is not a disagreement.** The
+  console compares the newest journal against a reading it rewrites
+  about once a minute, so for that minute after a restart it was
+  comparing two runs — every order they have apart counted in both
+  directions. It says which run the reading is of, and that it catches
+  up.
+- **A refusal says which fact stopped it.** `undecodable`,
+  `no adoption record`, or `the reading predates the run` were one
+  sentence; the sentence could not describe a case it did not know
+  about, and the new one had no sentence at all.
+- **The step-up code counts its failures** — five wrong ones close it
+  for fifteen minutes, the same numbers signing in uses. A six-digit
+  code is a million guesses and what sits behind this one is stopping
+  the trader.
+- **Listing the strategies is a read.** It called the code that sends
+  an instance whose configuration moved back to draft, so opening a page
+  moved a strategy. The step taken refuses instead, which is also where
+  the gate has to see it.
+- **The two codes are two entries, and the console says so.** The host
+  agent's step-up secret is the agent's — a compromised deck cannot mint
+  one — so nothing here can show it, and nothing said where it comes
+  from. The field that asks for it, first-run setup, and Settings all do
+  now; enrolling only the console's is why a first deploy stops at the
+  code.
+- **The sign-in screens are in this round's style.** They were not: a
+  different product mark, a card shadow heavier than every other card's
+  and not from the theme, and the language and theme switches — the two
+  things this release is about — unreachable until after signing in.
+- **This repository names no deployment of its own.** A release's
+  allow-list was a constant holding one operator's private binary, and
+  the unit, channel and prefix defaults were that deployment's. They are
+  configuration now, the mark and the copy are generic, and the
+  defaults a deployment must set are in the README's table.
+
 ### English, beside Chinese
 
 - **The interface is in Chinese and English,** switched from the top bar
