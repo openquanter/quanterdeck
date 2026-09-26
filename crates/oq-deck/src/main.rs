@@ -18,6 +18,21 @@ fn web_dist() -> Option<PathBuf> {
     candidate.is_dir().then_some(candidate)
 }
 
+/// Writes `text` where only this user can read it, and says whether it
+/// managed to.
+fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    f.write_all(text.as_bytes())?;
+    f.write_all(b"\n")
+}
+
 /// The one-time token that bootstraps a deck with no password yet.
 ///
 /// Printed to stderr, which is the terminal the operator started this
@@ -25,7 +40,45 @@ fn web_dist() -> Option<PathBuf> {
 /// local access they already have, and it is gone when the process is.
 /// It is never written to a file and never logged through `tracing`,
 /// because a log is a thing that gets copied.
+///
+/// Which is why it is not printed when stderr is *not* a terminal. Under
+/// a service manager stderr is the journal: it persists, every log
+/// collector copies it, and a group may be able to read it — a token
+/// printed there has been written down, and this comment used to claim
+/// otherwise while doing exactly that.
 fn announce_setup(token: &str, host: &str, port: u16) {
+    use std::io::IsTerminal;
+    if !std::io::stderr().is_terminal() {
+        let runtime = std::env::var_os("RUNTIME_DIRECTORY").map(std::path::PathBuf::from);
+        match runtime {
+            Some(dir) if write_private(&dir.join("setup-token"), token).is_ok() => {
+                let path = dir.join("setup-token");
+                eprintln!();
+                eprintln!("  ┌─ 首次运行 ─────────────────────────────────────────────");
+                eprintln!("  │ 尚未设置密码。stderr 不是终端（服务管理器会把它写进日志），");
+                eprintln!("  │ 所以令牌没有打印出来，而是写在这里：");
+                eprintln!("  │");
+                eprintln!("  │   http://{host}:{port}/setup");
+                eprintln!("  │   一次性令牌在 {}", path.display());
+                eprintln!("  │   （仅本用户可读，进程结束即消失。）");
+                eprintln!("  └────────────────────────────────────────────────────────");
+                eprintln!();
+                return;
+            }
+            _ => {
+                eprintln!();
+                eprintln!("  ┌─ 首次运行 ─────────────────────────────────────────────");
+                eprintln!("  │ 尚未设置密码，但 stderr 不是终端——服务管理器会把它写进日志，");
+                eprintln!("  │ 而日志是会被复制的东西，所以令牌没有打印、也没有写成文件。");
+                eprintln!("  │");
+                eprintln!("  │ 二选一：在终端里手动启动一次本进程取得令牌；");
+                eprintln!("  │ 或给本服务加一个可写的 RuntimeDirectory，令牌会写进那里。");
+                eprintln!("  └────────────────────────────────────────────────────────");
+                eprintln!();
+                return;
+            }
+        }
+    }
     eprintln!();
     eprintln!("  ┌─ 首次运行 ─────────────────────────────────────────────");
     eprintln!("  │ 尚未设置密码。用下面这个一次性令牌完成初始设置：");
@@ -118,4 +171,25 @@ async fn main() -> ExitCode {
 async fn shutdown() {
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("shutting down");
+}
+
+#[cfg(test)]
+mod setup_token {
+    use super::*;
+
+    /// The token is readable by this user and no other. A file whose
+    /// mode depends on the umask is a file somebody else may read.
+    #[test]
+    fn the_token_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("setup-token");
+        write_private(&path, "0123456789abcdef").expect("written");
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "{mode:o}");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "0123456789abcdef\n"
+        );
+    }
 }

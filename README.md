@@ -72,6 +72,11 @@ repeated failures; and a mandatory second factor off the loopback
 interface. On a first start with no password, the deck prints a one-time
 token to the terminal it was started from — reading it takes the local
 access the operator already has, and the token lives only in memory.
+Started by a service manager, stderr is the journal rather than a
+terminal: a token printed there has been written to a file that is
+copied, so it is not printed. The deck writes it to `RUNTIME_DIRECTORY`
+instead when one is set, and otherwise says that it did neither — run it
+once in a terminal, or give the unit a writable runtime directory.
 
 The threat model, the measures, and **what is not done yet** are in
 [docs/SECURITY.zh-CN.md](docs/SECURITY.zh-CN.md).
@@ -168,7 +173,8 @@ export OQ_DECK_TICKS_DIR=/path/to/your/ticks         # .oqtk files, for markouts
 cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
 
-The first start prints a one-time token to the terminal. Use it at
+The first start prints a one-time token — to the terminal, or to
+`RUNTIME_DIRECTORY/setup-token` when stderr is not one. Use it at
 `/setup` to set a password, then put the returned
 `OQ_DECK_PASSWORD_HASH` in the environment and restart. Until then every
 API route but `/api/v1/health`, `/api/v1/session`,
