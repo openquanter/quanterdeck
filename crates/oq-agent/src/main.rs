@@ -321,7 +321,12 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         Op::ConfigList => Ok(configs::list(&cfg.config_dir)),
         Op::ConfigGet { name, backup } => configs::get(&cfg.config_dir, name, backup.as_deref()),
         Op::Strategies => {
-            let mut s = match state.strategies.lock() {
+            // A read. Voiding an instance whose configuration moved is a
+            // change to the gate's state, so it happens where changes
+            // happen — in `advance`, before it reads the evidence — and
+            // not here. The page still shows which configuration is in
+            // force, because `config_sha_now` is beside `config_sha`.
+            let s = match state.strategies.lock() {
                 Ok(s) => s,
                 Err(_) => {
                     return AgentResponse::refused(Said::new(
@@ -330,18 +335,6 @@ fn handle(state: &State, line: &str) -> AgentResponse {
                     ));
                 }
             };
-            for (id, why) in s.void_changed(&cfg.config_dir, now) {
-                let _ = record(
-                    state,
-                    "oq-agent",
-                    &format!("strategy {id} back to draft"),
-                    &Said::new("没有，是代理自己判定的。", "none; the agent decided it"),
-                    &Said::new(
-                        format!("证据作废：{}", why.zh),
-                        format!("voided: {}", why.en),
-                    ),
-                );
-            }
             Ok(s.list(&cfg.config_dir, &cfg.journals, now))
         }
         // State-changing requests are written down before they are done,
@@ -462,7 +455,16 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
             .strategies
             .lock()
             .map_err(|_| Said::new("策略状态已损坏。", "strategy state poisoned"))
-            .and_then(|mut s| s.advance(id, origin, reason, &cfg.journals, system::now_ms())),
+            .and_then(|mut s| {
+                s.advance(
+                    id,
+                    origin,
+                    reason,
+                    &cfg.config_dir,
+                    &cfg.journals,
+                    system::now_ms(),
+                )
+            }),
         other => Err(Said::new(
             format!("{} 不是一个操作。", other.describe()),
             format!("{} is not an action", other.describe()),

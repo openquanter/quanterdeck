@@ -324,9 +324,22 @@ impl Strategies {
         id: &str,
         actor: &str,
         reason: &str,
+        config_dir: &Path,
         journals: &Path,
         now_ms: i64,
     ) -> Result<Value, Said> {
+        // Before the evidence is read. The gate decides on the stored
+        // evidence, so an instance whose configuration moved since its
+        // backtest would advance on a backtest of a different strategy —
+        // and this used to be done from the read that lists them, which
+        // is a read and must not change what it reads.
+        if let Some((_, why)) = self
+            .void_changed(config_dir, now_ms)
+            .into_iter()
+            .find(|(voided, _)| voided == id)
+        {
+            return Err(why);
+        }
         let e = {
             let i = self.find(id)?;
             Self::evidence(i, journals, now_ms)
@@ -360,6 +373,53 @@ impl Strategies {
 mod tests {
     use super::*;
 
+    /// A read is a read. Voiding an instance whose configuration moved
+    /// is a change to the gate's state, and it used to happen here, on
+    /// the path that lists them — so opening a page moved a strategy
+    /// back to draft.
+    #[test]
+    fn listing_does_not_write_and_the_next_step_still_voids() {
+        let state = tempfile::tempdir().expect("state");
+        let config = tempfile::tempdir().expect("config");
+        let journals = tempfile::tempdir().expect("journals");
+        let file = config.path().join("s.json");
+        std::fs::write(&file, r#"{"a":1}"#).expect("config");
+        let runs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/fixtures/runs");
+
+        let mut s = Strategies::open(state.path()).expect("open");
+        s.create("Stable AG", "s.json", config.path(), "deck", 0)
+            .expect("create");
+        s.evidence_backtest("stable-ag", "baseline", true, config.path(), &runs)
+            .expect("evidence");
+        s.advance("stable-ag", "deck", "ok", config.path(), journals.path(), 2)
+            .expect("backtested");
+
+        // The configuration moves under the evidence.
+        std::fs::write(&file, r#"{"a":2}"#).expect("config");
+        let before = std::fs::read(state.path().join("strategies.json")).expect("read");
+        let listed = s.list(config.path(), journals.path(), 3);
+        assert!(
+            listed[0]["config_sha_now"].is_string(),
+            "the page can see which configuration is in force: {listed}"
+        );
+        assert_eq!(
+            std::fs::read(state.path().join("strategies.json")).expect("read"),
+            before,
+            "listing wrote to the state file"
+        );
+
+        // And the step itself refuses, with the reason rather than a
+        // gate message about a draft.
+        let refused = s
+            .advance("stable-ag", "deck", "go", config.path(), journals.path(), 4)
+            .unwrap_err();
+        assert!(
+            refused.en.contains("changed after the evidence"),
+            "{refused:?}"
+        );
+    }
+
     #[test]
     fn the_road_is_walked_one_step_at_a_time_and_a_config_change_sends_it_back() {
         let state = tempfile::tempdir().expect("state");
@@ -372,7 +432,7 @@ mod tests {
 
         // No backtest: the first step is refused, with the reason.
         let refused = s
-            .advance("stable-ag", "deck", "go", journals.path(), 1)
+            .advance("stable-ag", "deck", "go", config.path(), journals.path(), 1)
             .unwrap_err();
         assert!(refused.en.contains("no backtest"), "{refused:?}");
 
@@ -381,12 +441,33 @@ mod tests {
             .join("../../examples/fixtures/runs");
         s.evidence_backtest("stable-ag", "baseline", true, config.path(), &runs)
             .expect("evidence");
-        s.advance("stable-ag", "deck", "backtest read", journals.path(), 2)
-            .expect("backtested");
-        s.advance("stable-ag", "deck", "to testnet", journals.path(), 3)
-            .expect("observing");
+        s.advance(
+            "stable-ag",
+            "deck",
+            "backtest read",
+            config.path(),
+            journals.path(),
+            2,
+        )
+        .expect("backtested");
+        s.advance(
+            "stable-ag",
+            "deck",
+            "to testnet",
+            config.path(),
+            journals.path(),
+            3,
+        )
+        .expect("observing");
         let early = s
-            .advance("stable-ag", "deck", "too soon", journals.path(), 4)
+            .advance(
+                "stable-ag",
+                "deck",
+                "too soon",
+                config.path(),
+                journals.path(),
+                4,
+            )
             .unwrap_err();
         assert!(early.en.contains("observation window"), "{early:?}");
 
