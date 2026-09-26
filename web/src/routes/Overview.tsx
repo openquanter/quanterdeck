@@ -427,8 +427,14 @@ function Health({ s, failed }: { s: TraderStatus | undefined; failed: boolean })
           ? tr("一致", "Agrees")
           : r.verdict === "disagree"
             ? tr(`不一致 ${r.differences.length} 处`, `${r.differences.length} difference${r.differences.length === 1 ? "" : "s"}`)
-            : tr("无法判断", "Undetermined"),
-    detail: live.data ? tr(`读数 ${agoText(live.data.record_age_ms / 1000)}`, `Read ${agoText(live.data.record_age_ms / 1000)}`) : tr("journal vs 交易所", "journal vs venue"),
+            : r.cannot_tell === "reading_predates_the_run"
+              ? tr("读数是上一轮的", "Reading is the previous run's")
+              : tr("无法判断", "Undetermined"),
+    detail: !live.data
+      ? tr("journal vs 交易所", "journal vs venue")
+      : r?.cannot_tell === "reading_predates_the_run"
+        ? tr("本轮刚起来，交易所读数还没重写；一分钟内自会追上", "This run has just started and the venue reading has not been rewritten yet; it catches up within a minute")
+        : tr(`读数 ${agoText(live.data.record_age_ms / 1000)}`, `Read ${agoText(live.data.record_age_ms / 1000)}`),
     to: "/reconcile",
   });
   if (units.data) {

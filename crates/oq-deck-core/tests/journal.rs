@@ -99,6 +99,63 @@ fn no_difference_over_a_belief_with_holes_is_cannot_tell() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// A reading taken before this run began is a reading of the run before
+/// it, and the differences between two runs are not a disagreement.
+///
+/// This is what a deploy looks like on the console for the minute the
+/// reader takes to catch up — the new run's ladder against the old run's,
+/// every rung counted in both directions. On the testnet host that was
+/// twenty-six red differences, seconds after a deploy that had worked,
+/// on the page whose job is to say whether the books are right.
+#[test]
+fn a_reading_older_than_the_run_is_not_a_disagreement() {
+    use oq_deck_core::live::{CannotTell, Verdict};
+    const SEC: i64 = 1_000_000_000;
+    let dir = std::env::temp_dir().join(format!("oq-deck-verdict-c-{}", std::process::id()));
+    journal(
+        &dir,
+        &[
+            start(),
+            Record::Reconciled {
+                at: Nanos(10 * SEC),
+                legs: Vec::new(),
+            },
+            Record::Submitted {
+                at: Nanos(11 * SEC),
+                client_id: "oq-1".into(),
+                side: Side::Buy,
+                limit_price: PriceTicks(6_000_000),
+                qty: QtyLots(1),
+                reduce_only: false,
+                leg: String::new(),
+            },
+            Record::Outcome {
+                at: Nanos(12 * SEC),
+                client_id: "oq-1".into(),
+                tag: OutcomeTag::Accepted,
+                detail: String::new(),
+            },
+        ],
+    );
+
+    // The venue still holds the run before this one's order, and the
+    // reading was taken a second before this run adopted.
+    let older = "symbol BTCUSDT\nread_at_ms 9000\norder oq-0";
+    let r = oq_deck_core::live::reconcile(&dir, "run", older).expect("reconciles");
+    assert!(!r.differences.is_empty(), "two runs do differ");
+    assert_eq!(r.verdict, Verdict::CannotTell, "{:?}", r.differences);
+    assert_eq!(r.cannot_tell, Some(CannotTell::ReadingPredatesTheRun));
+    assert!(!r.agrees);
+
+    // And a reading from after this run began compares as it always did.
+    let current = "symbol BTCUSDT\nread_at_ms 12000\norder oq-1";
+    let r = oq_deck_core::live::reconcile(&dir, "run", current).expect("reconciles");
+    assert!(r.differences.is_empty(), "{:?}", r.differences);
+    assert_eq!(r.verdict, Verdict::Agree);
+    assert_eq!(r.cannot_tell, None);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// And a whole belief that matches is agreement.
 #[test]
 fn no_difference_over_a_whole_belief_is_agreement() {
