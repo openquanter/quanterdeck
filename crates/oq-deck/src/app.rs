@@ -370,7 +370,11 @@ async fn login(
         Ok(token) => (
             [(
                 header::SET_COOKIE,
-                session::set_cookie(&token, deck.settings.behind_tls),
+                session::set_cookie(
+                    &token,
+                    deck.settings.behind_tls,
+                    deck.settings.session_absolute,
+                ),
             )],
             axum::Json(serde_json::json!({ "authenticated": true })),
         )
@@ -1239,7 +1243,10 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         "ticks_dir": path(&s.ticks_dir),
         "agent_socket": path(&s.agent_socket),
         "venue_record": path(&s.venue_record),
-        "session": {"idle_minutes": 60, "absolute_hours": 12},
+        "session": {
+            "idle_minutes": s.session_idle.as_secs() / 60,
+            "absolute_hours": s.session_absolute.as_secs() / 3600,
+        },
         "version": env!("CARGO_PKG_VERSION"),
     }))
     .into_response()
@@ -1451,9 +1458,12 @@ pub fn router(
     setup_token: Option<String>,
 ) -> Router {
     let hosts = Hosts::for_bind(settings.host, settings.port, &settings.extra_hosts);
+    // Read before the settings are moved: the session store outlives the
+    // reference to them.
+    let (idle, absolute) = (settings.session_idle, settings.session_absolute);
     let deck = Deck {
         settings: Arc::new(settings),
-        sessions: Arc::new(Sessions::new()),
+        sessions: Arc::new(Sessions::with_lifetimes(idle, absolute)),
         hosts: Arc::new(hosts),
         setup_token: Arc::new(std::sync::Mutex::new(setup_token)),
     };
