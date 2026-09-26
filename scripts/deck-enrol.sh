@@ -12,10 +12,10 @@
 # credential you can revoke from the deck's Settings page.
 #
 #   ./deck-enrol.sh --url http://127.0.0.1:8899 --key ~/.ssh/id_ed25519
-#   ./deck-enrol.sh --url https://deck.example --identity dingzg@macmini
+#   ./deck-enrol.sh --url https://deck.example --identity alice@laptop
 #
 # Over SSH, put the deck's port on this machine first:
-#   ssh -N -L 8899:127.0.0.1:8899 huawei &
+#   ssh -N -L 8899:127.0.0.1:8899 deck-host &
 #   ./deck-enrol.sh
 #
 # A deck behind a proxy with its own CA needs that root trusted, or curl
