@@ -1,10 +1,15 @@
 //! The audit trail: every request that changed something, or tried to.
 //!
 //! One JSON line per entry, each carrying the hash of the one before, so
-//! an edit or a deletion anywhere breaks the chain from there on. It lives
-//! in the agent's own directory, which the deck cannot write, and every
-//! entry is also posted to the alert channel, off this host: a trail kept
-//! only where an intruder is has only their word for it.
+//! an edit or a deletion **in the middle** breaks the chain from there
+//! on. A deletion at the end does not: what is left is a shorter trail
+//! that still verifies, because there is nothing after it to disagree
+//! with. What answers that is the copy posted off this host — every
+//! entry goes to the alert channel — and nothing reads that copy back
+//! yet, so the end of the trail is currently worth what the host is.
+//!
+//! It lives in the agent's own directory, which the deck cannot write: a
+//! trail kept only where an intruder is has only their word for it.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
