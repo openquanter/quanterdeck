@@ -138,7 +138,8 @@ fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
             ),
         ));
     }
-    if origin_permitted(origin, &deck.hosts, deck.settings.behind_tls) {
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
+    if origin_permitted(origin, host, &deck.hosts, deck.settings.behind_tls) {
         return Ok(());
     }
     Err(Refusal::new(
