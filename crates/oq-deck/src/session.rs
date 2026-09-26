@@ -48,6 +48,11 @@ struct Session {
 /// Everything about who is allowed in.
 pub struct Sessions {
     inner: Mutex<Inner>,
+    /// How long a session survives without use, and at all. Settings
+    /// rather than constants: the operator is the one who knows whether
+    /// this console is on their desk or on a laptop in a bag.
+    idle: Duration,
+    absolute: Duration,
 }
 
 struct Inner {
@@ -98,14 +103,23 @@ impl Default for Sessions {
 }
 
 impl Sessions {
+    /// Sessions that live and idle for the library defaults.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_lifetimes(IDLE_TIMEOUT, ABSOLUTE_TIMEOUT)
+    }
+
+    /// Sessions with the lifetimes the deployment asked for.
+    #[must_use]
+    pub fn with_lifetimes(idle: Duration, absolute: Duration) -> Self {
         Self {
             inner: Mutex::new(Inner {
                 live: HashMap::new(),
                 sources: HashMap::new(),
                 overall: Attempts::default(),
             }),
+            idle,
+            absolute,
         }
     }
 
@@ -115,6 +129,12 @@ impl Sessions {
         // that, and refusing every login afterwards would turn one
         // panic into an outage.
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// How long a session lives at all, for the cookie's own `Max-Age`.
+    #[must_use]
+    pub fn absolute_seconds(&self) -> u64 {
+        self.absolute.as_secs()
     }
 
     /// Whether the door is closed to `source`, and for how much longer:
@@ -187,8 +207,8 @@ impl Sessions {
         let Some(session) = inner.live.get_mut(&key) else {
             return Err(Denied::NoSession);
         };
-        if now.duration_since(session.created) > ABSOLUTE_TIMEOUT
-            || now.duration_since(session.last_seen) > IDLE_TIMEOUT
+        if now.duration_since(session.created) > self.absolute
+            || now.duration_since(session.last_seen) > self.idle
         {
             inner.live.remove(&key);
             return Err(Denied::NoSession);
@@ -238,10 +258,10 @@ pub fn token_from_cookies(header: Option<&str>) -> Option<String> {
 /// which would leave the operator staring at a login page that does
 /// nothing.
 #[must_use]
-pub fn set_cookie(token: &str, secure: bool) -> String {
+pub fn set_cookie(token: &str, secure: bool, lifetime: Duration) -> String {
     let mut cookie = format!(
         "{COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
-        ABSOLUTE_TIMEOUT.as_secs()
+        lifetime.as_secs()
     );
     if secure {
         cookie.push_str("; Secure");
@@ -278,6 +298,36 @@ mod per_source {
             s.record_failure(&format!("10.0.0.{}", i % 250));
         }
         assert!(s.lockout_remaining("192.0.2.1").is_some());
+    }
+
+    /// The lifetimes the deployment asked for are the ones enforced.
+    ///
+    /// They were constants: an operator who wanted a session that
+    /// survives lunch, or one that does not survive a laptop in a bag,
+    /// had to rebuild. What is not relaxed by making them settings is
+    /// the enforcement — both are still checked on every request, and
+    /// the cookie's own `Max-Age` follows the absolute one so the
+    /// browser forgets at the same moment the server does.
+    #[test]
+    fn the_lifetime_is_the_one_it_was_built_with() {
+        use super::{Denied, Duration, set_cookie};
+
+        let short = Sessions::with_lifetimes(Duration::ZERO, Duration::from_secs(60));
+        let token = short.issue("127.0.0.1").expect("token");
+        assert_eq!(
+            short.touch(&token).err(),
+            Some(Denied::NoSession),
+            "an idle lifetime of zero expires at once"
+        );
+        assert_eq!(short.absolute_seconds(), 60);
+
+        let roomy = Sessions::with_lifetimes(Duration::from_secs(3600), Duration::from_secs(7200));
+        let token = roomy.issue("127.0.0.1").expect("token");
+        assert!(roomy.touch(&token).is_ok());
+        assert!(
+            set_cookie(&token, false, Duration::from_secs(7200)).contains("Max-Age=7200"),
+            "the browser is told the lifetime the server enforces"
+        );
     }
 
     /// A lockout never touches a session already issued.

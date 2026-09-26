@@ -120,3 +120,23 @@ fn a_hash_that_does_not_parse_is_refused_at_startup() {
             .contains("OQ_DECK_PASSWORD_HASH")
     );
 }
+
+/// A session that may idle longer than it may live: one of the two
+/// settings is not doing anything, and a reader cannot tell which.
+#[test]
+fn an_idle_lifetime_longer_than_the_absolute_one_is_refused() {
+    use std::time::Duration;
+    let settings = Settings {
+        session_idle: Duration::from_secs(48 * 3600),
+        session_absolute: Duration::from_secs(12 * 3600),
+        ..Settings::default()
+    };
+    let err = settings.validate().expect_err("refused");
+    assert!(err.0.contains("shorter than the idle"), "{}", err.0);
+
+    // And the defaults are the ones the module has always used.
+    let defaults = Settings::default();
+    assert_eq!(defaults.session_idle, Duration::from_secs(60 * 60));
+    assert_eq!(defaults.session_absolute, Duration::from_secs(12 * 60 * 60));
+    assert!(defaults.validate().is_ok());
+}

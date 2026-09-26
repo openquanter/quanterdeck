@@ -5,6 +5,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -34,6 +35,14 @@ pub struct Settings {
     pub behind_tls: bool,
     /// Off by default; every mutating route is refused while it is off.
     pub allow_writes: bool,
+    /// How long a session survives without use.
+    pub session_idle: Duration,
+    /// How long a session survives at all, however active.
+    ///
+    /// Loosening this is how an operator trades a stolen laptop for not
+    /// signing in twice a day, so it is a named setting rather than a
+    /// constant that only a rebuild could move.
+    pub session_absolute: Duration,
 }
 
 impl Default for Settings {
@@ -51,6 +60,8 @@ impl Default for Settings {
             extra_hosts: Vec::new(),
             behind_tls: false,
             allow_writes: false,
+            session_idle: Duration::from_secs(60 * 60),
+            session_absolute: Duration::from_secs(12 * 60 * 60),
         }
     }
 }
@@ -100,6 +111,16 @@ impl Settings {
     /// The deck would listen off the loopback interface without both a
     /// password and a second factor.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        // A session that may idle longer than it may live is one of the
+        // two settings not meaning what it says, and which one is not
+        // recoverable from the outside.
+        if self.session_absolute < self.session_idle {
+            return Err(ConfigError(
+                "the absolute session lifetime is shorter than the idle one; one of the two \
+                 does not mean what it says"
+                    .to_owned(),
+            ));
+        }
         // Checked whatever the address. A hash that does not parse turned
         // every login into "wrong password" and every attempt into a
         // counted failure, so the operator locked themselves out chasing
@@ -180,10 +201,34 @@ impl Settings {
         // An empty variable is an unset one: `OQ_DECK_TOTP_SECRET=` in an
         // environment file read as a second factor with an empty key.
         let set = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+        // A count, or absent. Bounded here rather than clamped later: a
+        // setting silently rounded to something else is a setting that
+        // does not mean what it says.
+        let count = |name: &str, max: u64| -> Result<Option<u64>, ConfigError> {
+            let Some(text) = set(name) else {
+                return Ok(None);
+            };
+            match text.trim().parse::<u64>() {
+                Ok(n) if (1..=max).contains(&n) => Ok(Some(n)),
+                _ => Err(ConfigError(format!(
+                    "{name} is not a whole number between 1 and {max}: {text}"
+                ))),
+            }
+        };
         settings.password_hash = set("OQ_DECK_PASSWORD_HASH");
         settings.totp_secret = set("OQ_DECK_TOTP_SECRET");
         settings.behind_tls = std::env::var("OQ_DECK_BEHIND_TLS").as_deref() == Ok("1");
         settings.allow_writes = std::env::var("OQ_DECK_ALLOW_WRITES").as_deref() == Ok("1");
+        // Both bounded, and the idle one below the absolute one: a
+        // session that can idle longer than it can live would be a
+        // setting that reads as though it does something.
+        if let Some(minutes) = count("OQ_DECK_SESSION_IDLE_MINUTES", 1440)? {
+            settings.session_idle = Duration::from_secs(minutes * 60);
+        }
+        if let Some(hours) = count("OQ_DECK_SESSION_HOURS", 720)? {
+            settings.session_absolute = Duration::from_secs(hours * 3600);
+        }
+
         settings.extra_hosts = std::env::var("OQ_DECK_EXTRA_HOSTS")
             .ok()
             .map(|value| {
