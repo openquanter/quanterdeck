@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Signing in once, on the machines you choose
+
+- **A browser you enrol is not asked again.** The login page offers to
+  remember this device; that browser then carries a device credential
+  instead of a password and a code. It is a second way in with one
+  factor rather than two, which is why it is named, listed in Settings
+  and revocable — and why withdrawing one is deliberately not behind
+  `OQ_DECK_ALLOW_WRITES`. Only its SHA-256 is written, so a copy of the
+  file is a list of what exists rather than a set of keys to use.
+- **Sessions no longer expire at a fixed hour.** `OQ_DECK_SESSION_HOURS`
+  and `OQ_DECK_SESSION_IDLE_MINUTES` are settings, bounded and refused
+  rather than clamped, and `/runtime/settings` reports the ones in force
+  instead of the two numbers it used to hardcode.
+- **Signing out ends the session, not the device.** Taking a device away
+  is a separate act with its own page; otherwise signing out on a shared
+  machine would un-enrol it.
+- Sessions still live in memory, so a restart still ends them — and an
+  enrolled browser does not notice, which is what the device credential
+  is for.
+
 ### The console says what it knows
 
 - **A fee the run has not measured is not a zero.** The books charge a
