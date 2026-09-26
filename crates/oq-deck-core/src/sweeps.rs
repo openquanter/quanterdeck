@@ -157,8 +157,8 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
     };
     let mut paths: Vec<(Option<u64>, PathBuf)> = entries
         .filter_map(Result::ok)
+        .filter(|e| crate::regular_with(e, "sweep"))
         .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "sweep"))
         .map(|p| (modified_ms(&p), p))
         .collect();
     paths.sort_by(|a, b| b.cmp(a));

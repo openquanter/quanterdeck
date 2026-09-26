@@ -11,6 +11,19 @@ pub mod ops;
 pub mod runs;
 pub mod sweeps;
 
+/// Whether a directory entry is a regular file with this extension.
+///
+/// Judged by the entry's own type, not by `Path::is_file`: that follows
+/// a symbolic link. These directories are written by another account —
+/// the trader's, not the console's — so a link planted in one would be
+/// read, parsed and reported as though it belonged here. The listings
+/// and the resolvers also have to agree about what is in there, or the
+/// page offers a file that cannot be opened.
+pub(crate) fn regular_with(entry: &std::fs::DirEntry, extension: &str) -> bool {
+    entry.file_type().is_ok_and(|t| t.is_file())
+        && entry.path().extension().is_some_and(|e| e == extension)
+}
+
 /// A file named exactly `file_name` in `dir`'s own listing, if there is
 /// one and it is a regular file.
 ///
