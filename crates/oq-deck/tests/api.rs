@@ -29,7 +29,7 @@ struct Client {
 
 impl Client {
     async fn new(settings: Settings) -> Self {
-        let app = router(settings, None, None);
+        let app = router(settings, None, None, None);
         let response = app
             .clone()
             .oneshot(

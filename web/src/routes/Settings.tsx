@@ -6,7 +6,7 @@ import { Database, Info, LockKeyhole, LogOut, Monitor, PenLine } from "lucide-re
 import { api } from "@/api/client";
 import { ErrorState, Skeleton } from "@/components/States";
 import { tr, useLocale, type Locale } from "@/i18n";
-import { Badge, Button, Card, KV, PageHeader, Segmented } from "@/ui/kit";
+import { Badge, Button, Card, KV, PageHeader, Segmented, agoText } from "@/ui/kit";
 import { useTheme, type ThemeChoice } from "@/ui/theme";
 
 /**
@@ -16,6 +16,57 @@ import { useTheme, type ThemeChoice } from "@/ui/theme";
  * its own security settings from inside a session would be one a stolen
  * session could loosen.
  */
+/**
+ * The browsers the operator has enrolled, and how to take one away.
+ *
+ * Revocation lives next to the setting that makes it possible, because a
+ * device that cannot be taken away is a second factor the operator
+ * cannot get back — and this is the page they would come to.
+ */
+function EnrolledBrowsers({ can, days }: { can: boolean; days: number }) {
+  const queryClient = useQueryClient();
+  const devices = useQuery({ queryKey: ["devices"], queryFn: api.devices, enabled: can });
+  const revoke = async (id: string) => {
+    await api.revokeDevice(id).catch(() => undefined);
+    await queryClient.invalidateQueries({ queryKey: ["devices"] });
+  };
+
+  return (
+    <Card title={tr("已登记的浏览器", "Enrolled browsers")} icon={<Monitor className="h-4 w-4" />}>
+      {!can ? (
+        <p className="text-sm leading-relaxed text-ink-muted">
+          {tr(
+            "这台 deck 没有可写的状态目录（OQ_DECK_STATE_DIR，或 systemd 的 StateDirectory=），所以记不住任何浏览器——登录页也不会给出「记住这台设备」。",
+            "This deck has no writable state directory (OQ_DECK_STATE_DIR, or systemd's StateDirectory=), so it cannot remember a browser — the login page does not offer it either.",
+          )}
+        </p>
+      ) : (devices.data?.devices ?? []).length === 0 ? (
+        <p className="text-sm text-ink-muted">
+          {tr("还没有登记任何浏览器。", "No browser is enrolled.")}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {(devices.data?.devices ?? []).map((d) => (
+            <li key={d.id} className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 flex-1 truncate text-ink">{d.label}</span>
+              <span className="shrink-0 text-xs text-ink-faint">
+                {agoText((Date.now() - d.created_ms) / 1000)}
+              </span>
+              <Button onClick={() => revoke(d.id)}>{tr("撤销", "Revoke")}</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-xs leading-relaxed text-ink-faint">
+        {tr(
+          `一台登记过的浏览器只带设备凭证，不再要密码与验证码，有效期 ${days} 天。撤销立刻生效，那台浏览器下一次请求就会回到登录页。`,
+          `An enrolled browser carries only a device credential — no password, no code — for ${days} days. Revoking takes effect at once: that browser is back at the sign-in page on its next request.`,
+        )}
+      </p>
+    </Card>
+  );
+}
+
 export function Settings() {
   const s = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const caps = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
@@ -116,6 +167,8 @@ export function Settings() {
             )}
           </p>
         </Card>
+
+        <EnrolledBrowsers can={s.data?.devices ?? false} days={s.data?.device_days ?? 0} />
 
         <Card title={tr("界面", "Interface")} icon={<Monitor className="h-4 w-4" />}>
           <KV

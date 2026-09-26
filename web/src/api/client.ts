@@ -55,6 +55,8 @@ export interface SessionState {
   setup_required: boolean;
   /** Whether the login form needs a six-digit code field. */
   totp_required: boolean;
+  /** Whether this deck can remember a browser. */
+  devices: boolean;
 }
 
 export interface SetupDone {
@@ -606,7 +608,22 @@ export interface RuntimeSettings {
   agent_socket: string | null;
   venue_record: string | null;
   session: { idle_minutes: number; absolute_hours: number };
+  /** Whether this deck can remember a browser; it needs a state directory. */
+  devices: boolean;
+  device_days: number;
   version: string;
+}
+
+/**
+ * A browser the operator enrolled.
+ *
+ * The credential itself is a cookie this page cannot read; what is here
+ * is what revocation needs — which one it is and what it was called.
+ */
+export interface EnrolledDevice {
+  id: string;
+  label: string;
+  created_ms: number;
 }
 
 export const api = {
@@ -627,8 +644,16 @@ export const api = {
         `&candidate=${encodeURIComponent(candidate)}&ticks=${encodeURIComponent(ticks)}`,
     ),
   session: () => request<SessionState>("/session"),
-  login: (password: string, totp: string) =>
-    post<{ authenticated: boolean }>("/session/login", { password, totp }),
+  login: (password: string, totp: string, remember = false, deviceLabel = "") =>
+    post<{ authenticated: boolean }>("/session/login", {
+      password,
+      totp,
+      remember,
+      device_label: deviceLabel,
+    }),
+  devices: () => request<{ available: boolean; devices: EnrolledDevice[] }>("/devices"),
+  revokeDevice: (id: string) =>
+    post<{ revoked: boolean }>("/devices/revoke", { id }),
   logout: () => post<{ authenticated: boolean }>("/session/logout", {}),
   setup: (token: string, password: string) => post<SetupDone>("/setup", { token, password }),
   host: () => request<HostHealth>("/ops/host"),

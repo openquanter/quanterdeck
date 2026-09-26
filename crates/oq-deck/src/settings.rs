@@ -37,6 +37,16 @@ pub struct Settings {
     pub allow_writes: bool,
     /// How long a session survives without use.
     pub session_idle: Duration,
+    /// Where the deck keeps what outlives a process: the browsers the
+    /// operator has enrolled. `None` means it keeps nothing, and the
+    /// console says so rather than offering a switch that does nothing.
+    ///
+    /// The deck is otherwise read-only about the host — it holds no
+    /// venue key and writes nothing the trader uses — so this is the one
+    /// directory it needs, and it is one systemd makes for it.
+    pub state_dir: Option<PathBuf>,
+    /// How long a browser the operator enrolled is trusted for.
+    pub device_lifetime: Duration,
     /// How long a session survives at all, however active.
     ///
     /// Loosening this is how an operator trades a stolen laptop for not
@@ -60,6 +70,8 @@ impl Default for Settings {
             extra_hosts: Vec::new(),
             behind_tls: false,
             allow_writes: false,
+            state_dir: None,
+            device_lifetime: Duration::from_secs(90 * 24 * 3600),
             session_idle: Duration::from_secs(60 * 60),
             session_absolute: Duration::from_secs(12 * 60 * 60),
         }
@@ -217,6 +229,12 @@ impl Settings {
         };
         settings.password_hash = set("OQ_DECK_PASSWORD_HASH");
         settings.totp_secret = set("OQ_DECK_TOTP_SECRET");
+        // `STATE_DIRECTORY` is what systemd sets for `StateDirectory=`,
+        // so a unit that asks for one gets this without also naming a
+        // variable. The explicit one wins when both are there.
+        settings.state_dir = set("OQ_DECK_STATE_DIR")
+            .or_else(|| set("STATE_DIRECTORY"))
+            .map(PathBuf::from);
         settings.behind_tls = std::env::var("OQ_DECK_BEHIND_TLS").as_deref() == Ok("1");
         settings.allow_writes = std::env::var("OQ_DECK_ALLOW_WRITES").as_deref() == Ok("1");
         // Both bounded, and the idle one below the absolute one: a
@@ -224,6 +242,9 @@ impl Settings {
         // setting that reads as though it does something.
         if let Some(minutes) = count("OQ_DECK_SESSION_IDLE_MINUTES", 1440)? {
             settings.session_idle = Duration::from_secs(minutes * 60);
+        }
+        if let Some(days) = count("OQ_DECK_DEVICE_DAYS", 365)? {
+            settings.device_lifetime = Duration::from_secs(days * 24 * 3600);
         }
         if let Some(hours) = count("OQ_DECK_SESSION_HOURS", 720)? {
             settings.session_absolute = Duration::from_secs(hours * 3600);

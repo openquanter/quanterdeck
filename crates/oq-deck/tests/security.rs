@@ -26,7 +26,7 @@ fn configured() -> Settings {
 }
 
 fn app(settings: Settings) -> axum::Router {
-    router(settings, None, None)
+    router(settings, None, None, None)
 }
 
 async fn send(app: &axum::Router, request: Request<Body>) -> (StatusCode, Value, Vec<String>) {
@@ -548,7 +548,7 @@ async fn an_unconfigured_deck_serves_nothing_but_setup() {
         runs_dir: Some(fixtures()),
         ..Settings::default()
     };
-    let app = router(settings, None, Some("the-one-time-token".to_owned()));
+    let app = router(settings, None, Some("the-one-time-token".to_owned()), None);
     let (status, _, _) = send(&app, get("/api/v1/runs", HOST, None)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
@@ -559,7 +559,7 @@ async fn setup_needs_the_token_from_the_terminal() {
         runs_dir: Some(fixtures()),
         ..Settings::default()
     };
-    let app = router(settings, None, Some("the-one-time-token".to_owned()));
+    let app = router(settings, None, Some("the-one-time-token".to_owned()), None);
 
     let (status, _, _) = send(
         &app,
@@ -598,7 +598,7 @@ async fn setup_needs_the_token_from_the_terminal() {
 /// hash and secret.
 #[tokio::test]
 async fn the_setup_token_is_spent_by_a_setup_that_succeeds() {
-    let app = router(Settings::default(), None, Some("once".to_owned()));
+    let app = router(Settings::default(), None, Some("once".to_owned()), None);
     let attempt = || {
         post(
             "/api/v1/setup",
@@ -614,7 +614,7 @@ async fn the_setup_token_is_spent_by_a_setup_that_succeeds() {
 /// A password that is refused does not spend the token.
 #[tokio::test]
 async fn a_refused_password_leaves_the_token_usable() {
-    let app = router(Settings::default(), None, Some("t".to_owned()));
+    let app = router(Settings::default(), None, Some("t".to_owned()), None);
     let with = |password: &str| {
         post(
             "/api/v1/setup",
@@ -629,7 +629,7 @@ async fn a_refused_password_leaves_the_token_usable() {
 
 #[tokio::test]
 async fn setup_refuses_a_weak_password_with_a_reason() {
-    let app = router(Settings::default(), None, Some("t".to_owned()));
+    let app = router(Settings::default(), None, Some("t".to_owned()), None);
     let (status, body, _) = send(
         &app,
         post(

@@ -16,8 +16,16 @@
 //!
 //! Sessions live in memory. A restart logs the operator out, which for a
 //! console watching a trading process is the right trade: the
-//! alternative is a token on disk that outlives the reason it was
-//! issued.
+//! alternative is a session token on disk that outlives the reason it
+//! was issued.
+//!
+//! What survives a restart is a **device** — a browser the operator
+//! enrolled on purpose, in [`crate::session`]'s sibling
+//! [`oq_deck_core::devices`]. That is a different thing from a session
+//! written to disk: it is one credential, chosen, named, listed and
+//! revocable, where persisting sessions would be every session anybody
+//! ever opened. It is also what makes a restart invisible to a browser
+//! the operator trusts, which is the whole reason it exists.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -39,6 +47,10 @@ pub const MAX_FAILURES_OVERALL: u32 = 50;
 pub const LOCKOUT: Duration = Duration::from_secs(15 * 60);
 
 pub const COOKIE_NAME: &str = "oq_deck_session";
+/// The cookie a device the operator enrolled holds. Separate from the
+/// session cookie because it is a separate thing: one ends when it
+/// idles, the other when the operator says so.
+pub const DEVICE_COOKIE: &str = "oq_deck_device";
 
 struct Session {
     created: Instant,
@@ -241,13 +253,38 @@ impl Sessions {
     }
 }
 
+/// Pull one cookie's value out of a header.
+#[must_use]
+pub fn cookie(header: Option<&str>, wanted: &str) -> Option<String> {
+    header?.split(';').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        (name.trim() == wanted).then(|| value.trim().to_owned())
+    })
+}
+
 /// Pull the session token out of a cookie header.
 #[must_use]
 pub fn token_from_cookies(header: Option<&str>) -> Option<String> {
-    header?.split(';').find_map(|pair| {
-        let (name, value) = pair.split_once('=')?;
-        (name.trim() == COOKIE_NAME).then(|| value.trim().to_owned())
-    })
+    cookie(header, COOKIE_NAME)
+}
+
+/// Pull the device token out of a cookie header.
+#[must_use]
+pub fn device_from_cookies(header: Option<&str>) -> Option<String> {
+    cookie(header, DEVICE_COOKIE)
+}
+
+/// The `Set-Cookie` value for a newly enrolled device.
+#[must_use]
+pub fn device_cookie(token: &str, secure: bool, lifetime: Duration) -> String {
+    let mut cookie = format!(
+        "{DEVICE_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        lifetime.as_secs()
+    );
+    if secure {
+        cookie.push_str("; Secure");
+    }
+    cookie
 }
 
 /// The `Set-Cookie` value for a new session.
@@ -269,10 +306,13 @@ pub fn set_cookie(token: &str, secure: bool, lifetime: Duration) -> String {
     cookie
 }
 
-/// The `Set-Cookie` value that clears a session.
+/// The `Set-Cookie` values that clear both cookies.
 #[must_use]
-pub fn clear_cookie() -> String {
-    format!("{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+pub fn clear_cookies() -> [String; 2] {
+    [
+        format!("{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"),
+        format!("{DEVICE_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"),
+    ]
 }
 
 #[cfg(test)]

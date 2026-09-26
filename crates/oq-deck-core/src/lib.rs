@@ -3,10 +3,32 @@
 pub mod attribution;
 pub mod auth;
 pub mod capabilities;
+pub mod devices;
 pub mod gate;
 pub mod lang;
 pub mod live;
 pub mod markout;
+
+/// Writes `text` where only this user can read it.
+///
+/// The mode is set when the file is *created*, not afterwards: a file
+/// that exists briefly under the umask is a file somebody else may have
+/// opened in the meantime.
+///
+/// # Errors
+/// The file could not be created or written.
+pub fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    f.write_all(text.as_bytes())?;
+    f.write_all(b"\n")
+}
 pub mod ops;
 pub mod runs;
 pub mod sweeps;

@@ -20,7 +20,11 @@ export function Login() {
   return (
     <Centered title={tr("登录", "Sign in")} subtitle={tr("交易主机控制台", "Trading host console")}>
       {session ? (
-        <LoginForm totpRequired={session.totp_required} onDone={() => navigate(next, { replace: true })} />
+        <LoginForm
+          totpRequired={session.totp_required}
+          devices={session.devices}
+          onDone={() => navigate(next, { replace: true })}
+        />
       ) : (
         <div className="h-28 animate-pulse rounded-md bg-surface-raised" />
       )}
