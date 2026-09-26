@@ -109,6 +109,12 @@ export function Settings() {
             ]}
           />
           <p className="mt-3 text-xs text-ink-faint">{tr("deck 重启即全部会话失效。", "Restarting the deck ends every session.")}</p>
+          <p className="mt-1.5 text-xs text-ink-faint">
+            {tr(
+              "第二因素说的是登录。停机、部署这类高风险操作要的是另一个码，由主机代理保管、deck 读不到：在主机上运行 sudo ~/agent-totp-qr.sh 取得。",
+              "That second factor is the one for signing in. High-risk actions want a different code, which the host agent holds and this deck cannot read: sudo ~/agent-totp-qr.sh on the host shows it.",
+            )}
+          </p>
         </Card>
 
         <Card title={tr("界面", "Interface")} icon={<Monitor className="h-4 w-4" />}>
