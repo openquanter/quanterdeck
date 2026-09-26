@@ -59,7 +59,10 @@
 所以：Argon2id 密码（无条件）、`Host` 白名单、写入时校验 `Origin`、
 `HttpOnly`+`SameSite=Strict` 会话、失败锁定、非回环监听强制第二因素。
 首次启动没有密码时，deck 会在**启动它的那个终端**打印一次性令牌——读到它需要
-本机访问权限，而令牌只活在进程内存里。
+本机访问权限，而令牌只活在进程内存里。由服务管理器启动时，stderr 是日志而不是终端：
+打印到那里的令牌等于写进了一个会被复制的文件，所以**它不打印**。给了
+`RUNTIME_DIRECTORY` 就写到那里，否则明说两件都没做——在终端里手动跑一次，或给单元
+一个可写的 runtime 目录。
 
 完整的威胁模型、做法与**尚未做的事**，见 [docs/SECURITY.zh-CN.md](docs/SECURITY.zh-CN.md)。
 
@@ -127,7 +130,8 @@ export OQ_DECK_TICKS_DIR=/path/to/your/ticks         # .oqtk 文件，markout �
 cargo run -p oq-deck                              # http://127.0.0.1:8899
 ```
 
-第一次启动会在终端打印一个一次性令牌。用它走 `/setup` 设置密码，把返回的
+第一次启动会打印一个一次性令牌——打印到终端，或者当 stderr 不是终端时写到
+`RUNTIME_DIRECTORY/setup-token`。用它走 `/setup` 设置密码，把返回的
 `OQ_DECK_PASSWORD_HASH` 放进环境变量后重启。在此之前，除 `/api/v1/health`、`/api/v1/session`、
 `/api/v1/session/login` 与 `/api/v1/setup` 外的所有接口都返回 401。
 
