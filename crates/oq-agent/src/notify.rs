@@ -92,6 +92,42 @@ impl Discord {
             .ok_or_else(|| format!("no text channel named {} in the guild", self.channel_name))
     }
 
+    /// The descriptions of the channel's most recent messages.
+    ///
+    /// The other half of mirroring the audit trail off this host. What
+    /// was posted cannot be unposted by anyone who reaches this machine
+    /// afterwards, so reading it back is what tells a trail that was cut
+    /// short from one that was always that short — the local chain
+    /// cannot, because what is left of it verifies.
+    ///
+    /// # Errors
+    /// The channel could not be found, or Discord refused the read.
+    pub fn recent(&self, limit: u32) -> Result<Vec<String>, String> {
+        let agent = self.agent()?;
+        let id = self.channel_id(&agent)?;
+        let mut resp = agent
+            .get(&format!(
+                "{API}/channels/{id}/messages?limit={}",
+                limit.clamp(1, 100)
+            ))
+            .header("Authorization", &format!("Bot {}", self.token))
+            .call()
+            .map_err(|e| e.to_string())?;
+        let text = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
+        let messages: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        Ok(messages
+            .as_array()
+            .map(|ms| {
+                ms.iter()
+                    .filter_map(|m| m["embeds"][0]["description"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     /// Post one message.
     ///
     /// # Errors

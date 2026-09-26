@@ -83,7 +83,38 @@ fn main() {
             None
         }
     };
-    let notify = notify::start(discord, cfg.host.clone());
+    let notify = notify::start(discord.clone(), cfg.host.clone());
+    // The channel is the one copy of this trail that is not on this
+    // machine. An entry deleted from the **end** of the local file leaves
+    // a chain that still verifies — the check walks the entries that are
+    // there, and there is nothing after the last one to disagree with —
+    // so what was posted is what says the trail used to be longer. Read
+    // back at startup, which is when a deletion between runs shows.
+    //
+    // What it cannot see: whoever can write the trail can also post to
+    // the channel, and could mirror a line to match. It catches the
+    // tampering that did not think of the channel, and every accidental
+    // truncation — which is most of what happens.
+    if let Some(d) = discord.as_ref() {
+        match d.recent(50) {
+            Ok(bodies) => {
+                if let Some((seq, short)) = audit::anchored_in(&bodies)
+                    && let Some(why) = audit.anchor_mismatch(seq, &short)
+                {
+                    eprintln!(
+                        "oq-agent: the audit trail disagrees with the copy off this host: {}",
+                        why.zh
+                    );
+                    let _ = notify.send(notify::Message {
+                        title: "审计链与告警频道不一致".to_string(),
+                        body: why.zh.clone(),
+                        color: notify::RED,
+                    });
+                }
+            }
+            Err(e) => eprintln!("oq-agent: the alert channel could not be read back: {e}"),
+        }
+    }
     let raised = Arc::new(Mutex::new(alerts::Raised::default()));
     {
         let (cfg, raised, notify) = (cfg.clone(), Arc::clone(&raised), notify.clone());
