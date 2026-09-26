@@ -23,6 +23,7 @@ export function Login() {
         <LoginForm
           totpRequired={session.totp_required}
           devices={session.devices}
+          enrol={session.enrol}
           onDone={() => navigate(next, { replace: true })}
         />
       ) : (

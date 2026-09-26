@@ -21,6 +21,15 @@
 - Sessions still live in memory, so a restart still ends them — and an
   enrolled browser does not notice, which is what the device credential
   is for.
+- **A machine can be enrolled by proving an SSH key**, for the case the
+  box above does not cover: a laptop you have a key on and no password
+  on. `scripts/deck-enrol.sh` asks the deck for a challenge, signs it,
+  and prints a link; opening the link in the browser enrols it. The
+  keys trusted are the ones an `allowed_signers` file lists
+  (`OQ_DECK_TRUSTED_KEYS`), verified with the same `ssh-keygen -Y
+  verify` the host agent trusts a release with — under its own
+  namespace, so a release signature cannot be replayed here. Off unless
+  that variable is set, and the console reports which it is.
 
 ### The console says what it knows
 

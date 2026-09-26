@@ -5,6 +5,7 @@
 //! that fails on a busy machine for a reason unrelated to the code.
 
 pub mod app;
+pub mod enrol;
 pub mod guard;
 pub mod session;
 pub mod settings;

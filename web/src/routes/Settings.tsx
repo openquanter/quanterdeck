@@ -23,7 +23,7 @@ import { useTheme, type ThemeChoice } from "@/ui/theme";
  * device that cannot be taken away is a second factor the operator
  * cannot get back — and this is the page they would come to.
  */
-function EnrolledBrowsers({ can, days }: { can: boolean; days: number }) {
+function EnrolledBrowsers({ can, days, trustedKeys }: { can: boolean; days: number; trustedKeys: string | null }) {
   const queryClient = useQueryClient();
   const devices = useQuery({ queryKey: ["devices"], queryFn: api.devices, enabled: can });
   const revoke = async (id: string) => {
@@ -61,6 +61,25 @@ function EnrolledBrowsers({ can, days }: { can: boolean; days: number }) {
         {tr(
           `一台登记过的浏览器只带设备凭证，不再要密码与验证码，有效期 ${days} 天。撤销立刻生效，那台浏览器下一次请求就会回到登录页。`,
           `An enrolled browser carries only a device credential — no password, no code — for ${days} days. Revoking takes effect at once: that browser is back at the sign-in page on its next request.`,
+        )}
+      </p>
+      {/* The other way to get on this list, which starts on a command
+          line and so has nowhere else to be found from. */}
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        {trustedKeys ? (
+          <>
+            {tr("在没有密码的新机器上，在那台机器运行", "On a machine with no password yet, run")}{" "}
+            <Code>scripts/deck-enrol.sh</Code>
+            {/* The space leads the English string: Chinese wants none
+                before the dash, English needs one. */}
+            {tr("——它用", " — it signs with a key listed in")} <Code>{trustedKeys}</Code>{" "}
+            {tr("里列出的密钥签名——再打开它打印的链接即可登记。", "— and opening the link it prints enrols the browser.")}
+          </>
+        ) : (
+          tr(
+            "想在没敲过密码的新机器上登记浏览器，用 OQ_DECK_TRUSTED_KEYS 指向一个 allowed_signers 文件，重启 deck 后登录页会多出一行说明。",
+            "To enrol a browser on a machine you have never typed the password on, point OQ_DECK_TRUSTED_KEYS at an allowed_signers file; the sign-in page gains a line about it once the deck restarts.",
+          )
         )}
       </p>
     </Card>
@@ -168,7 +187,11 @@ export function Settings() {
           </p>
         </Card>
 
-        <EnrolledBrowsers can={s.data?.devices ?? false} days={s.data?.device_days ?? 0} />
+        <EnrolledBrowsers
+          can={s.data?.devices ?? false}
+          days={s.data?.device_days ?? 0}
+          trustedKeys={s.data?.trusted_keys ?? null}
+        />
 
         <Card title={tr("界面", "Interface")} icon={<Monitor className="h-4 w-4" />}>
           <KV

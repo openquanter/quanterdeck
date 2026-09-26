@@ -21,11 +21,14 @@ export const INPUT =
 export function LoginForm({
   totpRequired,
   devices = false,
+  enrol = false,
   onDone,
 }: {
   totpRequired: boolean;
   /** Whether this deck can remember a browser, and say so. */
   devices?: boolean;
+  /** Whether a proven SSH key can enrol a browser on this deck. */
+  enrol?: boolean;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -142,6 +145,15 @@ export function LoginForm({
           {busy ? tr("正在登录…", "Signing in…") : tr("登录", "Sign in")}
         </Button>
       </div>
+      {/* The other way in, said out loud because it is the one nobody
+          finds: it starts on the command line, not on this page. */}
+      {enrol && (
+        <p className="text-xs leading-relaxed text-ink-faint">
+          {tr("在没有密码的新机器上，先在那台机器运行", "On a new machine with no password yet, run")}{" "}
+          <code className="rounded bg-surface-raised px-1 font-mono text-ink-muted">scripts/deck-enrol.sh</code>
+          {tr("，再打开它给出的链接。", " on that machine first, then open the link it prints.")}
+        </p>
+      )}
     </form>
   );
 }

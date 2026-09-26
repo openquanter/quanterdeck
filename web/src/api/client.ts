@@ -27,7 +27,11 @@ export const UNAUTHENTICATED = "oq:unauthenticated";
 async function read<T>(response: Response, path: string): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    if (response.status === 401 && path !== "/session/login" && path !== "/setup") {
+    // A 401 from these three is the answer, not an expired session: the
+    // claim route's credential is the code in the URL, and a stale one
+    // is refused while the browser may well be signed in already.
+    const answers = ["/session/login", "/session/claim", "/setup"];
+    if (response.status === 401 && !answers.includes(path)) {
       window.dispatchEvent(new Event(UNAUTHENTICATED));
     }
     throw new ApiError(response.status, body?.detail ?? response.statusText);
@@ -57,6 +61,8 @@ export interface SessionState {
   totp_required: boolean;
   /** Whether this deck can remember a browser. */
   devices: boolean;
+  /** Whether a proven SSH key can enrol this browser. */
+  enrol: boolean;
 }
 
 export interface SetupDone {
@@ -611,6 +617,8 @@ export interface RuntimeSettings {
   /** Whether this deck can remember a browser; it needs a state directory. */
   devices: boolean;
   device_days: number;
+  /** The `allowed_signers` file a signature must be listed in. */
+  trusted_keys: string | null;
   version: string;
 }
 
@@ -651,6 +659,8 @@ export const api = {
       remember,
       device_label: deviceLabel,
     }),
+  claim: (code: string) =>
+    post<{ enrolled: boolean; label: string }>("/session/claim", { claim: code }),
   devices: () => request<{ available: boolean; devices: EnrolledDevice[] }>("/devices"),
   revokeDevice: (id: string) =>
     post<{ revoked: boolean }>("/devices/revoke", { id }),

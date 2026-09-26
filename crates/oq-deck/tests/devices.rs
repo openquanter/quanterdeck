@@ -170,3 +170,123 @@ async fn a_deck_that_cannot_remember_a_browser_says_so() {
     assert_eq!(status, StatusCode::UNAUTHORIZED, "still needs a session");
     assert!(body.is_null() || body["detail"].is_string(), "{body}");
 }
+
+/// Enrolling a machine by proving a key, which is what an operator does
+/// on a laptop they have never typed the password on.
+///
+/// The whole exchange, against a real `ssh-keygen`: ask for a challenge,
+/// sign it, and trade the claim code for the cookie.
+#[tokio::test]
+async fn a_proven_key_enrols_a_browser() {
+    use std::process::Command;
+
+    let dir = tempfile::tempdir().expect("dir");
+    let key = dir.path().join("id");
+    let made = Command::new("ssh-keygen")
+        .args(["-t", "ed25519", "-N", "", "-C", "enrol-test", "-f"])
+        .arg(&key)
+        .output()
+        .expect("ssh-keygen");
+    assert!(made.status.success());
+    let public = std::fs::read_to_string(key.with_extension("pub")).expect("public");
+    let signers = dir.path().join("allowed_signers");
+    std::fs::write(&signers, format!("laptop {public}")).expect("write");
+
+    let settings = Settings {
+        state_dir: Some(dir.path().to_path_buf()),
+        password_hash: Some(oq_deck_core::auth::hash_password(PASSWORD).expect("hashes")),
+        trusted_keys: Some(signers.clone()),
+        ..Settings::default()
+    };
+    let devices = oq_deck_core::devices::Devices::open(dir.path()).expect("opens");
+    let app = oq_deck::app::router(settings, None, None, Some(Arc::new(Mutex::new(devices))));
+
+    let post = |uri: &str, body: serde_json::Value| {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::HOST, HOST)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+
+    // A command line sends no Origin; the deck treats that as what it is.
+    let (status, body, _) = send(
+        &app,
+        post("/api/v1/session/challenge", serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let challenge = body["challenge"].as_str().expect("a challenge").to_owned();
+    assert_eq!(body["namespace"], "oq-deck-enrol");
+
+    let signature = sign_as(&key, &challenge);
+
+    let (status, body, _) = send(
+        &app,
+        post(
+            "/api/v1/session/enrol",
+            serde_json::json!({ "challenge": challenge, "signature": signature,
+                                "identity": "laptop", "label": "the work laptop" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let claim = body["claim"].as_str().expect("a claim code").to_owned();
+
+    // The browser's half. It sends an Origin, because it is one.
+    let mut req = post(
+        "/api/v1/session/claim",
+        serde_json::json!({ "claim": claim }),
+    );
+    req.headers_mut()
+        .insert(header::ORIGIN, ORIGIN.parse().expect("origin"));
+    let (status, body, cookies) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The name the operator gave it survived the trip through the
+    // browser, which is the only thing that makes the revoke list a list
+    // of names rather than a list of hex.
+    assert_eq!(body["label"], "the work laptop");
+    let device = named(&cookies, "oq_deck_device").expect("a device cookie");
+
+    let (_, body, _) = send(&app, get("/api/v1/session", Some(&device))).await;
+    assert_eq!(body["authenticated"], true, "{body}");
+
+    // And the code is spent: a second browser presenting it is refused.
+    let mut again = post(
+        "/api/v1/session/claim",
+        serde_json::json!({ "claim": claim }),
+    );
+    again
+        .headers_mut()
+        .insert(header::ORIGIN, ORIGIN.parse().expect("origin"));
+    let (status, _, _) = send(&app, again).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// Sign a challenge the way `scripts/deck-enrol.sh` does.
+fn sign_as(key: &std::path::Path, challenge: &str) -> String {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("ssh-keygen")
+        .args(["-Y", "sign", "-n", "oq-deck-enrol", "-f"])
+        .arg(key)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(challenge.as_bytes())
+        .expect("write");
+    let out = child.wait_with_output().expect("wait");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("utf8")
+}

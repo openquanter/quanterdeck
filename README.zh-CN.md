@@ -165,6 +165,7 @@ deck：
 | `OQ_DECK_SESSION_IDLE_MINUTES` | `60` | 会话空闲多久失效 |
 | `OQ_DECK_SESSION_HOURS` | `12` | 会话最多存活多久 |
 | `OQ_DECK_DEVICE_DAYS` | `90` | 已登记的浏览器被信任多久 |
+| `OQ_DECK_TRUSTED_KEYS` | 一个 `allowed_signers` 文件：`scripts/deck-enrol.sh` 可以用其中列出的密钥登记浏览器，用于还没敲过密码的新机器。不设则任何密钥都不能 |
 | `OQ_DECK_WEB_DIST` | 构建好的界面，默认源码旁的 `web/dist` |
 
 主机代理（`oq-agent`），默认值按参考部署的主机布局：
