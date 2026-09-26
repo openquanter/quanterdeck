@@ -17,6 +17,13 @@
 # Over SSH, put the deck's port on this machine first:
 #   ssh -N -L 8899:127.0.0.1:8899 huawei &
 #   ./deck-enrol.sh
+#
+# A deck behind a proxy with its own CA needs that root, or curl refuses to
+# talk to it: --cacert (or OQ_DECK_CA). For the reference deployment it is
+# Caddy's, at
+# /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt on the
+# host. Do not reach for a flag that skips verification instead — see the
+# note by --insecure below.
 
 set -eu
 
@@ -24,6 +31,8 @@ URL=${OQ_DECK_URL:-http://127.0.0.1:8899}
 KEY=${OQ_DECK_KEY:-$HOME/.ssh/id_ed25519}
 IDENTITY=
 LABEL=
+CA=
+INSECURE=
 
 while [ $# -gt 0 ]; do
     case $1 in
@@ -31,7 +40,10 @@ while [ $# -gt 0 ]; do
         --key) KEY=$2; shift 2 ;;
         --identity) IDENTITY=$2; shift 2 ;;
         --label) LABEL=$2; shift 2 ;;
-        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --cacert) CA=$2; shift 2 ;;
+        --insecure) INSECURE=1; shift ;;
+
+        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -50,6 +62,27 @@ done
 [ -f "$KEY" ] || { echo "no such key: $KEY" >&2; exit 1; }
 
 URL=${URL%/}
+CA=${CA:-${OQ_DECK_CA:-}}
+
+# curl's arguments, once, so both calls agree.
+#
+# `--insecure` exists because an operator behind a private CA will reach
+# for something, and a flag that says what it costs is better than one
+# they find in a search result without the sentence. What it costs is
+# real: the challenge this script signs is what authorises enrolling a
+# browser, so a machine in the middle of *this* connection can hand back
+# its own challenge, collect the signature, and use it to enrol a browser
+# of its own. Prefer --cacert.
+CURL="curl -fsS"
+if [ -n "$CA" ]; then
+    [ -f "$CA" ] || { echo "no such CA file: $CA" >&2; exit 1; }
+    CURL="$CURL --cacert $CA"
+fi
+if [ -n "$INSECURE" ]; then
+    echo "warning: --insecure — this connection is not authenticated, and a" >&2
+    echo "machine in the middle of it could take the signature for itself." >&2
+    CURL="$CURL -k"
+fi
 
 # python3 for the JSON: the signature is armored text with newlines and
 # header lines in it, and hand-quoting that in shell is how a script
@@ -57,7 +90,8 @@ URL=${URL%/}
 field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 
 echo "asking $URL for a challenge" >&2
-challenge=$(curl -fsS -X POST "$URL/api/v1/session/challenge" \
+# shellcheck disable=SC2086
+challenge=$($CURL -X POST "$URL/api/v1/session/challenge" \
     -H 'content-type: application/json' -d '{}') || {
     echo "the deck did not answer. Is it running, and is the tunnel up?" >&2
     exit 1
@@ -81,7 +115,8 @@ print(json.dumps({
     "label": sys.argv[4],
 }))' "$nonce" "$sigfile" "$IDENTITY" "$LABEL")
 
-answer=$(curl -fsS -X POST "$URL/api/v1/session/enrol" \
+# shellcheck disable=SC2086
+answer=$($CURL -X POST "$URL/api/v1/session/enrol" \
     -H 'content-type: application/json' -d "$body") || {
     echo "the deck refused the signature. Most often the key is not in its" >&2
     echo "OQ_DECK_TRUSTED_KEYS file, or identity ($IDENTITY) is not the name" >&2

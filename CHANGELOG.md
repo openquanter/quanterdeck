@@ -30,6 +30,12 @@
   verify` the host agent trusts a release with — under its own
   namespace, so a release signature cannot be replayed here. Off unless
   that variable is set, and the console reports which it is.
+- **`deck-enrol.sh` takes `--cacert`** (or `OQ_DECK_CA`), because a deck
+  behind a proxy with its own CA is one curl refuses to talk to, and the
+  reference deployment is exactly that. `--insecure` exists too, and says
+  in the script what it costs: the challenge this script signs is what
+  authorises enrolling a browser, so a machine in the middle of that
+  connection can collect the signature and enrol one of its own.
 
 ### The console says what it knows
 
