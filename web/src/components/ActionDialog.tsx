@@ -69,16 +69,28 @@ export function ActionDialog({
           </label>
 
           {highRisk && (
-            <label className="block text-xs text-ink-muted">
-              {tr("二次验证码", "Step-up code")} <span className="text-ink-faint">· {tr("验证器里「oq-agent」那一项的 6 位数字", "the six digits of the \"oq-agent\" entry in your authenticator")}</span>
-              <input
-                className={cx(input, "w-44 font-mono tracking-[0.4em]")}
-                inputMode="numeric"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              />
-            </label>
+            <div className="text-xs text-ink-muted">
+              <label className="block">
+                {tr("二次验证码", "Step-up code")} <span className="text-ink-faint">· {tr("验证器里「oq-agent」那一项的 6 位数字", "the six digits of the \"oq-agent\" entry in your authenticator")}</span>
+                <input
+                  className={cx(input, "w-44 font-mono tracking-[0.4em]")}
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                />
+              </label>
+              {/* Asked for here and obtained nowhere else in this console:
+                  the agent's secret is the agent's, so the deck cannot
+                  show it, and an operator who has never enrolled it has no
+                  way to find that out from the screen that wants it. */}
+              <p className="mt-1.5 text-ink-faint">
+                {tr(
+                  "与登录验证码不是同一个：主机代理有自己的密钥，在主机上运行 sudo ~/agent-totp-qr.sh 取得。",
+                  "Not the code you sign in with: the host agent has its own secret, and sudo ~/agent-totp-qr.sh on the host shows it.",
+                )}
+              </p>
+            </div>
           )}
 
           <label className="flex items-center gap-2 text-sm text-ink">

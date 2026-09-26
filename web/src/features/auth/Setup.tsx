@@ -149,6 +149,12 @@ function Credentials({ done }: { done: SetupDone }) {
       <Field label="OQ_DECK_PASSWORD_HASH" value={done.password_hash} />
       <Field label={tr("OQ_DECK_TOTP_SECRET（录入验证器应用）", "OQ_DECK_TOTP_SECRET (enter into your authenticator app)")} value={done.totp_secret} />
       <Field label={tr("验证器链接（支持直接打开的应用可用）", "Authenticator link (for apps that open it directly)")} value={uri} />
+      <p className="text-xs leading-relaxed text-ink-muted">
+        {tr(
+          "上面这一项是给登录用的。主机代理另有一个、给停机与部署这类高风险操作用的，与它不同——在主机上运行 sudo ~/agent-totp-qr.sh 取得，录成单独一项。两个都录，否则到第一次部署时会卡在验证码上。",
+          "The entry above is what signs you in. The host agent has its own, for high-risk actions like stopping the trader or deploying — run sudo ~/agent-totp-qr.sh on the host and enrol it as a separate entry. Enrol both, or the first deploy stops at the code.",
+        )}
+      </p>
       <div>
         <div className="mb-1.5 text-xs text-ink-muted">{tr("接下来", "Next steps")}</div>
         <ol className="list-decimal space-y-1 pl-5 text-ink-muted">
