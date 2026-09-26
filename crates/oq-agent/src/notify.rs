@@ -23,12 +23,27 @@ pub const GREEN: u32 = 0x2e_cc_71;
 pub const BLUE: u32 = 0x34_98_db;
 
 /// Where messages are sent.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Discord {
     token: String,
     guild: String,
     channel_name: String,
     proxy: Option<String>,
+}
+
+impl core::fmt::Debug for Discord {
+    /// Hand-written because a derived one prints the bot token, and a
+    /// token that reaches a log is a token that has to be rotated. The
+    /// rest is here so that a `{:?}` in a test tells you which channel
+    /// it was talking about.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Discord")
+            .field("guild", &self.guild)
+            .field("channel_name", &self.channel_name)
+            .field("proxy", &self.proxy)
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 const API: &str = "https://discord.com/api/v10";
