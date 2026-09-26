@@ -449,37 +449,38 @@ pub fn records_between(
         .map_err(|e| e.to_string())?;
     let mut undecodable = 0;
     let (mut price_scale, mut qty_scale) = (0, 0);
-    let mut all = Vec::new();
-    for frame in replay.since(0) {
-        match oq_live::record::Record::decode(frame.kind, &frame.payload) {
-            Some(record) => {
-                if let oq_live::record::Record::SessionStart {
-                    price_scale: p,
-                    qty_scale: q,
-                    ..
-                } = &record
-                {
-                    (price_scale, qty_scale) = (*p, *q);
-                }
-                let v = view(frame.seq, record);
-                let in_time = v.at.is_none_or(|at| {
-                    from_ns.is_none_or(|f| at >= f) && to_ns.is_none_or(|t| at <= t)
-                });
-                if in_time && (kinds.is_empty() || kinds.iter().any(|k| k == v.kind)) {
-                    all.push(v);
-                }
-            }
-            None => undecodable += 1,
+    let limit = limit.clamp(1, MAX_PAGE);
+    // Walked newest-first and kept as it goes. A view is a JSON object,
+    // and every matching record used to be held until the end — so a
+    // journal with months of fills in it was multiplied into months of
+    // JSON to answer for the last page of it, and the console died of
+    // it. The count still visits every record; only the page is kept.
+    let mut total = 0usize;
+    let mut records: Vec<JournalRecord> = Vec::new();
+    for frame in replay.frames.iter().rev() {
+        let Some(record) = oq_live::record::Record::decode(frame.kind, &frame.payload) else {
+            undecodable += 1;
+            continue;
+        };
+        if let oq_live::record::Record::SessionStart {
+            price_scale: p,
+            qty_scale: q,
+            ..
+        } = &record
+        {
+            (price_scale, qty_scale) = (*p, *q);
+        }
+        let v = view(frame.seq, record);
+        let in_time =
+            v.at.is_none_or(|at| from_ns.is_none_or(|f| at >= f) && to_ns.is_none_or(|t| at <= t));
+        if !in_time || !(kinds.is_empty() || kinds.iter().any(|k| k == v.kind)) {
+            continue;
+        }
+        total += 1;
+        if records.len() < limit && before.is_none_or(|b| v.seq < b) {
+            records.push(v);
         }
     }
-    let total = all.len();
-    let limit = limit.clamp(1, MAX_PAGE);
-    let records: Vec<JournalRecord> = all
-        .into_iter()
-        .rev()
-        .filter(|r| before.is_none_or(|b| r.seq < b))
-        .take(limit)
-        .collect();
     let next_before = (records.len() == limit)
         .then(|| records.last().map(|r| r.seq))
         .flatten();
