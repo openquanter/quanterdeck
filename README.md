@@ -208,6 +208,10 @@ The deck:
 | `OQ_DECK_VENUE_RECORD` | The watcher's latest venue reading, for reconciliation without pasting |
 | `OQ_DECK_AGENT_SOCKET` | The host agent's socket; without it there are no operations |
 | `OQ_DECK_ALLOW_WRITES` | `1` to allow actions at all; read-only otherwise |
+| `OQ_DECK_STATE_DIR` | Where it keeps the browsers you enrolled; `STATE_DIRECTORY` if unset, and with neither it remembers nobody |
+| `OQ_DECK_SESSION_IDLE_MINUTES` | `60` | How long a session survives without use |
+| `OQ_DECK_SESSION_HOURS` | `12` | How long a session survives at all |
+| `OQ_DECK_DEVICE_DAYS` | `90` | How long an enrolled browser is trusted |
 | `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
 
 The agent (`oq-agent`), whose defaults fit a host laid out as the

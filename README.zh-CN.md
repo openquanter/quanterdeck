@@ -161,6 +161,10 @@ deck：
 | `OQ_DECK_VENUE_RECORD` | 对账进程写下的交易所最新读数，免粘贴对账 |
 | `OQ_DECK_AGENT_SOCKET` | 主机代理的 socket；不设就没有运维功能 |
 | `OQ_DECK_ALLOW_WRITES` | 设为 `1` 才允许任何操作，否则只读 |
+| `OQ_DECK_STATE_DIR` | 存放已登记浏览器的地方；未设时取 `STATE_DIRECTORY`，两者都没有就谁都记不住 |
+| `OQ_DECK_SESSION_IDLE_MINUTES` | `60` | 会话空闲多久失效 |
+| `OQ_DECK_SESSION_HOURS` | `12` | 会话最多存活多久 |
+| `OQ_DECK_DEVICE_DAYS` | `90` | 已登记的浏览器被信任多久 |
 | `OQ_DECK_WEB_DIST` | 构建好的界面，默认源码旁的 `web/dist` |
 
 主机代理（`oq-agent`），默认值按参考部署的主机布局：
