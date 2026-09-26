@@ -122,7 +122,7 @@ fn settings(sock: std::path::PathBuf, writes: bool) -> Settings {
 async fn a_read_is_carried_across_with_a_fresh_nonce_and_the_askers_name() {
     let dir = tempfile::tempdir().expect("dir");
     let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!({"halted": false})));
-    let app = router(settings(sock, false), None, None);
+    let app = router(settings(sock, false), None, None, None);
     let cookie = login(&app).await;
 
     let (status, body) = call(&app, &cookie, "GET", "/api/v1/ops/status", None).await;
@@ -148,7 +148,7 @@ async fn an_action_needs_writes_on_and_a_reason() {
     let dir = tempfile::tempdir().expect("dir");
     let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!({"state": "halted"})));
 
-    let read_only = router(settings(sock.clone(), false), None, None);
+    let read_only = router(settings(sock.clone(), false), None, None, None);
     let cookie = login(&read_only).await;
     let (status, _) = call(
         &read_only,
@@ -160,7 +160,7 @@ async fn an_action_needs_writes_on_and_a_reason() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let app = router(settings(sock, true), None, None);
+    let app = router(settings(sock, true), None, None, None);
     let cookie = login(&app).await;
     let (status, _) = call(
         &app,
@@ -208,7 +208,7 @@ async fn the_agents_refusal_is_shown_as_a_refusal() {
         dir.path(),
         AgentResponse::refused("the step-up code is wrong"),
     );
-    let app = router(settings(sock, true), None, None);
+    let app = router(settings(sock, true), None, None, None);
     let cookie = login(&app).await;
     let (status, body) = call(
         &app,
@@ -231,6 +231,7 @@ async fn no_agent_is_a_named_absence() {
         },
         None,
         None,
+        None,
     );
     let cookie = login(&app).await;
     let (status, body) = call(&app, &cookie, "GET", "/api/v1/ops/units", None).await;
@@ -247,7 +248,7 @@ async fn no_agent_is_a_named_absence() {
 async fn a_config_change_carries_its_content_and_the_version_it_was_made_against() {
     let dir = tempfile::tempdir().expect("dir");
     let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!({"backup": "s.json.1"})));
-    let app = router(settings(sock, true), None, None);
+    let app = router(settings(sock, true), None, None, None);
     let cookie = login(&app).await;
     let (status, _) = call(
         &app,

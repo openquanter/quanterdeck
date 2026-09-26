@@ -18,10 +18,21 @@ export const INPUT =
  * wrong code read identically — telling them apart is how an attacker
  * learns which half they have.
  */
-export function LoginForm({ totpRequired, onDone }: { totpRequired: boolean; onDone: () => void }) {
+export function LoginForm({
+  totpRequired,
+  devices = false,
+  onDone,
+}: {
+  totpRequired: boolean;
+  /** Whether this deck can remember a browser, and say so. */
+  devices?: boolean;
+  onDone: () => void;
+}) {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<ApiError | null>(null);
 
@@ -30,7 +41,7 @@ export function LoginForm({ totpRequired, onDone }: { totpRequired: boolean; onD
     setBusy(true);
     setRefusal(null);
     try {
-      await api.login(password, totp);
+      await api.login(password, totp, remember && devices, label);
       await queryClient.invalidateQueries();
       onDone();
     } catch (error) {
@@ -87,6 +98,38 @@ export function LoginForm({ totpRequired, onDone }: { totpRequired: boolean; onD
             className={cx(INPUT, "font-mono tracking-[0.4em]")}
           />
         </label>
+      )}
+      {devices && (
+        <div className="rounded-md border border-line px-3 py-2.5">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            <span className="text-ink-muted">
+              {tr(
+                "记住这台设备",
+                "Remember this device",
+              )}{" "}
+              <span className="text-ink-faint">
+                {tr(
+                  "——之后这台浏览器不再要密码和验证码。它少一个因素，所以设置页里列得出来、随时可以撤销。",
+                  "— this browser will not be asked again. It holds one factor instead of two, which is why it is listed in Settings and can be taken away at any time.",
+                )}
+              </span>
+            </span>
+          </label>
+          {remember && (
+            <input
+              className={cx(INPUT, "mt-2")}
+              placeholder={tr("给它起个名字（用来撤销）", "A name for it (used to revoke)")}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          )}
+        </div>
       )}
       {refusal && (
         <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-bad">

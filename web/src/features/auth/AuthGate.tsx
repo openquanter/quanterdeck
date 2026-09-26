@@ -55,6 +55,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             <div className="px-5 py-4">
               <LoginForm
                 totpRequired={session.totp_required}
+                devices={session.devices}
                 onDone={() => {
                   setExpired(false);
                   void queryClient.invalidateQueries();

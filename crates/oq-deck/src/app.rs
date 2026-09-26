@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::guard::{Hosts, origin_permitted};
-use crate::session::{self, Denied, Sessions};
+use crate::session::{self, Sessions};
 use crate::settings::Settings;
 
 #[derive(Clone)]
@@ -42,6 +42,20 @@ pub struct Deck {
     /// Taken, not read, by a setup that succeeds: the token is single
     /// use, as the notes and the startup message say it is.
     pub setup_token: Arc<std::sync::Mutex<Option<String>>>,
+    /// The browsers the operator has enrolled. `None` when the deck has
+    /// no state directory to keep them in, which is a capability the
+    /// console reports rather than one it silently lacks.
+    pub devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
+}
+
+impl Deck {
+    /// Whether a token belongs to a device the operator enrolled.
+    #[must_use]
+    pub fn enrolled(&self, token: &str) -> bool {
+        self.devices
+            .as_ref()
+            .is_some_and(|d| d.lock().map(|d| d.find(token).is_some()).unwrap_or(false))
+    }
 }
 
 tokio::task_local! {
@@ -152,23 +166,33 @@ fn check_origin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
 }
 
 fn check_session(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
-    let cookie = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
-    let Some(token) = session::token_from_cookies(cookie) else {
-        return Err(Refusal::new(
-            StatusCode::UNAUTHORIZED,
-            t("请先登录。", "Sign in first."),
-        ));
-    };
-    match deck.sessions.touch(&token) {
-        Ok(()) => Ok(()),
-        Err(Denied::NoSession) => Err(Refusal::new(
-            StatusCode::UNAUTHORIZED,
+    let cookies = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
+    let session = session::token_from_cookies(cookies);
+    if let Some(token) = session.as_deref()
+        && deck.sessions.touch(token).is_ok()
+    {
+        return Ok(());
+    }
+    // A device the operator enrolled is a credential in its own right.
+    // It is what makes a deck restart — which drops every session,
+    // because sessions live in memory — invisible to a browser they
+    // chose to trust, and it is revocable where a session is not.
+    if let Some(token) = session::device_from_cookies(cookies)
+        && deck.enrolled(&token)
+    {
+        return Ok(());
+    }
+    Err(Refusal::new(
+        StatusCode::UNAUTHORIZED,
+        if session.is_some() {
             t(
                 "会话已失效，请重新登录。",
                 "The session has expired; sign in again.",
-            ),
-        )),
-    }
+            )
+        } else {
+            t("请先登录。", "Sign in first.")
+        },
+    ))
 }
 
 /// Where a request came from, for counting failed attempts per source.
@@ -238,6 +262,20 @@ fn guard_write(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
     check_writes(deck)
 }
 
+/// A write that changes what this console may do, rather than what the
+/// host does.
+///
+/// Not behind `OQ_DECK_ALLOW_WRITES`: that flag says the console may act
+/// on the host, and everything here makes it act *less*. A deck with
+/// writes off that refused to let an enrolled browser be taken away
+/// would be refusing the one action that is always safe, and the one an
+/// operator reaches for when something is wrong.
+fn guard_admin(deck: &Deck, headers: &HeaderMap) -> Result<(), Refusal> {
+    check_host(deck, headers)?;
+    check_origin(deck, headers)?;
+    check_session(deck, headers)
+}
+
 // -- unauthenticated ------------------------------------------------------
 
 #[derive(Serialize)]
@@ -267,6 +305,10 @@ struct SessionState {
     /// operator to setup rather than to a login form they cannot pass.
     setup_required: bool,
     totp_required: bool,
+    /// Whether the login form should offer to remember this browser.
+    /// Told rather than guessed: a deck with no state directory cannot,
+    /// and a box that silently does nothing is worse than no box.
+    devices: bool,
 }
 
 /// Whether the caller is logged in. Safe to call without a session.
@@ -279,8 +321,100 @@ async fn whoami(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         authenticated,
         setup_required: !deck.settings.configured(),
         totp_required: deck.settings.totp_secret.is_some(),
+        devices: deck.devices.is_some(),
     })
     .into_response()
+}
+
+/// The browsers this operator has enrolled.
+///
+/// Not behind `OQ_DECK_ALLOW_WRITES`: that flag is about acting on the
+/// host, and this is the console's own administration. Reading the list
+/// and taking an entry away both *reduce* what can reach the host, and a
+/// deck that refused to let them be revoked while read-only would be
+/// refusing the one action that is always safe.
+async fn devices_list(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let Some(devices) = deck.devices.as_ref() else {
+        return axum::Json(serde_json::json!({ "available": false, "devices": [] }))
+            .into_response();
+    };
+    let list = devices
+        .lock()
+        .map(|d| {
+            d.list()
+                .iter()
+                .map(|device| {
+                    serde_json::json!({
+                        "id": device.id,
+                        "label": device.label,
+                        "created_ms": device.created_ms,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    axum::Json(serde_json::json!({ "available": true, "devices": list })).into_response()
+}
+
+#[derive(Deserialize)]
+struct RevokeBody {
+    id: String,
+}
+
+/// Take one enrolled browser away.
+async fn devices_revoke(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<RevokeBody>,
+) -> Response {
+    if let Err(refusal) = guard_admin(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let Some(devices) = deck.devices.as_ref() else {
+        return Refusal::not_found(t(
+            "这台 deck 没有可写的状态目录，没有登记过设备。",
+            "This deck has no writable state directory and has enrolled no devices.",
+        ))
+        .into_response();
+    };
+    match devices.lock().map(|mut d| d.revoke(&body.id)) {
+        Ok(Ok(true)) => axum::Json(serde_json::json!({ "revoked": true })).into_response(),
+        Ok(Ok(false)) => Refusal::not_found(t("没有这个设备。", "No such device.")).into_response(),
+        Ok(Err(e)) => Refusal::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            t(format!("无法撤销：{e}"), format!("Could not revoke: {e}")),
+        )
+        .into_response(),
+        Err(_) => Refusal::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            t("设备状态已损坏。", "the device state is poisoned"),
+        )
+        .into_response(),
+    }
+}
+
+/// Enrol this browser, if the operator asked and the deck can keep it.
+///
+/// A deck with no state directory cannot, and the login form does not
+/// offer the box — the console reports what it can do rather than
+/// accepting a request it will quietly drop.
+fn enrol(deck: &Deck, label: &str, now_ms: i64) -> Option<String> {
+    let devices = deck.devices.as_ref()?;
+    let token = auth::new_token().ok()?;
+    let label = if label.trim().is_empty() {
+        "a browser"
+    } else {
+        label.trim()
+    };
+    devices
+        .lock()
+        .ok()?
+        .issue(label, &token, now_ms)
+        .ok()
+        .map(|_| token)
 }
 
 #[derive(Deserialize)]
@@ -288,6 +422,13 @@ struct Login {
     password: String,
     #[serde(default)]
     totp: String,
+    /// Enrol this browser, so it is not asked for a password again.
+    #[serde(default)]
+    remember: bool,
+    /// What the operator calls it. The list they revoke from is a list
+    /// of names or it is a list of hex ids.
+    #[serde(default)]
+    device_label: String,
 }
 
 /// Exchange a password for a session.
@@ -366,19 +507,38 @@ async fn login(
         }
     }
 
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+
     match deck.sessions.issue(&source) {
-        Ok(token) => (
-            [(
-                header::SET_COOKIE,
-                session::set_cookie(
-                    &token,
+        Ok(token) => {
+            let mut cookies = vec![session::set_cookie(
+                &token,
+                deck.settings.behind_tls,
+                deck.settings.session_absolute,
+            )];
+            // After the session, so a failure here still leaves a
+            // signed-in operator rather than a refusal they cannot
+            // explain.
+            if body.remember
+                && let Some(device) = enrol(&deck, &body.device_label, now_ms)
+            {
+                cookies.push(session::device_cookie(
+                    &device,
                     deck.settings.behind_tls,
-                    deck.settings.session_absolute,
-                ),
-            )],
-            axum::Json(serde_json::json!({ "authenticated": true })),
-        )
-            .into_response(),
+                    deck.settings.device_lifetime,
+                ));
+            }
+            let mut response =
+                axum::Json(serde_json::json!({ "authenticated": true })).into_response();
+            for value in cookies {
+                if let Ok(v) = axum::http::HeaderValue::from_str(&value) {
+                    response.headers_mut().append(header::SET_COOKIE, v);
+                }
+            }
+            response
+        }
         Err(error) => Refusal::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             t(
@@ -400,11 +560,18 @@ async fn logout(State(deck): State<Deck>, headers: HeaderMap) -> Response {
     if let Some(token) = session::token_from_cookies(cookie) {
         deck.sessions.revoke(&token);
     }
-    (
-        [(header::SET_COOKIE, session::clear_cookie())],
-        axum::Json(serde_json::json!({ "authenticated": false })),
-    )
-        .into_response()
+    // Signing out ends the session, not the device: the device is a
+    // thing the operator made on purpose, and taking it away is a
+    // separate act with its own page. Anything else would make signing
+    // out on a shared machine also un-enrol the machine.
+    let clearing = session::clear_cookies();
+    let mut response = axum::Json(serde_json::json!({ "authenticated": false })).into_response();
+    for value in clearing {
+        if let Ok(v) = axum::http::HeaderValue::from_str(&value) {
+            response.headers_mut().append(header::SET_COOKIE, v);
+        }
+    }
+    response
 }
 
 #[derive(Deserialize)]
@@ -1247,6 +1414,10 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
             "idle_minutes": s.session_idle.as_secs() / 60,
             "absolute_hours": s.session_absolute.as_secs() / 3600,
         },
+        // Reported rather than assumed: a deck with no state directory
+        // cannot remember a browser, and the form must not offer it.
+        "devices": deck.devices.is_some(),
+        "device_days": s.device_lifetime.as_secs() / 86_400,
         "version": env!("CARGO_PKG_VERSION"),
     }))
     .into_response()
@@ -1456,6 +1627,7 @@ pub fn router(
     settings: Settings,
     web_dist: Option<PathBuf>,
     setup_token: Option<String>,
+    devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
 ) -> Router {
     let hosts = Hosts::for_bind(settings.host, settings.port, &settings.extra_hosts);
     // Read before the settings are moved: the session store outlives the
@@ -1466,6 +1638,7 @@ pub fn router(
         sessions: Arc::new(Sessions::with_lifetimes(idle, absolute)),
         hosts: Arc::new(hosts),
         setup_token: Arc::new(std::sync::Mutex::new(setup_token)),
+        devices,
     };
 
     let api = Router::new()
@@ -1489,6 +1662,8 @@ pub fn router(
         .route("/live/latest", get(reconcile_latest))
         .route("/journals/{id}/records", get(journal_records))
         .route("/runtime/settings", get(runtime_settings))
+        .route("/devices", get(devices_list))
+        .route("/devices/revoke", post(devices_revoke))
         .route("/ops/attribution", get(ops_attribution))
         .route("/ops/accounts", get(ops_accounts))
         .route("/ops/resources", get(ops_resources))

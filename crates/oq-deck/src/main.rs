@@ -18,21 +18,6 @@ fn web_dist() -> Option<PathBuf> {
     candidate.is_dir().then_some(candidate)
 }
 
-/// Writes `text` where only this user can read it, and says whether it
-/// managed to.
-fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    f.write_all(text.as_bytes())?;
-    f.write_all(b"\n")
-}
-
 /// The one-time token that bootstraps a deck with no password yet.
 ///
 /// Printed to stderr, which is the terminal the operator started this
@@ -51,7 +36,7 @@ fn announce_setup(token: &str, host: &str, port: u16) {
     if !std::io::stderr().is_terminal() {
         let runtime = std::env::var_os("RUNTIME_DIRECTORY").map(std::path::PathBuf::from);
         match runtime {
-            Some(dir) if write_private(&dir.join("setup-token"), token).is_ok() => {
+            Some(dir) if oq_deck_core::write_private(&dir.join("setup-token"), token).is_ok() => {
                 let path = dir.join("setup-token");
                 eprintln!();
                 eprintln!("  ┌─ 首次运行 ─────────────────────────────────────────────");
@@ -125,6 +110,27 @@ async fn main() -> ExitCode {
         }
     };
 
+    // Opened here rather than inside the router: a file that will not
+    // parse is a refusal to start, which is a decision, and a library
+    // that panics on bad input is not one.
+    let devices = match settings.state_dir.as_deref() {
+        Some(dir) => match std::fs::create_dir_all(dir)
+            .map_err(|e| e.to_string())
+            .and_then(|()| oq_deck_core::devices::Devices::open(dir))
+        {
+            Ok(store) => Some(std::sync::Arc::new(std::sync::Mutex::new(store))),
+            Err(error) => {
+                eprintln!(
+                    "oq-deck: 无法读取已登记的设备（{}）：{error}",
+                    dir.display()
+                );
+                eprintln!("oq-deck: 拒绝启动——把它当成“没有设备”会把已登记的浏览器全部登出。");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+
     let address = (settings.host, settings.port);
     let mode = if settings.allow_writes {
         "writes enabled"
@@ -144,7 +150,7 @@ async fn main() -> ExitCode {
         address.1
     );
 
-    let router = app::router(settings, web_dist(), setup_token);
+    let router = app::router(settings, web_dist(), setup_token, devices);
     let listener = match tokio::net::TcpListener::bind(address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -175,7 +181,6 @@ async fn shutdown() {
 
 #[cfg(test)]
 mod setup_token {
-    use super::*;
 
     /// The token is readable by this user and no other. A file whose
     /// mode depends on the umask is a file somebody else may read.
@@ -184,7 +189,7 @@ mod setup_token {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().expect("dir");
         let path = dir.path().join("setup-token");
-        write_private(&path, "0123456789abcdef").expect("written");
+        oq_deck_core::write_private(&path, "0123456789abcdef").expect("written");
         let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "{mode:o}");
         assert_eq!(
