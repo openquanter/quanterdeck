@@ -18,12 +18,17 @@
 #   ssh -N -L 8899:127.0.0.1:8899 huawei &
 #   ./deck-enrol.sh
 #
-# A deck behind a proxy with its own CA needs that root, or curl refuses to
-# talk to it: --cacert (or OQ_DECK_CA). For the reference deployment it is
-# Caddy's, at
-# /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt on the
-# host. Do not reach for a flag that skips verification instead — see the
-# note by --insecure below.
+# A deck behind a proxy with its own CA needs that root trusted, or curl
+# refuses to talk to it. `--cacert` (or OQ_DECK_CA) names it, and works
+# where curl was built against OpenSSL. **On macOS it does nothing**: the
+# system curl uses SecureTransport and reads the keychain, so the root has
+# to go in there —
+#   sudo security add-trusted-cert -d -r trustRoot -p ssl \
+#       -k /Library/Keychains/System.keychain <root.crt>
+# For the reference deployment the root is Caddy's, on the host at
+# /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt.
+# Do not reach for a flag that skips verification instead — see the note by
+# --insecure below.
 
 set -eu
 
@@ -92,10 +97,23 @@ field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])'
 echo "asking $URL for a challenge" >&2
 # shellcheck disable=SC2086
 challenge=$($CURL -X POST "$URL/api/v1/session/challenge" \
-    -H 'content-type: application/json' -d '{}') || {
-    echo "the deck did not answer. Is it running, and is the tunnel up?" >&2
+    -H 'content-type: application/json' -d '{}') && status=0 || status=$?
+if [ "$status" != 0 ]; then
+    # 60 is curl's "SSL certificate problem". Said separately, because the
+    # first thing that comes to mind for a silent failure is a dead tunnel,
+    # and the answer for this one is on the deck's own host.
+    if [ "$status" = 60 ]; then
+        echo "curl will not trust $URL's certificate. If the deck is behind a" >&2
+        echo "proxy with its own CA, that root has to be trusted: --cacert (or" >&2
+        echo "OQ_DECK_CA) where curl uses OpenSSL, and on macOS the keychain," >&2
+        echo "where this curl reads instead and --cacert does nothing:" >&2
+        echo "  sudo security add-trusted-cert -d -r trustRoot -p ssl \\" >&2
+        echo "      -k /Library/Keychains/System.keychain <root.crt>" >&2
+    else
+        echo "the deck did not answer. Is it running, and is the tunnel up?" >&2
+    fi
     exit 1
-}
+fi
 namespace=$(printf '%s' "$challenge" | field namespace)
 nonce=$(printf '%s' "$challenge" | field challenge)
 
