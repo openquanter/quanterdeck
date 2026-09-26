@@ -124,6 +124,17 @@ fn main() {
             Err(e) => eprintln!("oq-agent: the alert channel could not be read back: {e}"),
         }
     }
+    // The journal's anchor, which is its record count.
+    //
+    // The trader's journal has no chain — a record carries a CRC and
+    // nothing that names the one before it — so a deletion at the end
+    // leaves a shorter file that reads perfectly. How many records there
+    // were is the fact that survives such a deletion, and it only
+    // survives off this host.
+    {
+        let (cfg, notify) = (cfg.clone(), notify.clone());
+        std::thread::spawn(move || journal_anchor(&cfg, &notify));
+    }
     let raised = Arc::new(Mutex::new(alerts::Raised::default()));
     {
         let (cfg, raised, notify) = (cfg.clone(), Arc::clone(&raised), notify.clone());
@@ -512,6 +523,89 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
     }
 }
 
+/// How often the journal's head is mirrored. An hour is often enough to
+/// put a bound on what a deletion could hide, and rare enough that a
+/// monitoring channel does not become a log file.
+const ANCHOR_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Mirror the trader's journal head off this host, and check the last one
+/// it mirrored.
+///
+/// The head is the newest journal's record count. Posted, it says how
+/// many records existed at that moment; a file that is now shorter has
+/// had some taken off the end of it, which is the one thing a reader of
+/// that journal cannot see for itself.
+///
+/// What it cannot see is the same bound the audit trail's anchor has:
+/// whoever can write the journal can also post to the channel.
+fn journal_anchor(cfg: &Config, notify: &std::sync::mpsc::Sender<Message>) {
+    let mut last: Option<(String, usize)> = None;
+    loop {
+        let head = newest_journal_head(&cfg.journals);
+        if let Some((name, count)) = head.clone()
+            && last.as_ref() != Some(&(name.clone(), count))
+        {
+            match read_anchor(&cfg.state_dir) {
+                Some((was_name, was_count)) if was_name == name && was_count > count => {
+                    let why = format!(
+                        "journal {name} had {was_count} records when this host last said so and \
+                         has {count} now; records were taken off the end"
+                    );
+                    eprintln!("oq-agent: {why}");
+                    let _ = notify.send(Message {
+                        title: "交易进程的 journal 变短了".to_string(),
+                        body: why,
+                        color: notify::RED,
+                    });
+                }
+                _ => {}
+            }
+            write_anchor(&cfg.state_dir, &name, count);
+            println!("oq-agent: journal anchor {name} {count}");
+            last = Some((name, count));
+        }
+        std::thread::sleep(ANCHOR_EVERY);
+    }
+}
+
+/// The newest journal's name and how many records it holds.
+fn newest_journal_head(journals: &std::path::Path) -> Option<(String, usize)> {
+    let mut newest: Option<(std::time::SystemTime, String)> = None;
+    for entry in std::fs::read_dir(journals).ok()?.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "oqj") {
+            continue;
+        }
+        let Some(name) = path.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+            continue;
+        };
+        let Ok(at) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        if newest.as_ref().is_none_or(|(when, _)| at > *when) {
+            newest = Some((at, name));
+        }
+    }
+    let (_, name) = newest?;
+    let page = oq_deck_core::live::records(journals, &name, &[], 1, None).ok()?;
+    Some((name, page.total))
+}
+
+/// The head this host last mirrored, from a file beside the trail.
+fn anchor_path(state_dir: &std::path::Path) -> std::path::PathBuf {
+    state_dir.join("journal-anchor")
+}
+
+fn read_anchor(state_dir: &std::path::Path) -> Option<(String, usize)> {
+    let text = std::fs::read_to_string(anchor_path(state_dir)).ok()?;
+    let (name, count) = text.trim().rsplit_once(' ')?;
+    Some((name.to_string(), count.parse().ok()?))
+}
+
+fn write_anchor(state_dir: &std::path::Path, name: &str, count: usize) {
+    let _ = std::fs::write(anchor_path(state_dir), format!("{name} {count}"));
+}
+
 /// Append to the audit trail and mirror it off the host.
 fn record(
     state: &State,
@@ -599,4 +693,22 @@ fn accounts(log_dir: &std::path::Path, units: &[String]) -> serde_json::Value {
         .filter_map(|v| v["fingerprint"].as_str().map(str::to_string))
         .collect();
     json!({"processes": latest, "same_account": prints.len() <= 1})
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    /// The head this host last mirrored has to survive a restart, or
+    /// every restart compares against nothing.
+    #[test]
+    fn the_last_head_is_remembered() {
+        let dir = tempfile::tempdir().expect("dir");
+        assert_eq!(read_anchor(dir.path()), None, "nothing yet");
+        write_anchor(dir.path(), "oqp-live-20260926-000000", 41);
+        assert_eq!(
+            read_anchor(dir.path()),
+            Some(("oqp-live-20260926-000000".to_string(), 41))
+        );
+    }
 }
