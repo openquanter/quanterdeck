@@ -132,8 +132,11 @@ fn main() {
     // were is the fact that survives such a deletion, and it only
     // survives off this host.
     {
-        let (cfg, notify) = (cfg.clone(), notify.clone());
-        std::thread::spawn(move || journal_anchor(&cfg, &notify));
+        let (cfg, notify, discord) = (cfg.clone(), notify.clone(), discord.clone());
+        // Checked before the loop starts, which is when a deletion
+        // between runs shows.
+        journal_anchor_check(&cfg, discord.as_ref(), &notify);
+        std::thread::spawn(move || journal_anchor(&cfg, discord.as_ref()));
     }
     let raised = Arc::new(Mutex::new(alerts::Raised::default()));
     {
@@ -538,34 +541,94 @@ const ANCHOR_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
 ///
 /// What it cannot see is the same bound the audit trail's anchor has:
 /// whoever can write the journal can also post to the channel.
-fn journal_anchor(cfg: &Config, notify: &std::sync::mpsc::Sender<Message>) {
+fn journal_anchor(cfg: &Config, discord: Option<&notify::Discord>) {
     let mut last: Option<(String, usize)> = None;
     loop {
-        let head = newest_journal_head(&cfg.journals);
-        if let Some((name, count)) = head.clone()
+        if let Some((name, count)) = newest_journal_head(&cfg.journals)
             && last.as_ref() != Some(&(name.clone(), count))
         {
-            match read_anchor(&cfg.state_dir) {
-                Some((was_name, was_count)) if was_name == name && was_count > count => {
-                    let why = format!(
-                        "journal {name} had {was_count} records when this host last said so and \
-                         has {count} now; records were taken off the end"
-                    );
-                    eprintln!("oq-agent: {why}");
-                    let _ = notify.send(Message {
-                        title: "交易进程的 journal 变短了".to_string(),
-                        body: why,
-                        color: notify::RED,
-                    });
+            // Posted, not written down here: an anchor on the machine it
+            // is meant to be evidence about is not an anchor.
+            if let Some(d) = discord {
+                let body = format!("journal {name} #{count}");
+                match d.send(
+                    &Message {
+                        title: "journal 头".to_string(),
+                        body: body.clone(),
+                        color: BLUE,
+                    },
+                    &cfg.host,
+                ) {
+                    Ok(()) => println!("oq-agent: journal anchor posted: {body}"),
+                    Err(e) => eprintln!("oq-agent: the journal anchor was not posted: {e}"),
                 }
-                _ => {}
+            } else {
+                println!("oq-agent: journal anchor {name} {count} (no channel to post it to)");
             }
-            write_anchor(&cfg.state_dir, &name, count);
-            println!("oq-agent: journal anchor {name} {count}");
             last = Some((name, count));
         }
         std::thread::sleep(ANCHOR_EVERY);
     }
+}
+
+/// The head the channel last said the journal had, against what it holds
+/// now.
+fn journal_anchor_check(
+    cfg: &Config,
+    discord: Option<&notify::Discord>,
+    notify: &std::sync::mpsc::Sender<Message>,
+) {
+    let Some(d) = discord else {
+        println!("oq-agent: no channel, so the journal's head was not checked against anything");
+        return;
+    };
+    let bodies = match d.recent(50) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("oq-agent: the alert channel could not be read back: {e}");
+            return;
+        }
+    };
+    let Some((name, was)) = anchored_journal_in(&bodies) else {
+        println!("oq-agent: nothing in the channel's last 50 messages names a journal head");
+        return;
+    };
+    let Some((now_name, now)) = newest_journal_head(&cfg.journals) else {
+        return;
+    };
+    if now_name == name && now < was {
+        let why = format!(
+            "journal {name} had {was} records when this host last said so and has {now} now; \
+             records were taken off the end"
+        );
+        eprintln!("oq-agent: {why}");
+        let _ = notify.send(Message {
+            title: "交易进程的 journal 变短了".to_string(),
+            body: why,
+            color: notify::RED,
+        });
+    } else {
+        println!("oq-agent: journal {name} has {now} records; the channel said {was}");
+    }
+}
+
+/// The newest journal head a set of mirrored messages names.
+fn anchored_journal_in(bodies: &[String]) -> Option<(String, usize)> {
+    let mut newest: Option<(String, usize)> = None;
+    for body in bodies {
+        let Some(rest) = body.trim().strip_prefix("journal ") else {
+            continue;
+        };
+        let Some((name, count)) = rest.rsplit_once(" #") else {
+            continue;
+        };
+        let Ok(count) = count.trim().parse::<usize>() else {
+            continue;
+        };
+        newest = Some((name.to_string(), count));
+        break; // newest first
+    }
+    newest
 }
 
 /// The newest journal's name and how many records it holds.
@@ -589,21 +652,6 @@ fn newest_journal_head(journals: &std::path::Path) -> Option<(String, usize)> {
     let (_, name) = newest?;
     let page = oq_deck_core::live::records(journals, &name, &[], 1, None).ok()?;
     Some((name, page.total))
-}
-
-/// The head this host last mirrored, from a file beside the trail.
-fn anchor_path(state_dir: &std::path::Path) -> std::path::PathBuf {
-    state_dir.join("journal-anchor")
-}
-
-fn read_anchor(state_dir: &std::path::Path) -> Option<(String, usize)> {
-    let text = std::fs::read_to_string(anchor_path(state_dir)).ok()?;
-    let (name, count) = text.trim().rsplit_once(' ')?;
-    Some((name.to_string(), count.parse().ok()?))
-}
-
-fn write_anchor(state_dir: &std::path::Path, name: &str, count: usize) {
-    let _ = std::fs::write(anchor_path(state_dir), format!("{name} {count}"));
 }
 
 /// Append to the audit trail and mirror it off the host.
@@ -699,16 +747,27 @@ fn accounts(log_dir: &std::path::Path, units: &[String]) -> serde_json::Value {
 mod anchor_tests {
     use super::*;
 
-    /// The head this host last mirrored has to survive a restart, or
-    /// every restart compares against nothing.
+    /// The anchor is whatever the channel still has, so the reader has
+    /// to find it among the messages that are not anchors.
     #[test]
-    fn the_last_head_is_remembered() {
-        let dir = tempfile::tempdir().expect("dir");
-        assert_eq!(read_anchor(dir.path()), None, "nothing yet");
-        write_anchor(dir.path(), "oqp-live-20260926-000000", 41);
+    fn the_newest_posted_journal_head_is_the_anchor() {
+        let bodies: Vec<String> = [
+            "deck：halt\n结果：halted\n审计 #4 aaaaaaaaaaaa",
+            "journal oqp-live-20260926-000000 #41",
+            "a log line that happens to say journal something",
+            "journal oqp-live-20260925-000000 #7",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
         assert_eq!(
-            read_anchor(dir.path()),
+            anchored_journal_in(&bodies),
             Some(("oqp-live-20260926-000000".to_string(), 41))
+        );
+        assert_eq!(anchored_journal_in(&[]), None);
+        assert_eq!(
+            anchored_journal_in(&["journal x #notanumber".to_string()]),
+            None
         );
     }
 }
