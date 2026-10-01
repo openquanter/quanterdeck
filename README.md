@@ -4,7 +4,7 @@
 
 English · [中文](README.zh-CN.md)
 
-> ⚠️ Early development (v0.0.1). APIs are unstable. Not financial
+> ⚠️ Early development. APIs are unstable. Not financial
 > advice; use at your own risk.
 
 ---
