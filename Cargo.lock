@@ -770,7 +770,7 @@ dependencies = [
 [[package]]
 name = "oq-backtest"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-core",
  "oq-engine",
@@ -783,12 +783,12 @@ dependencies = [
 [[package]]
 name = "oq-book"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 
 [[package]]
 name = "oq-core"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-engine",
  "oq-journal",
@@ -799,7 +799,7 @@ dependencies = [
 [[package]]
 name = "oq-data"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-engine",
  "oq-hash",
@@ -855,7 +855,7 @@ dependencies = [
 [[package]]
 name = "oq-engine"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-book",
  "oq-types",
@@ -864,7 +864,7 @@ dependencies = [
 [[package]]
 name = "oq-gateway"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "ed25519-dalek",
  "k256",
@@ -873,17 +873,18 @@ dependencies = [
  "sha3",
  "tungstenite",
  "ureq",
+ "zeroize",
 ]
 
 [[package]]
 name = "oq-hash"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 
 [[package]]
 name = "oq-ingest"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-backtest",
  "oq-data",
@@ -896,7 +897,7 @@ dependencies = [
 [[package]]
 name = "oq-journal"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-hash",
  "oq-types",
@@ -905,7 +906,7 @@ dependencies = [
 [[package]]
 name = "oq-l2feed"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "libc",
  "oq-book",
@@ -920,7 +921,7 @@ dependencies = [
 [[package]]
 name = "oq-live"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-core",
  "oq-data",
@@ -940,7 +941,7 @@ dependencies = [
 [[package]]
 name = "oq-margin"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-types",
 ]
@@ -948,7 +949,7 @@ dependencies = [
 [[package]]
 name = "oq-parity"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-data",
  "oq-hash",
@@ -958,7 +959,7 @@ dependencies = [
 [[package]]
 name = "oq-risk"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-types",
 ]
@@ -966,17 +967,17 @@ dependencies = [
 [[package]]
 name = "oq-sim"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 
 [[package]]
 name = "oq-stats"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 
 [[package]]
 name = "oq-strategy"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 dependencies = [
  "oq-engine",
  "oq-types",
@@ -985,7 +986,7 @@ dependencies = [
 [[package]]
 name = "oq-types"
 version = "2.0.0-alpha.1"
-source = "git+https://github.com/openquanter/openquanter?rev=ecddfc3#ecddfc321f016e20e7add3e03fa46a3f409554f8"
+source = "git+https://github.com/openquanter/openquanter?rev=bbdcb4e#bbdcb4e10d5b5b8a32f3ba51e4f353d6a9850a7b"
 
 [[package]]
 name = "password-hash"
