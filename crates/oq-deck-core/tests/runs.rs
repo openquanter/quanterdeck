@@ -156,6 +156,7 @@ fn an_unreadable_directory_is_reported_not_listed_as_empty() {
         None,
         None,
         false,
+        6,
         oq_deck_core::lang::Lang::Zh,
     );
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("chmod back");

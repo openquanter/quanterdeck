@@ -25,6 +25,9 @@ tokio = { workspace = true, features = ["net", "io-util", "time"] }
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# The one outbound request the deck makes: the upstream release check.
+# Same crate and defaults (rustls, no native TLS) as the host agent.
+ureq = "3.4"
 
 [dev-dependencies]
 oq-data.workspace = true

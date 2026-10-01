@@ -62,6 +62,8 @@ pub struct Deck {
     /// What the listings parsed, for files unchanged since. Shared by
     /// every request, bounded by what the directories hold.
     pub listings: Arc<Listings>,
+    /// The upstream release check: its settings and its last results.
+    pub upstream: Arc<crate::upstream::Upstream>,
 }
 
 /// The listings' parse caches. See `oq_deck_core::cache` for when an
@@ -974,6 +976,7 @@ async fn caps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         deck.settings.ticks_dir.as_deref(),
         deck.settings.agent_socket.as_deref(),
         deck.settings.allow_writes,
+        deck.settings.upstream_every_hours,
         lang(),
     ))
     .into_response()
@@ -1468,7 +1471,7 @@ async fn ask_agent(
     }
 }
 
-async fn agent_call(
+pub(crate) async fn agent_call(
     sock: &std::path::Path,
     req: &ops::AgentRequest,
 ) -> Result<ops::AgentResponse, String> {
@@ -1764,6 +1767,13 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         "devices": deck.devices.is_some(),
         "device_days": s.device_lifetime.as_secs() / 86_400,
         "trusted_keys": path(&s.trusted_keys),
+        // Whether a proxy is set, not the URL: it may carry a password.
+        "upstream": {
+            "repo": s.upstream_repo,
+            "every_hours": s.upstream_every_hours,
+            "proxy": s.upstream_proxy.is_some(),
+            "framework_rev": crate::upstream::DECK_FRAMEWORK_REV,
+        },
         "version": env!("CARGO_PKG_VERSION"),
     }))
     .into_response()
@@ -1963,6 +1973,63 @@ async fn ops_action(
     ask_agent(&deck, op, Some(body.reason), body.step_up, actor).await
 }
 
+// -- upstream release -------------------------------------------------------
+
+/// How what runs here stands against the framework's newest release.
+///
+/// Served from memory: reading it never reaches GitHub. When the check
+/// is off the answer says so and why; when the last check failed it
+/// carries the error, its time, and the last success with that one's.
+async fn upstream_report(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    axum::Json(deck.upstream.report()).into_response()
+}
+
+/// Check again now, because the operator asked.
+///
+/// A POST, so it gets the `Origin` check every write gets: a page
+/// elsewhere must not be able to make this deck send requests. But not
+/// behind `OQ_DECK_ALLOW_WRITES`: that switch says the console may act
+/// on the host, and this changes nothing there — no file, no unit, no
+/// order — only what the deck itself remembers about GitHub. A
+/// read-only deck that could not refresh what it reads would be refusing
+/// a read. What it can cost is GitHub's quota for this address, so it
+/// runs at most once a minute whoever asks.
+async fn upstream_refresh(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_admin(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match deck.upstream.refresh().await {
+        Ok(report) => axum::Json(report).into_response(),
+        Err(crate::upstream::Refused::Disabled) => Refusal::new(
+            StatusCode::CONFLICT,
+            t(
+                "上游版本检查已关闭（OQ_DECK_UPSTREAM_CHECK_HOURS=0），deck 不会访问 GitHub。",
+                "The upstream check is off (OQ_DECK_UPSTREAM_CHECK_HOURS=0); the deck makes no \
+                 request to GitHub.",
+            ),
+        )
+        .into_response(),
+        Err(crate::upstream::Refused::TooSoon(left)) => {
+            let secs = left.as_secs().max(1);
+            let mut response = Refusal::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                t(
+                    format!("一分钟内只检查一次；{secs} 秒后再试。"),
+                    format!("One check a minute at most; try again in {secs} s."),
+                ),
+            )
+            .into_response();
+            if let Ok(v) = header::HeaderValue::from_str(&secs.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, v);
+            }
+            response
+        }
+    }
+}
+
 // -- assembly -------------------------------------------------------------
 
 /// Build the router.
@@ -1974,6 +2041,21 @@ pub fn router(
     web_dist: Option<PathBuf>,
     setup_token: Option<String>,
     devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
+) -> Router {
+    let upstream = crate::upstream::Upstream::from_settings(&settings);
+    router_with_upstream(settings, web_dist, setup_token, devices, upstream)
+}
+
+/// [`router`], with the upstream check supplied.
+///
+/// The binary passes the one whose schedule it started; the tests pass
+/// one whose fetcher answers from fixtures, so no test reaches GitHub.
+pub fn router_with_upstream(
+    settings: Settings,
+    web_dist: Option<PathBuf>,
+    setup_token: Option<String>,
+    devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
+    upstream: Arc<crate::upstream::Upstream>,
 ) -> Router {
     let hosts = Hosts::for_bind(settings.host, settings.port, &settings.extra_hosts);
     // Read before the settings are moved: the session store outlives the
@@ -1988,6 +2070,7 @@ pub fn router(
         enrolments: Arc::new(crate::enrol::Enrolments::default()),
         last_login_step: Arc::new(std::sync::Mutex::new(i64::MIN)),
         listings: Arc::new(Listings::default()),
+        upstream,
     };
 
     let api = Router::new()
@@ -2035,6 +2118,8 @@ pub fn router(
         .route("/ops/audit", get(ops_audit))
         .route("/ops/releases", get(ops_releases))
         .route("/ops/action", post(ops_action))
+        .route("/upstream", get(upstream_report))
+        .route("/upstream/refresh", post(upstream_refresh))
         // An API path that does not exist is a 404 in the API's own
         // shape, not the interface's index page with a 200 — which told a
         // client asking for a mistyped route that it had succeeded.

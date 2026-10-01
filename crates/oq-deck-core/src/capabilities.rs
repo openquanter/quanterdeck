@@ -60,6 +60,11 @@ pub struct Capabilities {
     pub ops: Capability,
     /// Whether this deck may change anything at all.
     pub writes: Capability,
+    /// Checking the framework's newest GitHub release against what runs.
+    ///
+    /// On means the deck will ask; whether the last ask succeeded is
+    /// the check's own report, not this.
+    pub upstream: Capability,
 }
 
 fn directory(configured: Option<&Path>, variable: &str, lang: Lang) -> Capability {
@@ -93,6 +98,7 @@ pub fn detect(
     ticks_dir: Option<&Path>,
     agent_socket: Option<&Path>,
     writes_allowed: bool,
+    upstream_every_hours: u64,
     lang: Lang,
 ) -> Capabilities {
     let ops = match agent_socket {
@@ -158,6 +164,14 @@ pub fn detect(
             )),
         },
         ops,
+        upstream: if upstream_every_hours > 0 {
+            Capability::on()
+        } else {
+            Capability::off(lang.pick(
+                "已关闭：OQ_DECK_UPSTREAM_CHECK_HOURS=0，deck 不会访问 GitHub",
+                "Off: OQ_DECK_UPSTREAM_CHECK_HOURS=0, so the deck makes no request to GitHub",
+            ))
+        },
     }
 }
 
@@ -170,7 +184,7 @@ mod writes {
     /// delivers.
     #[test]
     fn writes_are_not_offered_before_there_is_anything_to_write_with() {
-        let caps = detect(None, None, None, None, true, Lang::Zh);
+        let caps = detect(None, None, None, None, true, 6, Lang::Zh);
         assert!(!caps.writes.available);
         assert!(
             caps.writes.reason.contains("主机代理"),
@@ -178,11 +192,28 @@ mod writes {
             caps.writes.reason
         );
         assert!(!caps.ops.available);
-        let en = detect(None, None, None, None, true, Lang::En);
+        let en = detect(None, None, None, None, true, 6, Lang::En);
         assert!(
             en.writes.reason.contains("host agent"),
             "{}",
             en.writes.reason
+        );
+    }
+
+    /// Turned off, the check says so and says how it was turned off.
+    #[test]
+    fn the_upstream_check_reports_when_it_is_off() {
+        assert!(
+            detect(None, None, None, None, false, 6, Lang::En)
+                .upstream
+                .available
+        );
+        let off = detect(None, None, None, None, false, 0, Lang::En).upstream;
+        assert!(!off.available);
+        assert!(
+            off.reason.contains("OQ_DECK_UPSTREAM_CHECK_HOURS=0"),
+            "{}",
+            off.reason
         );
     }
 }

@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/States";
 import { Badge, BrandMark, IconTile, StatusDot, cx, type Hue } from "@/ui/kit";
 import { ThemeToggle } from "@/ui/theme";
 import { LanguageToggle, tr } from "@/i18n";
+import { UpstreamBadge } from "@/features/upstream";
 
 type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; capability: CapabilityName | null };
 
@@ -168,6 +169,7 @@ export function Shell() {
           }
           ops={caps?.ops?.available === true}
           writable={caps?.writes.available === true}
+          upstream={caps?.upstream?.available === true}
         />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1440px] px-6 py-6">
@@ -186,7 +188,7 @@ export function Shell() {
  * running, how many alerts. None of these should need a trip to the
  * overview to confirm.
  */
-function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writable: boolean }) {
+function TopBar({ title, ops, writable, upstream }: { title: ReactNode; ops: boolean; writable: boolean; upstream: boolean }) {
   const status = useQuery({ queryKey: ["ops", "status"], queryFn: api.traderStatus, refetchInterval: 10_000, retry: false, enabled: ops });
   const host = useQuery({ queryKey: ["ops", "host"], queryFn: api.host, refetchInterval: 60_000, enabled: ops });
   const alerts = useQuery({ queryKey: ["ops", "alerts"], queryFn: api.alerts, refetchInterval: 10_000, enabled: ops });
@@ -237,6 +239,7 @@ function TopBar({ title, ops, writable }: { title: ReactNode; ops: boolean; writ
             )}
           </Link>
         )}
+        <UpstreamBadge available={upstream} />
         {!writable && <Badge>{tr("只读", "Read-only")}</Badge>}
         <LanguageToggle />
         <ThemeToggle />

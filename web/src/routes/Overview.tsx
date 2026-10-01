@@ -31,6 +31,7 @@ import {
 
 import { api, type BlackboxWindow, type TraderStatus } from "@/api/client";
 import { ErrorState } from "@/components/States";
+import { UpstreamCard } from "@/features/upstream";
 import { kindNames, TraderActions, lotsText, recordText, useCaps, useNewestJournal, useTrader } from "@/features/trading";
 import { intlLocale, pair, said, tr } from "@/i18n";
 import { Ago, Badge, Card, Freshness, IconTile, Money, PageHeader, Ring, Stat, StatusDot, agoText, cx, fmtDuration, type Hue, type Tone } from "@/ui/kit";
@@ -60,10 +61,11 @@ export function Overview() {
   const caps = useCaps();
   const ops = caps.data?.ops?.available === true;
   const writable = caps.data?.writes.available === true;
+  const upstream = caps.data?.upstream?.available === true;
   const status = useTrader(ops);
   const day = useDay();
 
-  if (caps.data && !ops) return <NoHost />;
+  if (caps.data && !ops) return <NoHost upstream={upstream} />;
 
   return (
     <div className="space-y-6">
@@ -96,6 +98,11 @@ export function Overview() {
         </div>
         <div className="xl:col-span-2">
           <Activity />
+        </div>
+      </div>
+      <div className="grid gap-6 xl:grid-cols-5">
+        <div className="xl:col-span-3">
+          <UpstreamCard available={upstream} />
         </div>
       </div>
     </div>
@@ -736,7 +743,7 @@ function Resources({ day, failed, error, from, to }: { day?: BlackboxWindow; fai
   );
 }
 
-function NoHost() {
+function NoHost({ upstream }: { upstream: boolean }) {
   return (
     <div className="space-y-5">
       <PageHeader
@@ -753,6 +760,7 @@ function NoHost() {
           )}
         </p>
       </Card>
+      <UpstreamCard available={upstream} />
     </div>
   );
 }

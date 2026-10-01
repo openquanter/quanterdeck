@@ -84,6 +84,34 @@ Quanterdeck 是单操作者、自托管的控制台。它读交易系统的运�
 - **不自带 TLS。** 要在网络上暴露，请放在一个终止 TLS 的反向代理后面，并设置
   `OQ_DECK_BEHIND_TLS=1` 与 `OQ_DECK_EXTRA_HOSTS`。
 
+## 出站请求：上游版本检查
+
+deck 只有这一处会主动向外发请求：检查框架在 GitHub 上的最新发布，与正在运行的版本比较。
+
+- **发往哪里**：只发 `https://api.github.com`（`https_only`，rustls），路径限于
+  `/repos/{OQ_DECK_UPSTREAM_REPO}/` 下的 `releases/latest`、`commits/{tag}` 和
+  `compare/{发布的提交}...{运行中的提交}`。仓库名在启动时校验为 `owner/name`，提交编号在
+  拼进路径前校验为 7–40 位十六进制，tag 按路径段转义——manifest 或 GitHub 回来的字段
+  改变不了请求去哪里。
+- **发了什么**：未认证的 GET，带 `User-Agent: oq-deck/<版本>`、`Accept` 和 API 版本头。
+  没有令牌、没有 cookie、没有主机名或操作者的任何信息。对方能看到的是：这个 IP 上有一个
+  oq-deck 在看这个仓库，以及运行中的两个框架提交编号（它们本来就是公开仓库里的提交）。
+- **多久一次**：启动约 20 秒后一次，之后每 `OQ_DECK_UPSTREAM_CHECK_HOURS` 小时（默认 6）；
+  失败时改为每 30 分钟重试（不长于设定的间隔），直到成功。每次检查最多 4 个请求。操作者可手动触发
+  （`POST /api/v1/upstream/refresh`），全局每分钟最多一次。
+- **手动触发为什么不受 `OQ_DECK_ALLOW_WRITES` 约束**：它不改主机上的任何东西，只更新 deck
+  内存里关于 GitHub 的记录；只读的控制台也该能刷新自己读的东西。但它会让 deck 往外发请求、
+  消耗这个 IP 的 GitHub 额度，所以它是 POST，照写入一样查 `Host` → `Origin` → 会话——别的
+  页面没法借操作者的浏览器让 deck 发请求。
+- **代理**：只用 `OQ_DECK_UPSTREAM_PROXY`（必须是 `http://`），**不读**环境里的
+  `HTTPS_PROXY`，让唯一的出站路径就是设置里写的那条。代理 URL 可能带密码，所以它不进日志，
+  `/runtime/settings` 只报"是否设置"。
+- **怎么关**：`OQ_DECK_UPSTREAM_CHECK_HOURS=0`。此时 deck 不发任何请求（不建连接、不起后台
+  任务），能力 `upstream` 报不可用并说明原因。
+- **结果不可信时怎么显示**：网络失败、限流（403/429 且 `X-RateLimit-Remaining: 0`）、
+  解析失败都记为错误，带原因与时间；上一次成功的结果保留并标注它的时间，绝不显示成"已是最新"。
+  GitHub 的回复只被当作数据：发布页链接只接受 `https://github.com/` 开头的。
+
 ## 主机操作
 
 deck 自己不执行任何主机操作，只把请求交给同机的主机代理 `oq-agent`（独立用户，

@@ -150,7 +150,18 @@ async fn main() -> ExitCode {
         address.1
     );
 
-    let router = app::router(settings, web_dist(), setup_token, devices);
+    // Started here, not in the router: the tests build routers too, and
+    // a test must never reach GitHub. Off, it makes no request at all.
+    let upstream = oq_deck::upstream::Upstream::from_settings(&settings);
+    if upstream.enabled() {
+        tracing::info!(
+            "checking {} for new releases every {} h",
+            settings.upstream_repo,
+            settings.upstream_every_hours
+        );
+    }
+    upstream.spawn();
+    let router = app::router_with_upstream(settings, web_dist(), setup_token, devices, upstream);
     let listener = match tokio::net::TcpListener::bind(address).await {
         Ok(listener) => listener,
         Err(error) => {

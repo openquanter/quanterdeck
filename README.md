@@ -150,6 +150,15 @@ trading host as its own user, it also operates that host:
   review page that opens any moment: the snapshot then, the trader's
   decisions and fills around it, and its output around it
 
+It also says whether what runs is behind the framework's newest
+GitHub release: the deck's own pinned commit (read from `Cargo.lock` at
+build time) and the trader's (from the current release's manifest), each
+compared by GitHub against the release's commit — includes it, N commits
+behind, diverged, or **cannot tell** with the reason. A failed check is
+shown as failed, beside the last successful answer and its age, never as
+"up to date". It is the deck's only outbound request; see Configuration
+to point it elsewhere or turn it off.
+
 Anything risky needs a reason and a one-time code **the agent**
 verifies, so a compromised deck cannot act alone. Every action goes
 into a hash-chained audit trail and to the alert channel.
@@ -213,6 +222,9 @@ The deck:
 | `OQ_DECK_SESSION_HOURS` | `12` | How long a session survives at all |
 | `OQ_DECK_DEVICE_DAYS` | `90` | How long an enrolled browser is trusted |
 | `OQ_DECK_TRUSTED_KEYS` | An `allowed_signers` file: the keys `scripts/deck-enrol.sh` may enrol a browser with, on a machine that has no password yet. Unset means no key can |
+| `OQ_DECK_UPSTREAM_REPO` | `openquanter/openquanter` | The GitHub repository whose newest release is compared with what runs |
+| `OQ_DECK_UPSTREAM_CHECK_HOURS` | `6` | How often to check, 0 to 168. `0` turns the check off: no request to GitHub at all |
+| `OQ_DECK_UPSTREAM_PROXY` | — | An `http://` proxy for that check only; the ambient `HTTPS_PROXY` is not read |
 | `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
 
 The agent (`oq-agent`), whose defaults fit a host laid out as the
