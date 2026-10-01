@@ -4,7 +4,7 @@
 
 English · [中文](README.zh-CN.md)
 
-> ⚠️ Early development (v0.0.1). APIs are unstable. Not financial
+> ⚠️ Early development. APIs are unstable. Not financial
 > advice; use at your own risk.
 
 ---
@@ -199,6 +199,35 @@ They are written by the framework's own writer
 (`cargo run -p oq-deck-core --example make_fixtures`), so the format is
 correct by construction — and one of them is deliberately truncated, to
 show what the listing does with a file it cannot read.
+
+## Releases
+
+Releases are numbered in plain sequence — `1.0.0`, `1.0.1`, `1.0.2`, … —
+independently of the framework, and each GitHub Release says which
+framework commit it was built against. A release ships, for Linux x86-64
+and aarch64, a bundle with `bin/oq-deck`, `bin/oq-agent` and the built
+interface in `web-dist/` (point `OQ_DECK_WEB_DIST` at it), plus its
+SHA-256. No Node or Rust toolchain is needed to run one.
+
+```bash
+v=1.0.0; t=x86_64-unknown-linux-gnu
+curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
+sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
+```
+
+A running deck tells you when a newer one exists: the overview's
+"Upstream release" card compares it with the newest release.
+
+**Cutting one.** In a pull request, set `[workspace.package].version` in
+`Cargo.toml` and `version` in `web/package.json` (and its lock file), and
+rename the changelog's `## Unreleased` to `## X.Y.Z — <date>` with a new
+empty `## Unreleased` above it. Merge, then tag that commit on `main`:
+`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`.
+`.github/workflows/release.yml` refuses unless the tag, both versions and
+the changelog agree and the commit is on `main`, runs the full CI gate,
+builds the bundles and publishes the release with the changelog section
+as its notes. A tag that fails publishes nothing; a number once tagged is
+not reused.
 
 ## Configuration
 
