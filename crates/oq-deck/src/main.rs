@@ -155,8 +155,9 @@ async fn main() -> ExitCode {
     let upstream = oq_deck::upstream::Upstream::from_settings(&settings);
     if upstream.enabled() {
         tracing::info!(
-            "checking {} for new releases every {} h",
+            "checking {} and {} for new releases every {} h",
             settings.upstream_repo,
+            settings.self_repo,
             settings.upstream_every_hours
         );
     }

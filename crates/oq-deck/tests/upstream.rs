@@ -12,8 +12,8 @@ use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
 use oq_deck::app::router_with_upstream;
 use oq_deck::settings::Settings;
-use oq_deck::upstream::{DECK_FRAMEWORK_REV, Upstream};
-use oq_deck_core::upstream::{Fetch, Reply};
+use oq_deck::upstream::{DECK_FRAMEWORK_REV, DECK_VERSION, Upstream};
+use oq_deck_core::upstream::{Fetch, Reply, Version};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -21,7 +21,30 @@ const PASSWORD: &str = "a long enough passphrase";
 const HOST: &str = "127.0.0.1:8899";
 const ORIGIN: &str = "http://127.0.0.1:8899";
 const REPO: &str = "openquanter/openquanter";
+const SELF_REPO: &str = "openquanter/quanterdeck";
 const TAG_SHA: &str = "1111111111111111111111111111111111111111";
+
+/// A tag for this console's own repository, `patch_by` patch releases
+/// away from the version this test binary was built as — so the tests
+/// say "behind" and "current" without naming a version that the next
+/// release would make wrong.
+fn self_tag(patch_by: i64) -> String {
+    let v = Version::parse(DECK_VERSION).expect("the workspace version parses");
+    let patch = v.patch.checked_add_signed(patch_by).expect("in range");
+    format!("v{}.{}.{patch}", v.major, v.minor)
+}
+
+fn self_release(tag: &str) -> String {
+    format!(
+        r#"{{"tag_name":"{tag}","name":"{tag}","prerelease":false,
+            "published_at":"2026-10-02T08:00:00Z",
+            "html_url":"https://github.com/{SELF_REPO}/releases/tag/{tag}"}}"#
+    )
+}
+
+fn self_latest() -> String {
+    format!("/repos/{SELF_REPO}/releases/latest")
+}
 
 #[derive(Default)]
 struct Canned {
@@ -57,8 +80,15 @@ impl Fetch for Canned {
     }
 }
 
-/// A release `v2.0.1` that the deck's own revision is three behind.
+/// A release `v2.0.1` that the deck's own revision is three behind, and
+/// a console release the same version as this build.
 fn behind_by_three() -> Canned {
+    framework_behind_by_three().with(self_latest(), 200, &self_release(&self_tag(0)))
+}
+
+/// The framework half of [`behind_by_three`] alone: the console's own
+/// request then has no reply, which is a transport failure.
+fn framework_behind_by_three() -> Canned {
     Canned::default()
         .with(
             format!("/repos/{REPO}/releases/latest"),
@@ -196,11 +226,17 @@ async fn a_refresh_checks_and_the_report_serves_the_result_from_memory() {
     let (status, body) = c.refresh().await;
     assert_eq!(status, StatusCode::OK, "{body}");
     // The release, its commit, and one comparison: the trader has no
-    // agent here, so it is not compared.
-    assert_eq!(fetch.asked(), 3);
+    // agent here, so it is not compared. Then the console's own release.
+    assert_eq!(fetch.asked(), 4);
 
     let (_, body) = c.get("/api/v1/upstream").await;
-    assert_eq!(fetch.asked(), 3, "served from memory");
+    assert_eq!(fetch.asked(), 4, "served from memory");
+    let console = &body["console"];
+    assert_eq!(console["repo"], SELF_REPO);
+    assert_eq!(console["version"], DECK_VERSION);
+    assert_eq!(console["verdict"], "current");
+    assert_eq!(console["behind"], false);
+    assert_eq!(console["latest"]["tag"], self_tag(0));
     assert_eq!(body["error"], Value::Null);
     assert_eq!(body["published"], true);
     assert_eq!(body["latest"]["tag"], "v2.0.1");
@@ -263,6 +299,100 @@ async fn a_failed_check_is_an_error_not_up_to_date() {
     assert_eq!(body["published"], Value::Null);
     assert_eq!(body["behind"], false);
     assert_eq!(body["revisions"], serde_json::json!([]));
+    let console = &body["console"];
+    assert!(
+        console["error_en"]
+            .as_str()
+            .unwrap()
+            .contains("Cannot reach")
+    );
+    assert_eq!(console["published"], Value::Null);
+    assert_eq!(console["verdict"], "unknown", "not 'current'");
+    assert_eq!(console["behind"], false);
+}
+
+#[tokio::test]
+async fn a_newer_console_release_is_reported_behind() {
+    let fetch =
+        Arc::new(framework_behind_by_three().with(self_latest(), 200, &self_release(&self_tag(1))));
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (status, body) = c.refresh().await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let console = &body["console"];
+    assert_eq!(console["error"], Value::Null);
+    assert_eq!(console["published"], true);
+    assert_eq!(console["latest"]["tag"], self_tag(1));
+    assert!(
+        console["latest"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://github.com/")
+    );
+    assert_eq!(console["latest"].get("sha"), None, "compared by version");
+    assert_eq!(console["verdict"], "behind");
+    assert_eq!(console["behind"], true);
+    // The framework's own field still means the framework.
+    assert_eq!(body["behind"], true);
+}
+
+#[tokio::test]
+async fn no_console_release_yet_is_its_own_state() {
+    let fetch = Arc::new(framework_behind_by_three().with(
+        self_latest(),
+        404,
+        r#"{"message":"Not Found"}"#,
+    ));
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (_, body) = c.refresh().await;
+    let console = &body["console"];
+    assert_eq!(console["error"], Value::Null, "an answer, not a failure");
+    assert_eq!(console["published"], false);
+    assert_eq!(console["latest"], Value::Null);
+    assert_eq!(console["verdict"], "unknown");
+    assert!(
+        console["reason_en"]
+            .as_str()
+            .unwrap()
+            .contains("no release yet")
+    );
+}
+
+#[tokio::test]
+async fn a_console_failure_does_not_touch_the_framework_answer() {
+    let mut fetch = framework_behind_by_three();
+    fetch.replies.insert(
+        self_latest(),
+        Reply {
+            status: 429,
+            body: r#"{"message":"secondary rate limit"}"#.into(),
+            ..Reply::default()
+        },
+    );
+    let c = Client::new(settings(6), Arc::new(fetch)).await;
+    let (_, body) = c.refresh().await;
+    assert_eq!(body["error"], Value::Null);
+    assert_eq!(body["published"], true);
+    assert_eq!(body["revisions"][0]["verdict"], "behind");
+    let console = &body["console"];
+    assert!(console["error_en"].as_str().unwrap().contains("rate limit"));
+    assert_eq!(console["verdict"], "unknown");
+}
+
+#[tokio::test]
+async fn a_framework_failure_does_not_touch_the_console_answer() {
+    let fetch = Arc::new(
+        Canned::default()
+            .with(format!("/repos/{REPO}/releases/latest"), 500, "{}")
+            .with(self_latest(), 200, &self_release(&self_tag(1))),
+    );
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (_, body) = c.refresh().await;
+    assert!(body["error_en"].as_str().unwrap().contains("HTTP 500"));
+    assert_eq!(body["published"], Value::Null);
+    let console = &body["console"];
+    assert_eq!(console["error"], Value::Null);
+    assert_eq!(console["verdict"], "behind");
+    assert_eq!(console["behind"], true);
 }
 
 #[tokio::test]
@@ -306,6 +436,14 @@ fn the_upstream_settings_are_bounded() {
             ..Settings::default()
         })
         .contains("OQ_DECK_UPSTREAM_REPO")
+    );
+    assert_eq!(base.self_repo, SELF_REPO);
+    assert!(
+        bad(Settings {
+            self_repo: "a/../b".into(),
+            ..Settings::default()
+        })
+        .contains("OQ_DECK_SELF_REPO")
     );
     let proxy = bad(Settings {
         upstream_proxy: Some("socks5://user:secret@host:1080".into()),

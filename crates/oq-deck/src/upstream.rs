@@ -8,7 +8,8 @@
 //!
 //! What leaves the host: unauthenticated GETs to `api.github.com` for
 //! the configured repository's latest release, its tag's commit, and a
-//! comparison per running revision — a `User-Agent` naming this program
+//! comparison per running revision; and one more for the latest release
+//! of this console's own repository — a `User-Agent` naming this program
 //! and its version, and nothing that identifies the operator or the
 //! host. Zero hours turns all of it off.
 
@@ -18,12 +19,16 @@ use std::time::{Duration, Instant};
 
 use oq_deck_core::lang::Said;
 use oq_deck_core::ops;
-use oq_deck_core::upstream::{self, Cache, Fetch, Reply, Report, Running, What};
+use oq_deck_core::upstream::{self, Cache, Console, Fetch, Reply, Report, Running, What};
 
 use crate::settings::Settings;
 
 /// The framework commit this binary was built against (see `build.rs`).
 pub const DECK_FRAMEWORK_REV: &str = env!("OQ_DECK_FRAMEWORK_REV");
+/// The version this console was built as: what its own releases are
+/// compared with. Always present, unlike a commit — a build from a
+/// `git archive` has no `.git` to read one from.
+pub const DECK_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DECK_FRAMEWORK_REV_WHY: &str = env!("OQ_DECK_FRAMEWORK_REV_WHY");
 
 /// How long after startup the first check runs: long enough not to
@@ -113,6 +118,7 @@ pub enum Refused {
 /// The check's settings, its results, and what keeps it to one at a time.
 pub struct Upstream {
     repo: String,
+    self_repo: String,
     every_hours: u64,
     agent_socket: Option<PathBuf>,
     journals: Option<PathBuf>,
@@ -131,6 +137,7 @@ impl Upstream {
     pub fn new(settings: &Settings, fetch: Arc<dyn Fetch + Send + Sync>) -> Arc<Self> {
         Arc::new(Self {
             repo: settings.upstream_repo.clone(),
+            self_repo: settings.self_repo.clone(),
             every_hours: settings.upstream_every_hours,
             agent_socket: settings.agent_socket.clone(),
             journals: settings.journals_dir.clone(),
@@ -159,13 +166,17 @@ impl Upstream {
     /// What is known now, from memory.
     #[must_use]
     pub fn report(&self) -> Report {
+        let console = Console {
+            repo: &self.self_repo,
+            version: DECK_VERSION,
+        };
         if !self.enabled() {
-            return upstream::disabled(&self.repo);
+            return upstream::disabled(&self.repo, console);
         }
         let checking = self.running.try_lock().is_err();
         self.cache.lock().map_or_else(
-            |_| upstream::disabled(&self.repo),
-            |c| c.report(&self.repo, self.every_hours, checking),
+            |_| upstream::disabled(&self.repo, console),
+            |c| c.report(&self.repo, console, self.every_hours, checking),
         )
     }
 
@@ -195,7 +206,11 @@ impl Upstream {
     }
 
     /// Run one check now and keep its result. Returns whether it
-    /// succeeded, for the schedule.
+    /// succeeded — both halves of it — for the schedule.
+    ///
+    /// The framework check and the console's own are made in turn and
+    /// recorded apart: a failure of one is that one's error, and the
+    /// other's answer stands.
     pub async fn check(&self) -> bool {
         if !self.enabled() {
             return false;
@@ -208,16 +223,29 @@ impl Upstream {
         let running = vec![deck_running(), self.trader_running().await];
         let fetch = Arc::clone(&self.fetch);
         let repo = self.repo.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || upstream::check(fetch.as_ref(), &repo, &running))
-                .await
-                .unwrap_or_else(|e| Err(Said::same(e.to_string())));
-        let ok = outcome.is_ok();
-        if let Err(why) = &outcome {
+        let self_repo = self.self_repo.clone();
+        let (framework, console) = tokio::task::spawn_blocking(move || {
+            (
+                upstream::check(fetch.as_ref(), &repo, &running),
+                upstream::check_console(fetch.as_ref(), &self_repo, DECK_VERSION),
+            )
+        })
+        .await
+        .unwrap_or_else(|e| {
+            let why = Said::same(e.to_string());
+            (Err(why.clone()), Err(why))
+        });
+        let ok = framework.is_ok() && console.is_ok();
+        if let Err(why) = &framework {
             tracing::warn!("upstream check failed: {}", why.en);
         }
+        if let Err(why) = &console {
+            tracing::warn!("console release check failed: {}", why.en);
+        }
         if let Ok(mut cache) = self.cache.lock() {
-            cache.record(now_ms(), outcome);
+            let at = now_ms();
+            cache.record(at, framework);
+            cache.record_console(at, console);
         }
         ok
     }

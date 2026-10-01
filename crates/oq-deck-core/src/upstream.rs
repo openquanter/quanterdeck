@@ -507,23 +507,260 @@ pub fn trader_rev(releases: &Value) -> (Option<String>, Result<String, Said>) {
     }
 }
 
-// -- what is kept, and how it is reported -----------------------------------
+// -- this console's own release ---------------------------------------------
+//
+// Quanterdeck publishes releases too, and the question there is simpler:
+// is the version this console was built as older than the newest one
+// published. It is answered by version, not by commit. A deck is often
+// built from a `git archive` with no `.git` beside it, so the commit it
+// came from is not reliably known; the version always is — it is
+// compiled in.
 
-/// The results of every check so far that matter: the last attempt and
-/// the last success. In memory; a restart starts again.
-#[derive(Debug, Default, Clone)]
-pub struct Cache {
-    attempted_at_ms: Option<i64>,
-    error: Option<Said>,
-    success: Option<(i64, Checked)>,
+/// A release version: `MAJOR.MINOR.PATCH`, optionally `-PRE`, optionally
+/// `+BUILD`, compared the way semantic versioning says.
+///
+/// Small on purpose: three numbers and a pre-release are all this reads,
+/// and a dependency for them would ship in the binary to do this much.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Version {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    /// Dot-separated pre-release identifiers; empty for a release.
+    pub pre: Vec<String>,
 }
 
-impl Cache {
-    /// Record an attempt.
+impl Version {
+    /// Parse `1.2.3`, `v1.2.3`, `1.2.3-rc.1` or `1.2.3+build`.
     ///
+    /// Build metadata is accepted and ignored, as semantic versioning
+    /// says it is for ordering. Anything else — two numbers, a word, a
+    /// leading zero, an empty pre-release — is not a version this reads,
+    /// and the error says what was wrong with it.
+    ///
+    /// # Errors
+    /// `s` is not a version in that shape.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        let s = s.trim();
+        let s = s.strip_prefix('v').unwrap_or(s);
+        let s = s.split_once('+').map_or(s, |(v, _build)| v);
+        let (core, pre) = match s.split_once('-') {
+            Some((core, pre)) => (core, Some(pre)),
+            None => (s, None),
+        };
+        let number = |p: &str| -> Result<u64, String> {
+            if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(format!("{p:?} is not a number"));
+            }
+            if p.len() > 1 && p.starts_with('0') {
+                return Err(format!("{p:?} has a leading zero"));
+            }
+            p.parse::<u64>().map_err(|e| format!("{p:?}: {e}"))
+        };
+        let parts: Vec<&str> = core.split('.').collect();
+        let [major, minor, patch] = parts.as_slice() else {
+            return Err(format!(
+                "{core:?} is not three dot-separated numbers (MAJOR.MINOR.PATCH)"
+            ));
+        };
+        let pre = match pre {
+            None => Vec::new(),
+            Some(pre) => pre
+                .split('.')
+                .map(|id| {
+                    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                    {
+                        Err(format!("{pre:?} is not a pre-release"))
+                    } else {
+                        Ok(id.to_owned())
+                    }
+                })
+                .collect::<Result<_, _>>()?,
+        };
+        Ok(Self {
+            major: number(major)?,
+            minor: number(minor)?,
+            patch: number(patch)?,
+            pre,
+        })
+    }
+}
+
+impl Ord for Version {
+    /// Semantic versioning's precedence: the three numbers in order;
+    /// then a release above any of its pre-releases; then pre-releases
+    /// identifier by identifier, numbers numerically and below words,
+    /// and a shorter list below a longer one it is the start of.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        (self.major, self.minor, self.patch)
+            .cmp(&(other.major, other.minor, other.patch))
+            .then_with(|| match (self.pre.is_empty(), other.pre.is_empty()) {
+                (true, true) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                (false, false) => {
+                    for (a, b) in self.pre.iter().zip(&other.pre) {
+                        let ord = match (a.parse::<u64>(), b.parse::<u64>()) {
+                            (Ok(a), Ok(b)) => a.cmp(&b),
+                            (Ok(_), Err(_)) => Ordering::Less,
+                            (Err(_), Ok(_)) => Ordering::Greater,
+                            (Err(_), Err(_)) => a.cmp(b),
+                        };
+                        if ord != Ordering::Equal {
+                            return ord;
+                        }
+                    }
+                    self.pre.len().cmp(&other.pre.len())
+                }
+            })
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// How the running console's version stands against the newest release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Standing {
+    /// The same version.
+    Current,
+    /// Newer than the release: built from a branch after it was cut.
+    Ahead,
+    /// Older: a newer release has been published.
+    Behind,
+    /// Not compared, and the reason says why. Never drawn as "current".
+    Unknown,
+}
+
+/// The newest quanterdeck release, as the console shows it.
+///
+/// No commit: the comparison is by version, so resolving the tag would
+/// be a request that answers nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Published {
+    pub tag: String,
+    pub name: Option<String>,
+    pub published_at: Option<String>,
+    pub url: String,
+    pub prerelease: bool,
+}
+
+/// What a successful check of the console's own repository found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsoleChecked {
+    /// `None`: no release published yet — a state, not a failure.
+    pub latest: Option<Published>,
+    pub standing: Standing,
+    /// Why the standing is `Unknown`; `None` otherwise.
+    pub reason: Option<Said>,
+}
+
+/// Compare `running` (this console's version) with `tag` (a release's).
+///
+/// A tag or a version that does not parse is "cannot tell", with which
+/// one and why — not a guess from the text.
+#[must_use]
+pub fn stand(running: &str, tag: &str) -> (Standing, Option<Said>) {
+    let ours = match Version::parse(running) {
+        Ok(v) => v,
+        Err(why) => {
+            return (
+                Standing::Unknown,
+                Some(Said::new(
+                    format!("本控制台的版本 {running:?} 无法解析：{why}"),
+                    format!("This console's version {running:?} does not parse: {why}"),
+                )),
+            );
+        }
+    };
+    let theirs = match Version::parse(tag) {
+        Ok(v) => v,
+        Err(why) => {
+            return (
+                Standing::Unknown,
+                Some(Said::new(
+                    format!("发布的 tag {tag:?} 不是版本号，无法比较：{why}"),
+                    format!(
+                        "The release tag {tag:?} is not a version, so it cannot be compared: {why}"
+                    ),
+                )),
+            );
+        }
+    };
+    let standing = match ours.cmp(&theirs) {
+        std::cmp::Ordering::Equal => Standing::Current,
+        std::cmp::Ordering::Greater => Standing::Ahead,
+        std::cmp::Ordering::Less => Standing::Behind,
+    };
+    (standing, None)
+}
+
+/// Ask GitHub for the newest release of `repo` — this console's own —
+/// and compare it with `running`. One request.
+///
+/// # Errors
+/// The check could not be made: no connection, a rate limit, a status
+/// other than 200 or 404, or a body that is not a release.
+pub fn check_console(f: &dyn Fetch, repo: &str, running: &str) -> Result<ConsoleChecked, Said> {
+    let reply = fetch(f, &format!("/repos/{repo}/releases/latest"))?;
+    if reply.status == 404 {
+        return Ok(ConsoleChecked {
+            latest: None,
+            standing: Standing::Unknown,
+            reason: Some(Said::new(
+                format!("{repo} 还没有发布任何版本"),
+                format!("{repo} has published no release yet"),
+            )),
+        });
+    }
+    if reply.status != 200 {
+        return Err(http_error("release", &reply));
+    }
+    let (tag, r) = parse_release(&reply.body)?;
+    let (standing, reason) = stand(running, &tag);
+    Ok(ConsoleChecked {
+        latest: Some(Published {
+            tag,
+            name: r.name,
+            published_at: r.published_at,
+            url: r.url,
+            prerelease: r.prerelease,
+        }),
+        standing,
+        reason,
+    })
+}
+
+// -- what is kept, and how it is reported -----------------------------------
+
+/// One check's last attempt and last success. In memory; a restart
+/// starts again.
+#[derive(Debug, Clone)]
+struct Kept<T> {
+    attempted_at_ms: Option<i64>,
+    error: Option<Said>,
+    success: Option<(i64, T)>,
+}
+
+impl<T> Default for Kept<T> {
+    fn default() -> Self {
+        Self {
+            attempted_at_ms: None,
+            error: None,
+            success: None,
+        }
+    }
+}
+
+impl<T> Kept<T> {
     /// A failure keeps the previous success: it is still the best thing
     /// known, and the report carries its age so it is not read as new.
-    pub fn record(&mut self, at_ms: i64, outcome: Result<Checked, Said>) {
+    fn record(&mut self, at_ms: i64, outcome: Result<T, Said>) {
         self.attempted_at_ms = Some(at_ms);
         match outcome {
             Ok(checked) => {
@@ -534,16 +771,57 @@ impl Cache {
         }
     }
 
-    /// What `GET /api/v1/upstream` answers.
-    #[must_use]
-    pub fn report(&self, repo: &str, every_hours: u64, checking: bool) -> Report {
-        let (succeeded_at_ms, checked) = match &self.success {
+    fn succeeded(&self) -> (Option<i64>, Option<&T>) {
+        match &self.success {
             Some((at, c)) => (Some(*at), Some(c)),
             None => (None, None),
-        };
+        }
+    }
+}
+
+/// What the checks so far found. The framework check and the console's
+/// own are kept apart: one failing — GitHub refusing one path, a release
+/// that does not parse — says nothing about the other, and must not
+/// throw away an answer the other did get.
+#[derive(Debug, Default, Clone)]
+pub struct Cache {
+    framework: Kept<Checked>,
+    console: Kept<ConsoleChecked>,
+}
+
+/// Which console is asking: its repository and the version it was built
+/// as.
+#[derive(Debug, Clone, Copy)]
+pub struct Console<'a> {
+    pub repo: &'a str,
+    pub version: &'a str,
+}
+
+impl Cache {
+    /// Record an attempt at the framework check.
+    pub fn record(&mut self, at_ms: i64, outcome: Result<Checked, Said>) {
+        self.framework.record(at_ms, outcome);
+    }
+
+    /// Record an attempt at the console's own release check.
+    pub fn record_console(&mut self, at_ms: i64, outcome: Result<ConsoleChecked, Said>) {
+        self.console.record(at_ms, outcome);
+    }
+
+    /// What `GET /api/v1/upstream` answers.
+    #[must_use]
+    pub fn report(
+        &self,
+        repo: &str,
+        console: Console<'_>,
+        every_hours: u64,
+        checking: bool,
+    ) -> Report {
+        let (succeeded_at_ms, checked) = self.framework.succeeded();
         let revisions: Vec<RevisionView> = checked
             .map(|c| c.revisions.iter().map(RevisionView::from).collect())
             .unwrap_or_default();
+        let kept = &self.framework;
         Report {
             enabled: every_hours > 0,
             reason: None,
@@ -551,15 +829,37 @@ impl Cache {
             repo: repo.to_owned(),
             every_hours,
             checking,
-            checked_at_ms: self.attempted_at_ms,
-            error: self.error.as_ref().map(|e| e.zh.clone()),
-            error_en: self.error.as_ref().map(|e| e.en.clone()),
+            checked_at_ms: kept.attempted_at_ms,
+            error: kept.error.as_ref().map(|e| e.zh.clone()),
+            error_en: kept.error.as_ref().map(|e| e.en.clone()),
             succeeded_at_ms,
             // Before any success this is unknown, not "no release".
             published: checked.map(|c| c.latest.is_some()),
             latest: checked.and_then(|c| c.latest.clone()),
             behind: revisions.iter().any(|r| r.verdict == Verdict::Behind),
             revisions,
+            console: self.console_report(console),
+        }
+    }
+
+    fn console_report(&self, console: Console<'_>) -> ConsoleReport {
+        let kept = &self.console;
+        let (succeeded_at_ms, checked) = kept.succeeded();
+        let verdict = checked.map_or(Standing::Unknown, |c| c.standing);
+        let reason = checked.and_then(|c| c.reason.as_ref());
+        ConsoleReport {
+            repo: console.repo.to_owned(),
+            version: console.version.to_owned(),
+            checked_at_ms: kept.attempted_at_ms,
+            error: kept.error.as_ref().map(|e| e.zh.clone()),
+            error_en: kept.error.as_ref().map(|e| e.en.clone()),
+            succeeded_at_ms,
+            published: checked.map(|c| c.latest.is_some()),
+            latest: checked.and_then(|c| c.latest.clone()),
+            verdict,
+            reason: reason.map(|r| r.zh.clone()),
+            reason_en: reason.map(|r| r.en.clone()),
+            behind: verdict == Standing::Behind,
         }
     }
 }
@@ -567,7 +867,7 @@ impl Cache {
 /// The report when the check is turned off: nothing was or will be
 /// fetched, and the reason says how to turn it on.
 #[must_use]
-pub fn disabled(repo: &str) -> Report {
+pub fn disabled(repo: &str, console: Console<'_>) -> Report {
     let why = Said::new(
         "已关闭：OQ_DECK_UPSTREAM_CHECK_HOURS=0，deck 不会访问 GitHub",
         "Off: OQ_DECK_UPSTREAM_CHECK_HOURS=0, so the deck makes no request to GitHub",
@@ -587,6 +887,7 @@ pub fn disabled(repo: &str) -> Report {
         latest: None,
         behind: false,
         revisions: Vec::new(),
+        console: Cache::default().console_report(console),
     }
 }
 
@@ -614,7 +915,40 @@ pub struct Report {
     pub published: Option<bool>,
     pub latest: Option<Release>,
     pub revisions: Vec<RevisionView>,
-    /// Some revision is behind the release, per the last success.
+    /// Some revision is behind the release, per the last success. The
+    /// framework's alone, as it was before the console's own check was
+    /// added: a reader of this field asked about the framework.
+    pub behind: bool,
+    /// This console against quanterdeck's newest release.
+    pub console: ConsoleReport,
+}
+
+/// This console's version against its own repository's newest release.
+///
+/// Its own attempt, error and last success, beside the framework's and
+/// independent of them.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConsoleReport {
+    pub repo: String,
+    /// The version this console was built as.
+    pub version: String,
+    /// The last attempt, successful or not. `None`: not checked yet.
+    pub checked_at_ms: Option<i64>,
+    /// Why the last attempt failed. `None` when it succeeded.
+    pub error: Option<String>,
+    pub error_en: Option<String>,
+    /// When the result below was found.
+    pub succeeded_at_ms: Option<i64>,
+    /// Whether the repository has a release. `None` until a check has
+    /// succeeded.
+    pub published: Option<bool>,
+    pub latest: Option<Published>,
+    /// `unknown` until a check succeeds, and after one that could not
+    /// compare; `reason` says why in the second case.
+    pub verdict: Standing,
+    pub reason: Option<String>,
+    pub reason_en: Option<String>,
+    /// A newer release exists, per the last success.
     pub behind: bool,
 }
 
@@ -696,6 +1030,23 @@ mod tests {
     }
 
     const REPO: &str = "openquanter/openquanter";
+    const SELF_REPO: &str = "openquanter/quanterdeck";
+    const CONSOLE: Console<'static> = Console {
+        repo: SELF_REPO,
+        version: "1.0.0",
+    };
+
+    fn self_release(tag: &str) -> String {
+        format!(
+            r#"{{"tag_name":"{tag}","name":"{tag}","prerelease":false,
+                "published_at":"2026-10-01T08:00:00Z",
+                "html_url":"https://github.com/{SELF_REPO}/releases/tag/{tag}"}}"#
+        )
+    }
+
+    fn self_latest() -> String {
+        format!("/repos/{SELF_REPO}/releases/latest")
+    }
 
     fn compare(base: &str, head: &str) -> String {
         format!("/repos/{REPO}/compare/{base}...{head}?per_page=1")
@@ -785,7 +1136,7 @@ mod tests {
         assert_eq!(f.asked.borrow().len(), 1);
         let mut cache = Cache::default();
         cache.record(5, Ok(c));
-        let report = cache.report(REPO, 6, false);
+        let report = cache.report(REPO, CONSOLE, 6, false);
         assert_eq!(report.published, Some(false));
         assert!(!report.behind);
     }
@@ -886,7 +1237,7 @@ mod tests {
         let mut cache = Cache::default();
         cache.record(1_000, check(&f, REPO, &both()));
         cache.record(2_000, Err(Said::same("timed out")));
-        let r = cache.report(REPO, 6, false);
+        let r = cache.report(REPO, CONSOLE, 6, false);
         assert_eq!(r.checked_at_ms, Some(2_000));
         assert_eq!(r.succeeded_at_ms, Some(1_000));
         assert_eq!(r.error.as_deref(), Some("timed out"));
@@ -899,7 +1250,7 @@ mod tests {
     fn before_any_success_nothing_is_claimed() {
         let mut cache = Cache::default();
         cache.record(1, Err(Said::same("timed out")));
-        let r = cache.report(REPO, 6, false);
+        let r = cache.report(REPO, CONSOLE, 6, false);
         assert_eq!(r.published, None, "unknown is not 'no release'");
         assert!(r.latest.is_none());
         assert!(r.revisions.is_empty());
@@ -954,5 +1305,194 @@ mod tests {
         assert!(is_commit_id(DECK));
         assert!(!is_commit_id("bbdcb4"));
         assert!(!is_commit_id("main"));
+    }
+
+    fn v(s: &str) -> Version {
+        Version::parse(s).unwrap_or_else(|e| panic!("{s}: {e}"))
+    }
+
+    #[test]
+    fn versions_parse_with_or_without_v_and_with_a_pre_release() {
+        assert_eq!(
+            v("v1.0.1"),
+            Version {
+                major: 1,
+                minor: 0,
+                patch: 1,
+                pre: vec![]
+            }
+        );
+        assert_eq!(v("1.0.1"), v("v1.0.1"));
+        assert_eq!(v("1.2.3-rc.1").pre, vec!["rc".to_owned(), "1".to_owned()]);
+        // Build metadata is not part of the order.
+        assert_eq!(v("1.2.3+abc"), v("1.2.3"));
+        for garbage in [
+            "",
+            "v",
+            "1",
+            "1.0",
+            "1.0.0.0",
+            "latest",
+            "v1.x.0",
+            "1.0.-1",
+            "01.0.0",
+            "1.0.0-",
+            "1.0.0-rc..1",
+            "1.0.0-rc/1",
+            " v 1.0.0",
+        ] {
+            assert!(Version::parse(garbage).is_err(), "{garbage:?} parsed");
+        }
+    }
+
+    #[test]
+    fn versions_order_by_number_not_by_text() {
+        assert!(v("1.0.10") > v("1.0.9"), "numerically, not as text");
+        assert!(v("1.10.0") > v("1.9.9"));
+        assert!(v("2.0.0") > v("1.99.99"));
+        // A release is above its own pre-releases, below the next one's.
+        assert!(v("1.0.0") > v("1.0.0-rc.2"));
+        assert!(v("1.0.1-rc.1") > v("1.0.0"));
+        // Semantic versioning's own example order.
+        let order = [
+            "1.0.0-alpha",
+            "1.0.0-alpha.1",
+            "1.0.0-alpha.beta",
+            "1.0.0-beta",
+            "1.0.0-beta.2",
+            "1.0.0-beta.11",
+            "1.0.0-rc.1",
+            "1.0.0",
+        ];
+        for pair in order.windows(2) {
+            assert!(v(pair[0]) < v(pair[1]), "{} < {}", pair[0], pair[1]);
+        }
+    }
+
+    #[test]
+    fn the_console_stands_equal_ahead_or_behind() {
+        assert_eq!(stand("1.0.0", "v1.0.0"), (Standing::Current, None));
+        assert_eq!(stand("1.0.1", "v1.0.0"), (Standing::Ahead, None));
+        assert_eq!(stand("1.0.0", "v1.0.1"), (Standing::Behind, None));
+        assert_eq!(stand("1.0.0", "1.0.1"), (Standing::Behind, None));
+        assert_eq!(stand("1.0.0-rc.1", "v1.0.0"), (Standing::Behind, None));
+        assert_eq!(stand("1.0.0", "v1.0.0-rc.1"), (Standing::Ahead, None));
+        // A tag that is not a version is "cannot tell", with which and why.
+        let (s, why) = stand("1.0.0", "nightly-2026-10-01");
+        assert_eq!(s, Standing::Unknown);
+        assert!(why.expect("a reason").en.contains("nightly-2026-10-01"));
+        let (s, why) = stand("dev", "v1.0.0");
+        assert_eq!(s, Standing::Unknown);
+        assert!(why.expect("a reason").en.contains("This console's version"));
+    }
+
+    #[test]
+    fn the_console_check_is_one_request() {
+        let f = Canned::default().with(&self_latest(), 200, &self_release("v1.0.1"));
+        let c = check_console(&f, SELF_REPO, "1.0.0").expect("checked");
+        assert_eq!(c.standing, Standing::Behind);
+        assert!(c.reason.is_none());
+        let latest = c.latest.expect("a release");
+        assert_eq!(latest.tag, "v1.0.1");
+        assert!(latest.url.starts_with("https://github.com/"));
+        assert_eq!(*f.asked.borrow(), vec![self_latest()]);
+    }
+
+    #[test]
+    fn the_console_with_no_release_yet_is_a_state_not_an_error() {
+        let f = Canned::default().with(&self_latest(), 404, r#"{"message":"Not Found"}"#);
+        let c = check_console(&f, SELF_REPO, "1.0.0").expect("a 404 here is an answer");
+        assert!(c.latest.is_none());
+        assert_eq!(c.standing, Standing::Unknown);
+        assert!(c.reason.expect("why").en.contains("no release yet"));
+        let mut cache = Cache::default();
+        cache.record_console(5, check_console(&f, SELF_REPO, "1.0.0"));
+        let r = cache.report(REPO, CONSOLE, 6, false).console;
+        assert_eq!(r.published, Some(false));
+        assert_eq!(r.verdict, Standing::Unknown);
+        assert!(!r.behind);
+        assert!(r.error.is_none(), "not a failure to look");
+    }
+
+    #[test]
+    fn the_console_check_fails_honestly() {
+        let mut f = Canned::default();
+        f.replies.insert(
+            self_latest(),
+            Reply {
+                status: 403,
+                rate_limit_remaining: Some("0".into()),
+                rate_limit_reset: Some("1790000000".into()),
+                body: r#"{"message":"API rate limit exceeded"}"#.into(),
+            },
+        );
+        let e = check_console(&f, SELF_REPO, "1.0.0").expect_err("not checked");
+        assert!(e.en.contains("rate limit"), "{}", e.en);
+        let e = check_console(&Canned::default(), SELF_REPO, "1.0.0").expect_err("no reply");
+        assert!(e.en.contains("Cannot reach"), "{}", e.en);
+        let f = Canned::default().with(&self_latest(), 500, "{}");
+        assert!(check_console(&f, SELF_REPO, "1.0.0").is_err());
+        let off = self_release("v1.0.1").replace("https://github.com/", "https://example.com/");
+        let f = Canned::default().with(&self_latest(), 200, &off);
+        assert!(
+            check_console(&f, SELF_REPO, "1.0.0").is_err(),
+            "a link off github.com"
+        );
+    }
+
+    #[test]
+    fn a_console_failure_keeps_its_last_success_and_the_framework_answer() {
+        let fw = published()
+            .with(&compare(TAG_SHA, DECK), 200, &compared("identical", 0, 0))
+            .with(&compare(TAG_SHA, TRADER), 200, &compared("identical", 0, 0));
+        let ok = Canned::default().with(&self_latest(), 200, &self_release("v1.0.1"));
+        let mut cache = Cache::default();
+        cache.record(1_000, check(&fw, REPO, &both()));
+        cache.record_console(1_000, check_console(&ok, SELF_REPO, "1.0.0"));
+        // Then only the console's request fails.
+        cache.record(2_000, check(&fw, REPO, &both()));
+        cache.record_console(2_000, Err(Said::same("timed out")));
+        let r = cache.report(REPO, CONSOLE, 6, false);
+        assert_eq!(r.error, None, "the framework check is untouched");
+        assert_eq!(r.succeeded_at_ms, Some(2_000));
+        assert!(!r.behind);
+        let c = &r.console;
+        assert_eq!(c.error.as_deref(), Some("timed out"));
+        assert_eq!(c.checked_at_ms, Some(2_000));
+        assert_eq!(c.succeeded_at_ms, Some(1_000), "with its own age");
+        assert_eq!(c.latest.as_ref().map(|l| l.tag.as_str()), Some("v1.0.1"));
+        assert_eq!(c.verdict, Standing::Behind);
+        assert!(c.behind);
+        assert_eq!(c.version, "1.0.0");
+        assert_eq!(c.repo, SELF_REPO);
+    }
+
+    #[test]
+    fn a_framework_failure_leaves_the_console_answer_standing() {
+        let ok = Canned::default().with(&self_latest(), 200, &self_release("v1.0.0"));
+        let mut cache = Cache::default();
+        cache.record(1_000, Err(Said::same("rate limited")));
+        cache.record_console(1_000, check_console(&ok, SELF_REPO, "1.0.0"));
+        let r = cache.report(REPO, CONSOLE, 6, false);
+        assert_eq!(r.error.as_deref(), Some("rate limited"));
+        assert_eq!(r.published, None);
+        let c = &r.console;
+        assert_eq!(c.error, None);
+        assert_eq!(c.published, Some(true));
+        assert_eq!(c.verdict, Standing::Current);
+        assert!(!c.behind);
+    }
+
+    #[test]
+    fn before_any_console_success_nothing_is_claimed() {
+        let r = Cache::default().report(REPO, CONSOLE, 6, false).console;
+        assert_eq!(r.checked_at_ms, None);
+        assert_eq!(r.published, None);
+        assert_eq!(r.verdict, Standing::Unknown, "not 'current'");
+        assert!(!r.behind);
+        assert_eq!(r.version, "1.0.0");
+        let off = disabled(REPO, CONSOLE);
+        assert_eq!(off.console.verdict, Standing::Unknown);
+        assert_eq!(off.console.repo, SELF_REPO);
     }
 }

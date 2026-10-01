@@ -223,6 +223,7 @@ The deck:
 | `OQ_DECK_DEVICE_DAYS` | `90` | How long an enrolled browser is trusted |
 | `OQ_DECK_TRUSTED_KEYS` | An `allowed_signers` file: the keys `scripts/deck-enrol.sh` may enrol a browser with, on a machine that has no password yet. Unset means no key can |
 | `OQ_DECK_UPSTREAM_REPO` | `openquanter/openquanter` | The GitHub repository whose newest release is compared with what runs |
+| `OQ_DECK_SELF_REPO` | `openquanter/quanterdeck` | This console's own repository: its newest release is compared with the version the deck was built as. Same schedule, switch and proxy as the framework check; one request more |
 | `OQ_DECK_UPSTREAM_CHECK_HOURS` | `6` | How often to check, 0 to 168. `0` turns the check off: no request to GitHub at all |
 | `OQ_DECK_UPSTREAM_PROXY` | — | An `http://` proxy for that check only; the ambient `HTTPS_PROXY` is not read |
 | `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
