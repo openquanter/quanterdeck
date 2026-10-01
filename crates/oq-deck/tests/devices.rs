@@ -290,3 +290,35 @@ fn sign_as(key: &std::path::Path, challenge: &str) -> String {
     );
     String::from_utf8(out.stdout).expect("utf8")
 }
+
+/// The lifetime is the server's to enforce. A browser that ignores the
+/// cookie's expiry — or a token copied out of one — is still refused
+/// once the device is older than `OQ_DECK_DEVICE_DAYS`.
+#[tokio::test]
+async fn a_device_older_than_its_lifetime_is_refused_by_the_server() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut store = oq_deck_core::devices::Devices::open(dir.path()).expect("opens");
+    // Enrolled at the epoch: far past any lifetime the settings allow.
+    store
+        .issue("an old laptop", "old-token", 0)
+        .expect("issued");
+    store
+        .issue("a new laptop", "new-token", i64::MAX / 2)
+        .expect("issued");
+    drop(store);
+    let app = router_with_devices(dir.path());
+
+    let (_, body, _) = send(
+        &app,
+        get("/api/v1/session", Some("oq_deck_device=old-token")),
+    )
+    .await;
+    assert_eq!(body["authenticated"], false, "{body}");
+
+    let (_, body, _) = send(
+        &app,
+        get("/api/v1/session", Some("oq_deck_device=new-token")),
+    )
+    .await;
+    assert_eq!(body["authenticated"], true, "{body}");
+}
