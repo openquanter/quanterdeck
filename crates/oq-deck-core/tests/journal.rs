@@ -221,3 +221,74 @@ fn records_page_newest_first_by_kind() {
     assert_eq!(older.records[0].fields["last"], 6_000_002);
     assert!(oq_deck_core::live::records(dir.path(), "../x", &[], 1, None).is_err());
 }
+
+fn settle(path: &std::path::Path) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open")
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(600))
+        .expect("set mtime");
+}
+
+/// The journal listing replays every journal, so it is the one the cache
+/// is for; and a cached belief must still be the journal's latest. One
+/// that grew is replayed again, one that would not read is listed with
+/// its reason, and one that is removed is gone.
+#[test]
+fn a_cached_journal_listing_follows_the_journals() {
+    use oq_deck_core::live::{self, Cache, Entry};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("run.oqj");
+    let resting = |entries: &[Entry]| match &entries[0] {
+        Entry::Read(summary) => summary.belief.resting.len(),
+        Entry::Unreadable { error, .. } => panic!("reads: {error}"),
+    };
+
+    journal(dir.path(), &[start()]);
+    settle(&path);
+    let cache = Cache::default();
+    let first = live::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(resting(&first), 0);
+    assert_eq!(cache.len(), 1);
+
+    journal(
+        dir.path(),
+        &[
+            start(),
+            Record::Submitted {
+                at: Nanos(1),
+                client_id: "oq-1".into(),
+                side: Side::Buy,
+                limit_price: PriceTicks(6_000_000),
+                qty: QtyLots(1),
+                reduce_only: false,
+                leg: String::new(),
+            },
+            Record::Outcome {
+                at: Nanos(2),
+                client_id: "oq-1".into(),
+                tag: OutcomeTag::Accepted,
+                detail: String::new(),
+            },
+        ],
+    );
+    settle(&path);
+    let grown = live::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(resting(&grown), 1, "the journal grew: replayed again");
+
+    std::fs::write(dir.path().join("bad.oqj"), b"this is not a journal").expect("write");
+    settle(&dir.path().join("bad.oqj"));
+    let listed = live::list_cached(dir.path(), &cache).expect("reads");
+    assert!(
+        listed.iter().any(
+            |e| matches!(e, Entry::Unreadable { id, error, .. } if id == "bad" && !error.is_empty())
+        ),
+        "{listed:?}"
+    );
+
+    std::fs::remove_file(&path).expect("remove");
+    let left = live::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(cache.is_empty(), "the removed journal is forgotten");
+}

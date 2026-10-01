@@ -144,15 +144,53 @@ fn modified_ms(path: &Path) -> Option<u64> {
     u64::try_from(d.as_millis()).ok()
 }
 
+/// What a listing shows of a sweep that read.
+#[derive(Debug, Clone)]
+struct Head {
+    label: String,
+    configs: usize,
+    refused: bool,
+}
+
+/// Listing heads already worked out, for files that have not changed.
+#[derive(Debug, Default)]
+pub struct Cache(crate::cache::ParseCache<Head>);
+
+impl Cache {
+    /// How many sweeps are remembered.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether no sweep is remembered.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Every `.sweep` file in a directory, newest first.
 ///
 /// # Errors
 /// The directory exists and cannot be read. A missing one is an empty
 /// listing: nobody has written a sweep there yet.
 pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
+    list_cached(dir, &Cache::default())
+}
+
+/// [`list`], remembering each sweep's head in `cache` while its file is
+/// unchanged. The listing is the same either way; see [`crate::cache`].
+///
+/// # Errors
+/// As [`list`].
+pub fn list_cached(dir: &Path, cache: &Cache) -> Result<Vec<Entry>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            cache.0.retain(&[]);
+            return Ok(Vec::new());
+        }
         Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
     let mut paths: Vec<(Option<u64>, PathBuf)> = entries
@@ -162,18 +200,27 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
         .map(|p| (modified_ms(&p), p))
         .collect();
     paths.sort_by(|a, b| b.cmp(a));
+    let present: Vec<PathBuf> = paths.iter().map(|(_, p)| p.clone()).collect();
+    cache.0.retain(&present);
     Ok(paths
         .into_iter()
         .map(|(modified, path)| {
             let id = path
                 .file_stem()
                 .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
-            match read_file(&path) {
-                Ok(f) => Entry::Read {
-                    id,
+            let head = cache.0.get_or_parse(&path, |path| {
+                read_file(path).map(|f| Head {
                     label: f.label,
                     configs: f.configs.len(),
                     refused: !f.refusals.is_empty(),
+                })
+            });
+            match head {
+                Ok(head) => Entry::Read {
+                    id,
+                    label: head.label,
+                    configs: head.configs,
+                    refused: head.refused,
                     modified_ms: modified,
                 },
                 Err(error) => Entry::Unreadable { id, error },
@@ -224,6 +271,44 @@ mod tests {
                 .any(|e| matches!(e, Entry::Unreadable { id, .. } if id == "b"))
         );
         assert!(list(&dir.path().join("missing")).expect("empty").is_empty());
+    }
+
+    #[test]
+    fn a_cached_listing_follows_a_rewrite_and_a_removal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("a.sweep");
+        let settle = || {
+            fs::File::options()
+                .write(true)
+                .open(&path)
+                .expect("open")
+                .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(600))
+                .expect("set mtime");
+        };
+        fs::write(&path, REFUSED).expect("write");
+        settle();
+        let cache = Cache::default();
+        let first = list_cached(dir.path(), &cache).expect("lists");
+        assert!(matches!(&first[0], Entry::Read { refused: true, .. }));
+        assert_eq!(cache.len(), 1);
+
+        // The refusal line taken out: the same sweep, now deployable.
+        let accepted: String = REFUSED
+            .lines()
+            .filter(|l| !l.starts_with("refusal "))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        fs::write(&path, accepted).expect("rewrite");
+        settle();
+        let second = list_cached(dir.path(), &cache).expect("lists");
+        assert!(
+            matches!(&second[0], Entry::Read { refused: false, .. }),
+            "{second:?}"
+        );
+
+        fs::remove_file(&path).expect("remove");
+        assert!(list_cached(dir.path(), &cache).expect("lists").is_empty());
+        assert!(cache.is_empty());
     }
 
     #[test]

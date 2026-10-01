@@ -96,6 +96,28 @@ fn id_of(path: &Path) -> String {
         .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
 }
 
+/// Beliefs already reconstructed, for journals that have not changed.
+///
+/// The listing's heaviest work: each belief is a replay of the whole
+/// journal. A journal still being written changes on every append and is
+/// replayed every time, as before; the ones that have stopped are not.
+#[derive(Debug, Default)]
+pub struct Cache(crate::cache::ParseCache<BeliefView>);
+
+impl Cache {
+    /// How many journals are remembered.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether no journal is remembered.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Every journal in a directory.
 ///
 /// A missing directory is an empty listing, not an error: a deck pointed
@@ -104,9 +126,21 @@ fn id_of(path: &Path) -> String {
 /// # Errors
 /// Any other failure to read the directory, which is not an empty one.
 pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
+    list_cached(dir, &Cache::default())
+}
+
+/// [`list`], remembering each belief in `cache` while its journal is
+/// unchanged. The listing is the same either way; see [`crate::cache`].
+///
+/// # Errors
+/// As [`list`].
+pub fn list_cached(dir: &Path, cache: &Cache) -> Result<Vec<Entry>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            cache.0.retain(&[]);
+            return Ok(Vec::new());
+        }
         Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
 
@@ -116,16 +150,20 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
         .map(|e| e.path())
         .collect();
     paths.sort();
+    cache.0.retain(&paths);
 
     Ok(paths
         .iter()
         .map(|path| {
             let id = id_of(path);
-            match read_belief(path) {
+            match cache
+                .0
+                .get_or_parse(path, |path| read_belief(path).map(|b| BeliefView::from(&b)))
+            {
                 Ok(belief) => Entry::Read(Box::new(JournalSummary {
                     id,
                     path: path.display().to_string(),
-                    belief: BeliefView::from(&belief),
+                    belief,
                 })),
                 Err(error) => Entry::Unreadable {
                     id,

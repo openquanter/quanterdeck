@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### A large directory no longer stalls the console
+
+- **File work runs off the async workers.** Listing runs, sweeps and
+  journals, a run's or a journal's detail, comparison, attribution and
+  reconciliation all parse files — the journal listing replays every
+  journal whole — and did it on the threads that answer every other
+  request, the session checks included. They run on the blocking pool
+  now.
+- **A listing remembers what an unchanged file parsed to.** Keyed by
+  inode, length, modification and change time; a file modified in the
+  last two seconds, or one that would not read, is read again every
+  time. The listing says exactly what it said before — an unreadable
+  file is still listed with its reason and still withholds the total —
+  and a removed file is forgotten with the listing that missed it.
+
 ### Signing in once, on the machines you choose
 
 - **A browser you enrol is not asked again.** The login page offers to

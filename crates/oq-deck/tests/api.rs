@@ -436,3 +436,56 @@ async fn a_sweep_is_served_with_the_reasons_it_may_not_be_deployed() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Put a file's modification time in the past, where the deck's listing
+/// cache will keep what it parsed.
+fn settle(path: &std::path::Path) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(600))
+        .unwrap();
+}
+
+/// The deck remembers what each run parsed to across requests; what it
+/// serves must still be the directory as it is now.
+#[tokio::test]
+async fn the_run_listing_follows_the_directory_between_requests() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.run");
+    let b = dir.path().join("b.run");
+    std::fs::copy(fixtures().join("baseline.run"), &a).unwrap();
+    std::fs::copy(fixtures().join("config-moved.run"), &b).unwrap();
+    settle(&a);
+    settle(&b);
+    let client = Client::new(Settings {
+        runs_dir: Some(dir.path().to_path_buf()),
+        ..settings()
+    })
+    .await;
+
+    let (status, body) = client.get("/api/v1/runs").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["entries"][0]["identity"]["code_commit"], "a1b2c3d");
+    assert!(body["total_pnl"].is_number(), "{body}");
+
+    // A changed file is read again; a file that stops reading withholds
+    // the total, as it always did.
+    std::fs::copy(fixtures().join("same-experiment.run"), &a).unwrap();
+    std::fs::copy(fixtures().join("truncated.run"), &b).unwrap();
+    settle(&a);
+    settle(&b);
+    let (_, body) = client.get("/api/v1/runs").await;
+    assert_eq!(body["entries"][0]["identity"]["code_commit"], "e4f5g6h");
+    assert_eq!(body["entries"][1]["state"], "unreadable");
+    assert!(body["total_pnl"].is_null(), "{body}");
+
+    // A removed file is not served from memory.
+    std::fs::remove_file(&b).unwrap();
+    let (_, body) = client.get("/api/v1/runs").await;
+    let entries = body["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{body}");
+    assert_eq!(entries[0]["id"], "a");
+    assert!(body["total_pnl"].is_number(), "{body}");
+}
