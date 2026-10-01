@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/oq-deck-core", "crates/oq-deck", "crates/oq-agent"]
 
 [workspace.package]
-version = "0.0.1"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.89"  # the framework's floor: see AGENTS.md
 license = "Apache-2.0"

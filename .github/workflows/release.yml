@@ -1,0 +1,128 @@
+name: Release
+
+# A tag `vX.Y.Z` on `main` becomes a GitHub Release with ready-to-run
+# Linux bundles: the deck, the host agent and the built web interface.
+#
+# Pushing the tag is the whole of the manual step (README, "Releases").
+# Every check refuses rather than guesses: a release somebody downloaded
+# stays downloaded, so a wrong one cannot be taken back.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: The tag names this commit's version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        name: Tag, workspace version, web version, main and changelog agree
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          web="$(python3 -c 'import json; print(json.load(open("web/package.json"))["version"])')"
+          if [ "$tag" != "v$version" ] || [ "$web" != "$version" ]; then
+            echo "::error::tag $tag, workspace $version and web/package.json $web must all agree"
+            exit 1
+          fi
+          # Released from main only: a tag on a branch would publish code
+          # that never passed review there.
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$tag is not on main"
+            exit 1
+          fi
+          if ! grep -q "^## ${version} " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## ${version} — <date>' section"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: The full gate, on the tagged commit
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+
+  bundle:
+    name: Bundle ${{ matrix.target }}
+    needs: tag
+    # 22.04 rather than latest: a binary links against the runner's glibc,
+    # and the older one runs on more hosts than the newer one does.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the web interface
+        working-directory: web
+        run: npm ci && npm run build
+      - name: Build the deck and the host agent
+        run: cargo build --release --locked -p oq-deck -p oq-agent
+      - name: Package with a checksum
+        run: |
+          name="quanterdeck-v${{ needs.tag.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "$name/bin"
+          cp target/release/oq-deck target/release/oq-agent "$name/bin/"
+          cp -r web/dist "$name/web-dist"
+          cp LICENSE README.md README.zh-CN.md CHANGELOG.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: quanterdeck-v*.tar.gz*
+
+  github:
+    name: GitHub Release
+    needs: [tag, gate, bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Notes from the changelog
+        run: |
+          v="${{ needs.tag.outputs.version }}"
+          awk -v v="$v" '
+            $0 ~ "^## " v " " { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error::empty changelog section for $v"; exit 1; }
+          # Which framework this build is against, from the lock file the
+          # bundle was built with: the first thing an operator pairing a
+          # deck with a trader needs to know.
+          rev="$(grep -o 'openquanter/openquanter?rev=[0-9a-f]*#[0-9a-f]*' Cargo.lock | head -1 | sed 's/.*#//')"
+          tick='`'
+          printf '\n---\nBuilt against openquanter %s%s%s.\n' "$tick" "${rev:0:12}" "$tick" >> notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "Quanterdeck $GITHUB_REF_NAME" --notes-file notes.md \
+            artifacts/quanterdeck-v*.tar.gz artifacts/quanterdeck-v*.tar.gz.sha256

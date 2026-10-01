@@ -146,6 +146,29 @@ export OQ_DECK_RUNS_DIR=$PWD/examples/fixtures/runs
 这些示例由框架自己的写入器生成（`cargo run -p oq-deck-core --example make_fixtures`），
 所以格式一定合法——其中一个是**故意截断**的，用来看列表如何呈现读不了的文件。
 
+## 发布
+
+版本按简单序列编号——`1.0.0`、`1.0.1`、`1.0.2`……——与框架各自独立；每个 GitHub
+Release 都写明它是对着框架的哪个提交构建的。每次发布提供 Linux x86-64 与 aarch64
+的发布包，内含 `bin/oq-deck`、`bin/oq-agent` 和构建好的界面 `web-dist/`（把
+`OQ_DECK_WEB_DIST` 指向它），并附 SHA-256。运行时不需要 Node 或 Rust 工具链。
+
+```bash
+v=1.0.0; t=x86_64-unknown-linux-gnu
+curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
+sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
+```
+
+运行中的 deck 会告诉你有没有更新的版本：总览页的「上游版本」卡片会把它和最新发布对比。
+
+**怎么发版。** 在一个 PR 里改 `Cargo.toml` 的 `[workspace.package].version` 和
+`web/package.json` 的 `version`（及其锁文件），把变更日志的 `## Unreleased` 改成
+`## X.Y.Z — <日期>`，并在上面新开一个空的 `## Unreleased`。合并后在 `main` 的那个
+提交上打 tag：`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`。
+`.github/workflows/release.yml` 会在 tag、两处版本号、变更日志任何一处对不上或提交
+不在 `main` 上时拒绝；否则跑完整 CI 门禁、构建发布包，并以变更日志对应一节为说明
+发布。失败的 tag 什么都不发布；版本号一旦打过 tag 就不再复用。
+
 ## 配置
 
 deck：
