@@ -57,10 +57,23 @@ impl Deck {
     /// Whether a token belongs to a device the operator enrolled.
     #[must_use]
     pub fn enrolled(&self, token: &str) -> bool {
-        self.devices
-            .as_ref()
-            .is_some_and(|d| d.lock().map(|d| d.find(token).is_some()).unwrap_or(false))
+        self.devices.as_ref().is_some_and(|d| {
+            d.lock()
+                .map(|d| {
+                    d.find(token, now_ms(), self.settings.device_lifetime)
+                        .is_some()
+                })
+                .unwrap_or(false)
+        })
     }
+}
+
+/// Wall-clock milliseconds since the epoch, for comparing with the
+/// times the deck writes down.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
 tokio::task_local! {
