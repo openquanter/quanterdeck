@@ -95,11 +95,22 @@ impl Devices {
         Ok(device)
     }
 
-    /// The device a token belongs to, if any.
+    /// The device a token belongs to, if it is still within `lifetime`
+    /// of being enrolled at `now_ms`.
+    ///
+    /// The lifetime is enforced here and not only by the cookie's
+    /// `Max-Age`: that tells an honest browser when to forget the token,
+    /// and a copied token is not held by an honest browser. Checked
+    /// against the cookie alone, a stolen device credential would work
+    /// until somebody thought to revoke it.
     #[must_use]
-    pub fn find(&self, token: &str) -> Option<&Device> {
+    pub fn find(&self, token: &str, now_ms: i64, lifetime: std::time::Duration) -> Option<&Device> {
         let hash = hash_token(token);
-        self.list.iter().find(|d| d.hash == hash)
+        let lifetime_ms = i64::try_from(lifetime.as_millis()).unwrap_or(i64::MAX);
+        self.list
+            .iter()
+            .find(|d| d.hash == hash)
+            .filter(|d| now_ms < d.created_ms.saturating_add(lifetime_ms))
     }
 
     /// Take one away.
@@ -131,6 +142,8 @@ impl Devices {
 mod tests {
     use super::*;
 
+    const DAY: std::time::Duration = std::time::Duration::from_secs(86_400);
+
     fn store() -> (tempfile::TempDir, Devices) {
         let dir = tempfile::tempdir().expect("dir");
         let d = Devices::open(dir.path()).expect("opens");
@@ -142,8 +155,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let (dir, mut d) = store();
         let device = d.issue("this laptop", "a-token", 1).expect("issued");
-        assert_eq!(d.find("a-token").map(|f| f.id.clone()), Some(device.id));
-        assert_eq!(d.find("another-token"), None);
+        assert_eq!(
+            d.find("a-token", 2, DAY).map(|f| f.id.clone()),
+            Some(device.id)
+        );
+        assert_eq!(d.find("another-token", 2, DAY), None);
 
         // What is on disk is the hash, not the token: a copy of the file
         // is a list of what exists, not a set of keys.
@@ -163,9 +179,25 @@ mod tests {
         let first = d.issue("laptop", "one", 1).expect("issued");
         d.issue("phone", "two", 2).expect("issued");
         assert!(d.revoke(&first.id).expect("revoked"));
-        assert_eq!(d.find("one"), None);
-        assert!(d.find("two").is_some(), "the other device is untouched");
+        assert_eq!(d.find("one", 3, DAY), None);
+        assert!(
+            d.find("two", 3, DAY).is_some(),
+            "the other device is untouched"
+        );
         assert!(!d.revoke("no-such-id").expect("no-op"), "and says so");
+    }
+
+    /// A device past its lifetime is refused by the server, whatever the
+    /// browser still holds: the cookie's expiry binds only a browser that
+    /// honours it.
+    #[test]
+    fn a_device_past_its_lifetime_is_not_found() {
+        let (_d, mut d) = store();
+        let day_ms = 86_400_000;
+        d.issue("laptop", "tok", 0).expect("issued");
+        assert!(d.find("tok", 30 * day_ms - 1, 30 * DAY).is_some(), "inside");
+        assert_eq!(d.find("tok", 30 * day_ms, 30 * DAY), None, "at the end");
+        assert_eq!(d.find("tok", 400 * day_ms, 30 * DAY), None, "long after");
     }
 
     #[test]

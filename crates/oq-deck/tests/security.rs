@@ -481,6 +481,43 @@ async fn repeated_failures_close_the_door() {
     assert!(body["detail"].as_str().unwrap().contains("分钟"));
 }
 
+/// A code gets one login. It stays valid for its whole window, so
+/// without this the six digits someone saw typed would let them in too,
+/// for as long as the window lasted, given the password.
+#[tokio::test]
+async fn a_totp_code_lets_in_one_login_not_two() {
+    let secret = oq_deck_core::auth::new_totp_secret().expect("a secret");
+    let app = app(Settings {
+        totp_secret: Some(secret.clone()),
+        ..configured()
+    });
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap())
+        .unwrap();
+    let code = oq_deck_core::auth::totp_code(&secret, now).expect("a code");
+    let attempt = || {
+        post(
+            "/api/v1/session/login",
+            HOST,
+            Some("http://127.0.0.1:8899"),
+            serde_json::json!({ "password": PASSWORD, "totp": code }),
+        )
+    };
+
+    let (status, _, _) = send(&app, attempt()).await;
+    assert_eq!(status, StatusCode::OK, "the first use of a code gets in");
+    // Even if the clock crossed into the next step in between, the code
+    // is still inside the window, so only the replay rule can refuse it.
+    let (status, body, cookies) = send(&app, attempt()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "the second does not");
+    assert!(cookies.is_empty(), "and no session is issued for it");
+    assert_eq!(
+        body["detail"], "密码或验证码不正确。",
+        "refused in the same words as a wrong code"
+    );
+}
+
 /// Someone else's failures do not evict the operator.
 ///
 /// The lockout used to refuse every session while it lasted, so anything

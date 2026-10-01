@@ -46,6 +46,32 @@ fn digest(prev: &str, body: &str) -> String {
     hex(&h.finalize())
 }
 
+/// The bytes of a written line that its hash covers: the line with its
+/// own `,"hash":"…"` cut out, and nothing else changed.
+///
+/// The hash is over these bytes and not over a re-serialisation of the
+/// parsed line, because parsing forgets things a reader of the file
+/// still sees. Two equal keys parse as the last of them, so a forged
+/// `"reason"` slipped in before the real one left the parsed entry — and
+/// a hash over it — exactly as it was, while `less` showed the forgery.
+///
+/// The writer emits compact JSON with sorted keys, so `hash` always
+/// follows another key (`at_ms`) and is always preceded by a comma; were
+/// keys ever kept in insertion order instead it would come last, still
+/// after a comma. Cutting that segment out therefore gives back the very
+/// body that was hashed, and trails written before this read raw bytes
+/// verify unchanged. The segment must occur exactly once: the hash field
+/// is the one part of a line its hash cannot cover, so a second copy of
+/// it, or one somewhere the writer never puts it, is refused here.
+fn hashed_bytes(line: &str, hash: &str) -> Option<String> {
+    let segment = format!(",\"hash\":\"{hash}\"");
+    let mut found = line.match_indices(&segment);
+    let (Some((at, _)), None) = (found.next(), found.next()) else {
+        return None;
+    };
+    Some(format!("{}{}", &line[..at], &line[at + segment.len()..]))
+}
+
 /// Whether the chain in `text` holds, and where it first breaks.
 ///
 /// # Errors
@@ -54,12 +80,11 @@ pub fn verify(text: &str) -> Result<(u64, String), String> {
     let mut prev = "genesis".to_string();
     let mut seq = 0;
     for (i, line) in text.lines().enumerate() {
-        let mut v: Value =
-            serde_json::from_str(line).map_err(|e| format!("line {}: {e}", i + 1))?;
+        let v: Value = serde_json::from_str(line).map_err(|e| format!("line {}: {e}", i + 1))?;
         let hash = v
-            .as_object_mut()
-            .and_then(|o| o.remove("hash"))
-            .and_then(|h| h.as_str().map(str::to_string))
+            .get("hash")
+            .and_then(Value::as_str)
+            .map(str::to_string)
             .ok_or(format!("line {}: no hash", i + 1))?;
         if v.get("prev").and_then(Value::as_str) != Some(prev.as_str()) {
             return Err(format!(
@@ -67,9 +92,10 @@ pub fn verify(text: &str) -> Result<(u64, String), String> {
                 i + 1
             ));
         }
-        let body = serde_json::to_string(&v).map_err(|e| e.to_string())?;
+        let altered = || format!("line {}: altered after it was written", i + 1);
+        let body = hashed_bytes(line, &hash).ok_or_else(altered)?;
         if digest(&prev, &body) != hash {
-            return Err(format!("line {}: altered after it was written", i + 1));
+            return Err(altered());
         }
         seq = v.get("seq").and_then(Value::as_u64).unwrap_or(seq);
         prev = hash;
@@ -340,6 +366,94 @@ mod tests {
             a.anchor_mismatch(1, "ffffffffffff").is_some(),
             "a different hash is a different entry"
         );
+    }
+
+    /// Two entries with the text a person might type as a reason: quotes,
+    /// a backslash, Chinese, and the very bytes the verifier cuts out.
+    fn a_trail_with_awkward_reasons(dir: &Path) -> String {
+        let mut a = Audit::open(dir).expect("open");
+        a.append(
+            1,
+            "deck:x",
+            "halt",
+            &Said::same(r#"he said "stop", path C:\oq"#),
+            &Said::new("已停机", "halted"),
+        )
+        .expect("one");
+        a.append(
+            2,
+            "deck:x",
+            "resume",
+            &Said::same(
+                r#","hash":"0000000000000000000000000000000000000000000000000000000000000000""#,
+            ),
+            &Said::new("已恢复", "resumed"),
+        )
+        .expect("two");
+        std::fs::read_to_string(dir.join("audit.log")).expect("read")
+    }
+
+    /// What the writer puts on disk verifies byte for byte: the hash sits
+    /// between `at_ms` and `op` in a compact, key-sorted line, and cutting
+    /// it out leaves exactly the body that was hashed. So a trail written
+    /// before the verifier read raw bytes still opens, unmigrated.
+    #[test]
+    fn what_the_writer_wrote_verifies_from_its_bytes() {
+        let dir = tempfile::tempdir().expect("dir");
+        let text = a_trail_with_awkward_reasons(dir.path());
+        let (seq, _) = verify(&text).expect("the writer's own trail verifies");
+        assert_eq!(seq, 2);
+        // The shape the cut depends on, checked rather than assumed.
+        for line in text.lines() {
+            let at = line.find(",\"hash\":\"").expect("a hash field");
+            assert!(line[..at].ends_with(|c: char| c.is_ascii_digit()), "{line}");
+            assert!(line[at..].starts_with(",\"hash\":\""), "{line}");
+            assert_eq!(&line[at + 9 + 64..at + 9 + 64 + 7], "\",\"op\":", "{line}");
+        }
+    }
+
+    /// The edit the old verifier could not see: a second `reason`, placed
+    /// before the real one. A JSON parser keeps the last of two equal
+    /// keys, so the parsed entry — and so a hash over its re-serialised
+    /// form — is unchanged, while anyone reading the file with `less` or
+    /// `grep` sees the forged one first.
+    #[test]
+    fn a_duplicate_key_breaks_the_chain() {
+        let dir = tempfile::tempdir().expect("dir");
+        let text = a_trail_with_awkward_reasons(dir.path());
+        let forged = text.replacen(
+            ",\"op\":\"halt\"",
+            ",\"op\":\"halt\",\"reason\":\"routine\"",
+            1,
+        );
+        assert_ne!(forged, text);
+        // The parsed entry is the same: that is what made this invisible.
+        let first = |t: &str| serde_json::from_str::<Value>(t.lines().next().unwrap()).unwrap();
+        assert_eq!(first(&forged), first(&text));
+        std::fs::write(dir.path().join("audit.log"), &forged).expect("forge");
+        let error = Audit::open(dir.path()).expect_err("a forged trail is not continued");
+        assert!(error.contains("line 1"), "{error}");
+    }
+
+    /// The hash field itself is not covered by the hash, so it is the one
+    /// place a second copy could hide. Two of them is not a trail this
+    /// agent wrote.
+    #[test]
+    fn a_second_hash_field_breaks_the_chain() {
+        let dir = tempfile::tempdir().expect("dir");
+        let text = a_trail_with_awkward_reasons(dir.path());
+        let line = text.lines().next().expect("line");
+        let at = line.find(",\"hash\":\"").expect("hash");
+        let segment = &line[at..at + 9 + 64 + 1];
+        let doubled = line.replacen(segment, &format!("{segment}{segment}"), 1);
+        assert!(verify(&format!("{doubled}\n")).is_err());
+        // Moved to the front, the one copy is not where the writer puts it.
+        let moved = format!(
+            "{{\"hash\":{},{}",
+            &segment[8..],
+            line[1..].replacen(segment, "", 1)
+        );
+        assert!(verify(&format!("{moved}\n")).is_err(), "{moved}");
     }
 
     #[test]
