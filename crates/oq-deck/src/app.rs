@@ -1770,6 +1770,7 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         // Whether a proxy is set, not the URL: it may carry a password.
         "upstream": {
             "repo": s.upstream_repo,
+            "self_repo": s.self_repo,
             "every_hours": s.upstream_every_hours,
             "proxy": s.upstream_proxy.is_some(),
             "framework_rev": crate::upstream::DECK_FRAMEWORK_REV,

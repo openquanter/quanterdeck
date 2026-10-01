@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Whether this console is behind quanterdeck's newest release
+
+- **The same card checks the console itself.** Quanterdeck publishes
+  GitHub releases too; with each framework check the deck also reads the
+  newest release of `OQ_DECK_SELF_REPO` (`openquanter/quanterdeck` by
+  default) and compares its tag with the version the deck was built as —
+  by version, not commit, because a build from a `git archive` has no
+  commit to read while the version is always compiled in. Equal is
+  current, newer is ahead (built from a branch after the release), older
+  is behind. A tag that is not `X.Y.Z` (with or without `v`, optionally
+  with a pre-release) is "cannot tell", with the reason; no release yet
+  is its own state. The overview card gains a "This console (quanterdeck
+  release)" section, and the top-bar badge names which release is newer.
+- **Kept apart from the framework check.** One more GET per check (five
+  at most), on the same schedule, switch and proxy. Each half keeps its
+  own error and last success, so GitHub refusing one leaves the other's
+  answer standing. `GET /api/v1/upstream` gains a `console` object; the
+  existing fields, `behind` included, still describe the framework.
+
 ### Whether what runs is behind the framework's newest release
 
 - **The deck checks the framework's GitHub releases.** Shortly after

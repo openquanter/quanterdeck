@@ -65,6 +65,10 @@ pub struct Settings {
     /// The GitHub repository whose newest release the deck compares
     /// what runs against, as `owner/name`.
     pub upstream_repo: String,
+    /// This console's own GitHub repository, as `owner/name`: its newest
+    /// release is compared with the version this deck was built as. Same
+    /// schedule, switch and proxy as the framework check.
+    pub self_repo: String,
     /// How often to ask, in hours. Zero turns the check off, and with it
     /// every request the deck would make to GitHub.
     pub upstream_every_hours: u64,
@@ -99,6 +103,7 @@ impl Default for Settings {
             session_absolute: Duration::from_secs(12 * 60 * 60),
             trusted_keys: None,
             upstream_repo: "openquanter/openquanter".to_owned(),
+            self_repo: "openquanter/quanterdeck".to_owned(),
             upstream_every_hours: 6,
             upstream_proxy: None,
         }
@@ -210,13 +215,19 @@ impl Settings {
         Ok(())
     }
 
-    /// The upstream check's three settings, each refused rather than
+    /// The upstream check's four settings, each refused rather than
     /// bent into something it does not say.
     fn validate_upstream(&self) -> Result<(), ConfigError> {
         if !oq_deck_core::upstream::is_repo(&self.upstream_repo) {
             return Err(ConfigError(format!(
                 "OQ_DECK_UPSTREAM_REPO is not owner/name: {}",
                 self.upstream_repo
+            )));
+        }
+        if !oq_deck_core::upstream::is_repo(&self.self_repo) {
+            return Err(ConfigError(format!(
+                "OQ_DECK_SELF_REPO is not owner/name: {}",
+                self.self_repo
             )));
         }
         if self.upstream_every_hours > UPSTREAM_MAX_HOURS {
@@ -308,6 +319,9 @@ impl Settings {
 
         if let Some(repo) = set("OQ_DECK_UPSTREAM_REPO") {
             settings.upstream_repo = repo.trim().to_owned();
+        }
+        if let Some(repo) = set("OQ_DECK_SELF_REPO") {
+            settings.self_repo = repo.trim().to_owned();
         }
         // Zero is a value here, not an absence: it is how the check is
         // turned off, so `count` (which starts at one) does not fit.

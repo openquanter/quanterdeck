@@ -3,18 +3,20 @@ import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, RefreshCw, Tag } from "lucide-react";
 
-import { ApiError, api, type UpstreamReport, type UpstreamRevision } from "@/api/client";
+import { ApiError, api, type ConsoleRelease, type UpstreamReport, type UpstreamRevision } from "@/api/client";
 import { intlLocale, pair, tr } from "@/i18n";
 import { Ago, Badge, Card, cx, type Tone } from "@/ui/kit";
 
 /**
- * Whether what runs here is behind the framework's newest release.
+ * Whether what runs here is behind the framework's newest release, and
+ * whether this console is behind quanterdeck's own.
  *
  * The deck asks GitHub on a schedule and keeps the answer; this reads
  * the kept answer and never reaches GitHub itself. The rule it is drawn
  * by is the console's own: "cannot tell" — not checked yet, the check
  * failed, a revision GitHub does not know — is never drawn as "up to
- * date".
+ * date". The two checks are kept apart, so each section here shows its
+ * own failure and its own age.
  */
 export function useUpstream(enabled: boolean) {
   return useQuery({ queryKey: ["upstream"], queryFn: api.upstream, refetchInterval: 5 * 60_000, enabled });
@@ -46,6 +48,23 @@ function verdict(r: UpstreamRevision): { tone: Tone; text: string } {
       return { tone: "neutral", text: tr("无法判断", "Cannot tell") };
   }
 }
+
+/** The console's version against its newest release, in words and a tone. */
+function standing(c: ConsoleRelease): { tone: Tone; text: string } {
+  switch (c.verdict) {
+    case "current":
+      return { tone: "good", text: tr("已是最新发布", "The newest release") };
+    case "ahead":
+      return { tone: "good", text: tr("比最新发布更新", "Newer than the newest release") };
+    case "behind":
+      return { tone: "warn", text: tr("有新版本", "A newer release exists") };
+    default:
+      return c.published === false ? { tone: "neutral", text: tr("尚无发布", "No release yet") } : { tone: "neutral", text: tr("无法判断", "Cannot tell") };
+  }
+}
+
+/** Only the release's own page is linked; the server refuses others too. */
+const releaseLink = (url: string) => (url.startsWith("https://github.com/") ? url : null);
 
 function RefreshButton({ report }: { report: UpstreamReport }) {
   const client = useQueryClient();
@@ -88,7 +107,7 @@ export function UpstreamCard({ available }: { available: boolean }) {
       title={tr("上游版本", "Upstream release")}
       icon={<Tag />}
       hue="purple"
-      tone={r?.behind ? "warn" : undefined}
+      tone={r?.behind || r?.console?.behind ? "warn" : undefined}
       extra={r?.enabled ? <RefreshButton report={r} /> : undefined}
       className="h-full"
     >
@@ -117,7 +136,7 @@ function UpstreamBody({ r }: { r: UpstreamReport }) {
       {r.error !== null && (
         <div className="rounded-2xl border border-warn/40 bg-warn/8 px-3 py-2.5">
           <div className="font-medium text-ink">
-            {tr("最近一次检查没有成功", "The last check did not succeed")}
+            {tr("最近一次框架发布检查没有成功", "The last check of the framework release did not succeed")}
             {r.checked_at_ms !== null && (
               <span className="ml-1 font-normal text-ink-faint">
                 (<Ago ms={r.checked_at_ms} />)
@@ -172,6 +191,7 @@ function UpstreamBody({ r }: { r: UpstreamReport }) {
           })}
         </ul>
       )}
+      {r.console && <ConsoleSection c={r.console} />}
       <div className="text-xs text-ink-faint">
         {tr(`${r.repo} · 每 ${r.every_hours} 小时检查一次`, `${r.repo} · checked every ${r.every_hours} h`)}
         {r.succeeded_at_ms !== null && !stale && (
@@ -186,19 +206,109 @@ function UpstreamBody({ r }: { r: UpstreamReport }) {
 }
 
 /**
+ * This console against quanterdeck's newest release: by version, since
+ * a build from an archive has no commit to compare. Its own error and
+ * age, independent of the framework section above.
+ */
+function ConsoleSection({ c }: { c: ConsoleRelease }) {
+  if (c.checked_at_ms === null) return null;
+  const stale = c.error !== null && c.succeeded_at_ms !== null;
+  const v = standing(c);
+  const why = pair(c.reason, c.reason_en);
+  const link = c.latest ? releaseLink(c.latest.url) : null;
+  return (
+    <div className="space-y-2 border-t border-line pt-3">
+      <div className="text-xs font-medium text-ink-faint">{tr("本控制台（quanterdeck 发布）", "This console (quanterdeck release)")}</div>
+      {c.error !== null && (
+        <div className="rounded-2xl border border-warn/40 bg-warn/8 px-3 py-2.5">
+          <div className="font-medium text-ink">
+            {tr("最近一次检查没有成功", "The last check did not succeed")}
+            <span className="ml-1 font-normal text-ink-faint">
+              (<Ago ms={c.checked_at_ms} />)
+            </span>
+          </div>
+          <div className="mt-1 break-words text-xs text-ink-muted">{pair(c.error, c.error_en)}</div>
+          {stale ? (
+            <div className="mt-1 text-xs text-ink-faint">
+              {tr("下面是上一次成功检查的结果，", "Below is the last successful check, from ")}
+              <Ago ms={c.succeeded_at_ms!} />
+              {tr("，可能已过时。", "; it may be out of date.")}
+            </div>
+          ) : (
+            <div className="mt-1 text-xs text-ink-faint">{tr("还没有成功检查过，所以无法判断是否落后。", "No check has succeeded yet, so whether it is behind cannot be told.")}</div>
+          )}
+        </div>
+      )}
+      {c.succeeded_at_ms !== null && (
+        <div className="rounded-2xl border border-line px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-ink">{tr("运行中", "Running")}</span>
+            <span className="font-mono text-xs text-ink">v{c.version}</span>
+            {c.latest && (
+              <>
+                <span className="text-ink-faint">·</span>
+                <span className="text-ink-muted">{tr("最新发布", "Newest release")}</span>
+                <span className="font-mono text-xs text-ink">{c.latest.tag}</span>
+                {c.latest.prerelease && <Badge tone="warn">{tr("预发布", "Pre-release")}</Badge>}
+              </>
+            )}
+            <span className="ml-auto">
+              <Badge tone={v.tone} dot>
+                {v.text}
+              </Badge>
+            </span>
+          </div>
+          {c.verdict === "unknown" && why && <div className="mt-1 text-xs text-ink-muted">{why}</div>}
+          {c.latest && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-ink-faint">
+              {c.latest.published_at && <span>{new Date(c.latest.published_at).toLocaleDateString(intlLocale())}</span>}
+              {link && (
+                <a href={link} target="_blank" rel="noopener noreferrer" className="ml-auto inline-flex items-center gap-1 text-accent hover:underline">
+                  {tr("发布说明", "Release notes")} <ArrowUpRight className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="text-xs text-ink-faint">
+        {c.repo}
+        {c.succeeded_at_ms !== null && !stale && (
+          <>
+            {tr(" · 上次检查 ", " · last checked ")}
+            <Ago ms={c.succeeded_at_ms} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * The header's notice: shown only when the last successful check found
- * something behind the release. A check that failed shows nothing here
- * rather than an all-clear — the card says what went wrong.
+ * something behind a release — the framework's, this console's, or
+ * both, each named. A check that failed shows nothing here rather than
+ * an all-clear — the card says what went wrong.
  */
 export function UpstreamBadge({ available }: { available: boolean }) {
   const q = useUpstream(available);
   const r = q.data;
-  if (!r?.behind || !r.latest) return null;
+  if (!r) return null;
+  const framework = r.behind && r.latest ? r.latest.tag : null;
+  const own = r.console?.behind && r.console.latest ? r.console.latest.tag : null;
+  if (!framework && !own) return null;
   return (
-    <Link to="/" title={tr("有更新的上游版本，见总览「上游版本」", "A newer upstream release exists; see \"Upstream release\" on the overview")}>
-      <Badge tone="warn" dot>
-        {tr(`新版本 ${r.latest.tag}`, `New release ${r.latest.tag}`)}
-      </Badge>
+    <Link to="/" className="inline-flex items-center gap-1.5" title={tr("有更新的版本，见总览「上游版本」", "A newer release exists; see \"Upstream release\" on the overview")}>
+      {own && (
+        <Badge tone="warn" dot>
+          {tr(`quanterdeck 新版本 ${own}`, `New quanterdeck release ${own}`)}
+        </Badge>
+      )}
+      {framework && (
+        <Badge tone="warn" dot>
+          {tr(`新版本 ${framework}`, `New release ${framework}`)}
+        </Badge>
+      )}
     </Link>
   );
 }

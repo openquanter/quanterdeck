@@ -169,6 +169,7 @@ deck：
 | `OQ_DECK_DEVICE_DAYS` | `90` | 已登记的浏览器被信任多久 |
 | `OQ_DECK_TRUSTED_KEYS` | 一个 `allowed_signers` 文件：`scripts/deck-enrol.sh` 可以用其中列出的密钥登记浏览器，用于还没敲过密码的新机器。不设则任何密钥都不能 |
 | `OQ_DECK_UPSTREAM_REPO` | `openquanter/openquanter` | 与运行中版本比较的 GitHub 仓库 |
+| `OQ_DECK_SELF_REPO` | `openquanter/quanterdeck` | 控制台自己的仓库：它的最新发布与 deck 构建时的版本号比较。与框架检查同一个周期、开关和代理，多一个请求 |
 | `OQ_DECK_UPSTREAM_CHECK_HOURS` | `6` | 多久检查一次，0 到 168。`0` 关闭检查：完全不访问 GitHub |
 | `OQ_DECK_UPSTREAM_PROXY` | — | 仅用于这项检查的 `http://` 代理；不读环境里的 `HTTPS_PROXY` |
 | `OQ_DECK_WEB_DIST` | 构建好的界面，默认源码旁的 `web/dist` |

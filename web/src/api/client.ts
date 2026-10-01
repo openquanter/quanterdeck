@@ -137,7 +137,42 @@ export interface UpstreamReport {
   published: boolean | null;
   latest: UpstreamRelease | null;
   revisions: UpstreamRevision[];
-  /** Some revision is behind the release, per the last success. */
+  /** Some revision is behind the release, per the last success. The
+   * framework's only; the console's own is `console.behind`. */
+  behind: boolean;
+  /** This console against quanterdeck's newest release. */
+  console: ConsoleRelease;
+}
+
+/** quanterdeck's newest GitHub release; compared by version, so no commit. */
+export interface ConsolePublished {
+  tag: string;
+  name: string | null;
+  published_at: string | null;
+  url: string;
+  prerelease: boolean;
+}
+
+/**
+ * This console's version against its own repository's newest release,
+ * with its own attempt, error and last success: independent of the
+ * framework check. `unknown` is "cannot tell", never "current".
+ */
+export interface ConsoleRelease {
+  repo: string;
+  /** The version this console was built as. */
+  version: string;
+  checked_at_ms: number | null;
+  error: string | null;
+  error_en: string | null;
+  succeeded_at_ms: number | null;
+  /** `null` until a check succeeds: unknown is not "no release". */
+  published: boolean | null;
+  latest: ConsolePublished | null;
+  verdict: "current" | "ahead" | "behind" | "unknown";
+  reason: string | null;
+  reason_en: string | null;
+  /** A newer release exists, per the last success. */
   behind: boolean;
 }
 
@@ -675,7 +710,7 @@ export interface RuntimeSettings {
   trusted_keys: string | null;
   /** The upstream release check. `proxy` says whether one is set, not
    * which: a proxy URL may carry a password. */
-  upstream: { repo: string; every_hours: number; proxy: boolean; framework_rev: string };
+  upstream: { repo: string; self_repo: string; every_hours: number; proxy: boolean; framework_rev: string };
   version: string;
 }
 
