@@ -2,7 +2,7 @@
 
 **A self-hosted console for OpenQuanter. Your keys stay on your machine.**
 
-English · [中文](README.zh-CN.md)
+English · [中文](README.zh-CN.md) · Website: [openquanter.com](https://openquanter.com/#deck)
 
 > ⚠️ Early development. APIs are unstable. Not financial
 > advice; use at your own risk.
@@ -156,8 +156,10 @@ build time) and the trader's (from the current release's manifest), each
 compared by GitHub against the release's commit — includes it, N commits
 behind, diverged, or **cannot tell** with the reason. A failed check is
 shown as failed, beside the last successful answer and its age, never as
-"up to date". It is the deck's only outbound request; see Configuration
-to point it elsewhere or turn it off.
+"up to date". The same check compares the deck's own version with
+Quanterdeck's newest release. These are the deck's only outbound
+requests, all to the GitHub API; see Configuration to point them
+elsewhere or turn them off.
 
 Anything risky needs a reason and a one-time code **the agent**
 verifies, so a compromised deck cannot act alone. Every action goes
