@@ -1,0 +1,385 @@
+//! The upstream release check, through the HTTP surface.
+//!
+//! The fetcher answers from fixtures and counts what it was asked: no
+//! test here reaches GitHub, and "served from memory" is checked by the
+//! count not moving.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use axum::body::Body;
+use axum::http::{Request, StatusCode, header};
+use http_body_util::BodyExt;
+use oq_deck::app::router_with_upstream;
+use oq_deck::settings::Settings;
+use oq_deck::upstream::{DECK_FRAMEWORK_REV, Upstream};
+use oq_deck_core::upstream::{Fetch, Reply};
+use serde_json::Value;
+use tower::ServiceExt;
+
+const PASSWORD: &str = "a long enough passphrase";
+const HOST: &str = "127.0.0.1:8899";
+const ORIGIN: &str = "http://127.0.0.1:8899";
+const REPO: &str = "openquanter/openquanter";
+const TAG_SHA: &str = "1111111111111111111111111111111111111111";
+
+#[derive(Default)]
+struct Canned {
+    replies: HashMap<String, Reply>,
+    asked: Mutex<Vec<String>>,
+}
+
+impl Canned {
+    fn with(mut self, path: String, status: u16, body: &str) -> Self {
+        self.replies.insert(
+            path,
+            Reply {
+                status,
+                body: body.to_owned(),
+                ..Reply::default()
+            },
+        );
+        self
+    }
+
+    fn asked(&self) -> usize {
+        self.asked.lock().unwrap().len()
+    }
+}
+
+impl Fetch for Canned {
+    fn get(&self, path: &str) -> Result<Reply, String> {
+        self.asked.lock().unwrap().push(path.to_owned());
+        self.replies
+            .get(path)
+            .cloned()
+            .ok_or_else(|| "connection refused".to_owned())
+    }
+}
+
+/// A release `v2.0.1` that the deck's own revision is three behind.
+fn behind_by_three() -> Canned {
+    Canned::default()
+        .with(
+            format!("/repos/{REPO}/releases/latest"),
+            200,
+            r#"{"tag_name":"v2.0.1","name":"2.0.1","prerelease":false,
+                "published_at":"2026-10-01T08:00:00Z",
+                "html_url":"https://github.com/openquanter/openquanter/releases/tag/v2.0.1"}"#,
+        )
+        .with(
+            format!("/repos/{REPO}/commits/v2.0.1"),
+            200,
+            &format!(r#"{{"sha":"{TAG_SHA}"}}"#),
+        )
+        .with(
+            format!("/repos/{REPO}/compare/{TAG_SHA}...{DECK_FRAMEWORK_REV}?per_page=1"),
+            200,
+            r#"{"status":"behind","ahead_by":0,"behind_by":3}"#,
+        )
+}
+
+fn settings(hours: u64) -> Settings {
+    Settings {
+        password_hash: Some(oq_deck_core::auth::hash_password(PASSWORD).expect("hashes")),
+        upstream_every_hours: hours,
+        ..Settings::default()
+    }
+}
+
+struct Client {
+    app: axum::Router,
+    cookie: String,
+}
+
+impl Client {
+    async fn new(settings: Settings, fetch: Arc<Canned>) -> Self {
+        let upstream = Upstream::new(&settings, fetch);
+        let app = router_with_upstream(settings, None, None, None, upstream);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/session/login")
+                    .header(header::HOST, HOST)
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "password": PASSWORD }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "login");
+        let cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|c| c.split(';').next())
+            .expect("a session cookie")
+            .to_owned();
+        Self { app, cookie }
+    }
+
+    async fn send(&self, method: &str, uri: &str, origin: bool) -> (StatusCode, Value) {
+        let mut req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::HOST, HOST)
+            .header(header::COOKIE, &self.cookie);
+        if origin {
+            req = req.header(header::ORIGIN, ORIGIN);
+        }
+        let response = self
+            .app
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn get(&self, uri: &str) -> (StatusCode, Value) {
+        self.send("GET", uri, false).await
+    }
+
+    async fn refresh(&self) -> (StatusCode, Value) {
+        self.send("POST", "/api/v1/upstream/refresh", true).await
+    }
+}
+
+#[tokio::test]
+async fn the_report_needs_a_session() {
+    let fetch = Arc::new(Canned::default());
+    let s = settings(6);
+    let upstream = Upstream::new(&s, fetch.clone());
+    let app = router_with_upstream(s, None, None, None, upstream);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/upstream")
+                .header(header::HOST, HOST)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(fetch.asked(), 0);
+}
+
+#[tokio::test]
+async fn before_a_check_nothing_is_claimed() {
+    let fetch = Arc::new(Canned::default());
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (status, body) = c.get("/api/v1/upstream").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], true);
+    assert_eq!(body["repo"], REPO);
+    assert_eq!(body["checked_at_ms"], Value::Null);
+    assert_eq!(body["published"], Value::Null, "unknown, not 'no release'");
+    assert_eq!(body["behind"], false);
+    assert_eq!(fetch.asked(), 0, "reading the report never reaches out");
+}
+
+#[tokio::test]
+async fn a_refresh_checks_and_the_report_serves_the_result_from_memory() {
+    let fetch = Arc::new(behind_by_three());
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (status, body) = c.refresh().await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The release, its commit, and one comparison: the trader has no
+    // agent here, so it is not compared.
+    assert_eq!(fetch.asked(), 3);
+
+    let (_, body) = c.get("/api/v1/upstream").await;
+    assert_eq!(fetch.asked(), 3, "served from memory");
+    assert_eq!(body["error"], Value::Null);
+    assert_eq!(body["published"], true);
+    assert_eq!(body["latest"]["tag"], "v2.0.1");
+    assert_eq!(body["latest"]["sha"], TAG_SHA);
+    assert_eq!(body["behind"], true);
+    let revs = body["revisions"].as_array().expect("revisions");
+    assert_eq!(revs[0]["what"], "deck");
+    assert_eq!(revs[0]["rev"], DECK_FRAMEWORK_REV);
+    assert_eq!(revs[0]["status"], "behind");
+    assert_eq!(revs[0]["behind_by"], 3);
+    assert_eq!(revs[0]["verdict"], "behind");
+    // No agent: the trader is "cannot tell", with the reason, never a
+    // verdict it did not earn.
+    assert_eq!(revs[1]["what"], "trader");
+    assert_eq!(revs[1]["verdict"], "unknown");
+    assert!(
+        revs[1]["reason_en"]
+            .as_str()
+            .unwrap()
+            .contains("OQ_DECK_AGENT_SOCKET")
+    );
+}
+
+#[tokio::test]
+async fn a_second_refresh_within_a_minute_is_refused_without_a_request() {
+    let fetch = Arc::new(behind_by_three());
+    let c = Client::new(settings(6), fetch.clone()).await;
+    assert_eq!(c.refresh().await.0, StatusCode::OK);
+    let before = fetch.asked();
+    let (status, body) = c.refresh().await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(body["detail"].as_str().is_some());
+    assert_eq!(fetch.asked(), before);
+}
+
+#[tokio::test]
+async fn a_refresh_is_a_write_for_origin_but_not_for_write_mode() {
+    let fetch = Arc::new(behind_by_three());
+    let s = settings(6);
+    assert!(!s.allow_writes, "a read-only deck");
+    let c = Client::new(s, fetch.clone()).await;
+    // A page elsewhere cannot make the deck send requests.
+    let (status, _) = c.send("POST", "/api/v1/upstream/refresh", false).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(fetch.asked(), 0);
+    // Its own page can, with writes off: nothing on the host changes.
+    assert_eq!(c.refresh().await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_failed_check_is_an_error_not_up_to_date() {
+    // Nothing canned: every request is a transport failure.
+    let fetch = Arc::new(Canned::default());
+    let c = Client::new(settings(6), fetch.clone()).await;
+    let (status, body) = c.refresh().await;
+    assert_eq!(status, StatusCode::OK, "the refresh ran; the check failed");
+    assert!(body["checked_at_ms"].as_i64().is_some());
+    assert!(body["error_en"].as_str().unwrap().contains("Cannot reach"));
+    assert_eq!(body["succeeded_at_ms"], Value::Null);
+    assert_eq!(body["published"], Value::Null);
+    assert_eq!(body["behind"], false);
+    assert_eq!(body["revisions"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn zero_hours_turns_it_off_and_nothing_is_fetched() {
+    let fetch = Arc::new(behind_by_three());
+    let c = Client::new(settings(0), fetch.clone()).await;
+    let (status, body) = c.get("/api/v1/upstream").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], false);
+    assert!(
+        body["reason_en"]
+            .as_str()
+            .unwrap()
+            .contains("OQ_DECK_UPSTREAM_CHECK_HOURS=0")
+    );
+    let (status, _) = c.refresh().await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, caps) = c.get("/api/v1/runtime/capabilities").await;
+    assert_eq!(caps["upstream"]["available"], false);
+    assert!(caps["upstream"]["reason"].as_str().unwrap().contains("=0"));
+    assert_eq!(fetch.asked(), 0, "off means no request at all");
+}
+
+#[test]
+fn the_upstream_settings_are_bounded() {
+    let base = Settings::default();
+    assert!(base.validate().is_ok());
+    assert_eq!(base.upstream_every_hours, 6);
+    assert_eq!(base.upstream_repo, REPO);
+    let bad = |s: Settings| s.validate().unwrap_err().0;
+    assert!(
+        bad(Settings {
+            upstream_every_hours: 169,
+            ..Settings::default()
+        })
+        .contains("OQ_DECK_UPSTREAM_CHECK_HOURS")
+    );
+    assert!(
+        bad(Settings {
+            upstream_repo: "not a repo".into(),
+            ..Settings::default()
+        })
+        .contains("OQ_DECK_UPSTREAM_REPO")
+    );
+    let proxy = bad(Settings {
+        upstream_proxy: Some("socks5://user:secret@host:1080".into()),
+        ..Settings::default()
+    });
+    assert!(proxy.contains("OQ_DECK_UPSTREAM_PROXY"));
+    assert!(!proxy.contains("secret"), "a proxy URL is not echoed");
+    assert!(
+        Settings {
+            upstream_proxy: Some("http://127.0.0.1:3128".into()),
+            upstream_every_hours: 0,
+            ..Settings::default()
+        }
+        .validate()
+        .is_ok()
+    );
+}
+
+/// The trader's revision is read from the current release's manifest
+/// through the agent, with the same read the releases page uses.
+#[tokio::test]
+async fn the_trader_is_compared_at_the_revision_its_release_names() {
+    use oq_deck_core::ops::{AgentRequest, AgentResponse, Op};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    const TRADER: &str = "cccccccccccccccccccccccccccccccccccccccc";
+    let dir = tempfile::tempdir().expect("dir");
+    let sock = dir.path().join("agent.sock");
+    let listener = tokio::net::UnixListener::bind(&sock).expect("bind");
+    let seen: Arc<Mutex<Vec<AgentRequest>>> = Arc::default();
+    let kept = Arc::clone(&seen);
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let (read, mut write) = stream.into_split();
+            let mut line = String::new();
+            BufReader::new(read)
+                .read_line(&mut line)
+                .await
+                .expect("read");
+            kept.lock()
+                .unwrap()
+                .push(serde_json::from_str(&line).expect("a request"));
+            let reply = AgentResponse::ok(serde_json::json!({
+                "current": "r42",
+                "staged": [{"id": "r42", "verified": true,
+                            "manifest": {"id": "r42", "framework": TRADER}}],
+            }));
+            let mut out = serde_json::to_string(&reply).expect("encode");
+            out.push('\n');
+            write.write_all(out.as_bytes()).await.expect("write");
+        }
+    });
+
+    let fetch = Arc::new(behind_by_three().with(
+        format!("/repos/{REPO}/compare/{TAG_SHA}...{TRADER}?per_page=1"),
+        200,
+        r#"{"status":"identical","ahead_by":0,"behind_by":0}"#,
+    ));
+    let c = Client::new(
+        Settings {
+            agent_socket: Some(sock),
+            ..settings(6)
+        },
+        fetch.clone(),
+    )
+    .await;
+    let (status, body) = c.refresh().await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let trader = &body["revisions"][1];
+    assert_eq!(trader["what"], "trader");
+    assert_eq!(trader["release"], "r42");
+    assert_eq!(trader["rev"], TRADER);
+    assert_eq!(trader["verdict"], "includes");
+    let asked = seen.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].op, Op::Releases, "a read, and only that");
+}

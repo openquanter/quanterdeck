@@ -85,6 +85,60 @@ export interface Capabilities {
   live: Capability;
   ops: Capability;
   writes: Capability;
+  /** Checking the framework's newest release against what runs. */
+  upstream: Capability;
+}
+
+/** The framework's newest GitHub release. */
+export interface UpstreamRelease {
+  tag: string;
+  name: string | null;
+  published_at: string | null;
+  url: string;
+  prerelease: boolean;
+  /** The commit the tag points at. */
+  sha: string;
+}
+
+/**
+ * How one running revision stands against the release. `unknown` is
+ * "cannot tell" and carries the reason; it is never drawn as "includes".
+ */
+export interface UpstreamRevision {
+  what: "deck" | "trader";
+  /** The release the trader's revision was read from. */
+  release: string | null;
+  rev: string | null;
+  status: "identical" | "ahead" | "behind" | "diverged" | null;
+  ahead_by: number | null;
+  behind_by: number | null;
+  verdict: "includes" | "behind" | "diverged" | "unknown";
+  reason: string | null;
+  reason_en: string | null;
+}
+
+export interface UpstreamReport {
+  enabled: boolean;
+  /** Why the check is off, when it is. */
+  reason: string | null;
+  reason_en: string | null;
+  repo: string;
+  every_hours: number;
+  checking: boolean;
+  /** The last attempt; `null` before the first. */
+  checked_at_ms: number | null;
+  /** Why the last attempt failed; `null` when it succeeded. */
+  error: string | null;
+  error_en: string | null;
+  /** When the result below was found; older than `checked_at_ms` when
+   * the last attempt failed. */
+  succeeded_at_ms: number | null;
+  /** `null` until a check succeeds: unknown is not "no release". */
+  published: boolean | null;
+  latest: UpstreamRelease | null;
+  revisions: UpstreamRevision[];
+  /** Some revision is behind the release, per the last success. */
+  behind: boolean;
 }
 
 export type CapabilityName = Exclude<keyof Capabilities, "version">;
@@ -619,6 +673,9 @@ export interface RuntimeSettings {
   device_days: number;
   /** The `allowed_signers` file a signature must be listed in. */
   trusted_keys: string | null;
+  /** The upstream release check. `proxy` says whether one is set, not
+   * which: a proxy URL may carry a password. */
+  upstream: { repo: string; every_hours: number; proxy: boolean; framework_rev: string };
   version: string;
 }
 
@@ -695,6 +752,8 @@ export const api = {
     ),
   audit: (lines = 200) => request<AuditTrail>(`/ops/audit?lines=${lines}`),
   releases: () => request<Releases>("/ops/releases"),
+  upstream: () => request<UpstreamReport>("/upstream"),
+  upstreamRefresh: () => post<UpstreamReport>("/upstream/refresh", {}),
   act: (action: OpsAction, reason: string, stepUp: string) =>
     post<unknown>("/ops/action", { ...action, reason, step_up: stepUp || null }),
   liveLatest: () => request<LiveReconciliation>("/live/latest"),

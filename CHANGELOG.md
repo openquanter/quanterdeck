@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Whether what runs is behind the framework's newest release
+
+- **The deck checks the framework's GitHub releases.** Shortly after
+  startup and then every `OQ_DECK_UPSTREAM_CHECK_HOURS` (6 by default),
+  it reads the newest release of `OQ_DECK_UPSTREAM_REPO`, resolves its
+  tag to a commit, and asks GitHub to compare that commit with two
+  running revisions: the deck's own, embedded at build time from
+  `Cargo.lock`, and the trader's, from the `framework` field of the
+  current release's manifest through the host agent. The overview has an
+  "Upstream release" card and the top bar a badge when something is
+  behind.
+- **"Cannot tell" stays "cannot tell".** A timeout, an exhausted rate
+  limit or a reply that does not parse is an error with its reason and
+  time, shown beside the last successful answer and that answer's age —
+  never as "up to date". No release published yet is its own state, and
+  a revision GitHub does not know (or no agent to ask) is that
+  revision's "cannot tell", with the reason.
+- **One outbound request, and a way to turn it off.** Unauthenticated
+  GETs to `api.github.com` carrying a `User-Agent` and the repository
+  path, nothing else; `OQ_DECK_UPSTREAM_CHECK_HOURS=0` makes none at all,
+  and the capability says so. `OQ_DECK_UPSTREAM_PROXY` names a proxy for
+  this check only. A manual check (`POST /api/v1/upstream/refresh`) is
+  checked for `Origin` like any write but is not behind
+  `OQ_DECK_ALLOW_WRITES` — it changes nothing on the host — and runs at
+  most once a minute.
+
 ### A large directory no longer stalls the console
 
 - **File work runs off the async workers.** Listing runs, sweeps and

@@ -62,7 +62,21 @@ pub struct Settings {
     /// turns the route off, which the console reports rather than
     /// accepting a request it cannot check.
     pub trusted_keys: Option<PathBuf>,
+    /// The GitHub repository whose newest release the deck compares
+    /// what runs against, as `owner/name`.
+    pub upstream_repo: String,
+    /// How often to ask, in hours. Zero turns the check off, and with it
+    /// every request the deck would make to GitHub.
+    pub upstream_every_hours: u64,
+    /// An HTTP proxy for those requests, and only those. The ambient
+    /// `HTTPS_PROXY` is deliberately not read: the one outbound path
+    /// this deck has should be the one its settings name.
+    pub upstream_proxy: Option<String>,
 }
+
+/// The longest gap between two upstream checks: a week. Longer is a
+/// check that is effectively off while claiming to be on.
+pub const UPSTREAM_MAX_HOURS: u64 = 168;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -84,6 +98,9 @@ impl Default for Settings {
             session_idle: Duration::from_secs(60 * 60),
             session_absolute: Duration::from_secs(12 * 60 * 60),
             trusted_keys: None,
+            upstream_repo: "openquanter/openquanter".to_owned(),
+            upstream_every_hours: 6,
+            upstream_proxy: None,
         }
     }
 }
@@ -171,6 +188,7 @@ impl Settings {
                 }
             }
         }
+        self.validate_upstream()?;
         if !self.is_exposed() {
             return Ok(());
         }
@@ -188,6 +206,33 @@ impl Settings {
                  经反向代理或 OQ_DECK_EXTRA_HOSTS 发布同样算对外可达。",
                 self.host
             )));
+        }
+        Ok(())
+    }
+
+    /// The upstream check's three settings, each refused rather than
+    /// bent into something it does not say.
+    fn validate_upstream(&self) -> Result<(), ConfigError> {
+        if !oq_deck_core::upstream::is_repo(&self.upstream_repo) {
+            return Err(ConfigError(format!(
+                "OQ_DECK_UPSTREAM_REPO is not owner/name: {}",
+                self.upstream_repo
+            )));
+        }
+        if self.upstream_every_hours > UPSTREAM_MAX_HOURS {
+            return Err(ConfigError(format!(
+                "OQ_DECK_UPSTREAM_CHECK_HOURS is not a whole number between 0 and \
+                 {UPSTREAM_MAX_HOURS}: {}",
+                self.upstream_every_hours
+            )));
+        }
+        if let Some(proxy) = &self.upstream_proxy {
+            // Not echoed: a proxy URL may carry a password.
+            if !proxy.starts_with("http://") || ureq::Proxy::new(proxy).is_err() {
+                return Err(ConfigError(
+                    "OQ_DECK_UPSTREAM_PROXY is not an http:// proxy URL".to_owned(),
+                ));
+            }
         }
         Ok(())
     }
@@ -260,6 +305,21 @@ impl Settings {
         if let Some(hours) = count("OQ_DECK_SESSION_HOURS", 720)? {
             settings.session_absolute = Duration::from_secs(hours * 3600);
         }
+
+        if let Some(repo) = set("OQ_DECK_UPSTREAM_REPO") {
+            settings.upstream_repo = repo.trim().to_owned();
+        }
+        // Zero is a value here, not an absence: it is how the check is
+        // turned off, so `count` (which starts at one) does not fit.
+        if let Some(text) = set("OQ_DECK_UPSTREAM_CHECK_HOURS") {
+            settings.upstream_every_hours = text.trim().parse::<u64>().map_err(|_| {
+                ConfigError(format!(
+                    "OQ_DECK_UPSTREAM_CHECK_HOURS is not a whole number between 0 and \
+                     {UPSTREAM_MAX_HOURS}: {text}"
+                ))
+            })?;
+        }
+        settings.upstream_proxy = set("OQ_DECK_UPSTREAM_PROXY").map(|p| p.trim().to_owned());
 
         settings.extra_hosts = std::env::var("OQ_DECK_EXTRA_HOSTS")
             .ok()

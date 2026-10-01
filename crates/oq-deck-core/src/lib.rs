@@ -33,6 +33,7 @@ pub fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> 
 pub mod ops;
 pub mod runs;
 pub mod sweeps;
+pub mod upstream;
 
 /// Whether a directory entry is a regular file with this extension.
 ///

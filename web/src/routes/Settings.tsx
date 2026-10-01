@@ -163,6 +163,15 @@ export function Settings() {
               row(tr("tick 目录", "Ticks"), d.ticks_dir, "OQ_DECK_TICKS_DIR"),
               row(tr("交易所最新记录", "Latest venue record"), d.venue_record, "OQ_DECK_VENUE_RECORD"),
               row(tr("主机代理", "Host agent"), d.agent_socket, "OQ_DECK_AGENT_SOCKET"),
+              row(
+                tr("上游版本检查", "Upstream release check"),
+                d.upstream.every_hours > 0
+                  ? tr(`${d.upstream.repo}，每 ${d.upstream.every_hours} 小时`, `${d.upstream.repo}, every ${d.upstream.every_hours} h`)
+                  : tr("已关闭，不访问 GitHub", "Off; no request to GitHub"),
+                "OQ_DECK_UPSTREAM_REPO / OQ_DECK_UPSTREAM_CHECK_HOURS",
+              ),
+              row(tr("上游检查走的代理", "Proxy for the upstream check"), d.upstream.proxy ? tr("已设置", "Set") : tr("无，直连", "None; direct"), "OQ_DECK_UPSTREAM_PROXY"),
+              row(tr("deck 构建所用的框架提交", "Framework commit the deck was built from"), d.upstream.framework_rev || null),
             ]}
           />
         </Card>
