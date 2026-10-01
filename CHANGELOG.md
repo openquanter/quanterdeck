@@ -1,6 +1,14 @@
 # Changelog
 
+Each `## X.Y.Z` section is that release's notes: the release workflow
+publishes it verbatim, and refuses a tag without one.
+
 ## Unreleased
+
+## 1.0.0 — 2026-10-01
+
+The first tagged release. Everything below is "since the repository
+started" rather than since a previous release.
 
 ### Whether this console is behind quanterdeck's newest release
 
