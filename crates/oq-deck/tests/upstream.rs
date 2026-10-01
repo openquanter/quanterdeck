@@ -383,3 +383,61 @@ async fn the_trader_is_compared_at_the_revision_its_release_names() {
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].op, Op::Releases, "a read, and only that");
 }
+
+fn touch(path: &std::path::Path, secs_ago: u64) {
+    std::fs::write(path, b"").expect("write");
+    let f = std::fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open");
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(secs_ago))
+        .expect("mtime");
+}
+
+/// The running journal is the one being written: newest by modification
+/// time, not by name, and only `.oqj` files count.
+#[test]
+fn the_running_journal_is_the_most_recently_written() {
+    let dir = tempfile::tempdir().expect("dir");
+    touch(&dir.path().join("zzz-old.oqj"), 600);
+    touch(&dir.path().join("aaa-new.oqj"), 5);
+    touch(&dir.path().join("aaa-new.lock"), 0);
+    assert_eq!(
+        oq_deck::upstream::newest_journal(dir.path()).as_deref(),
+        Some("aaa-new.oqj")
+    );
+    let empty = tempfile::tempdir().expect("dir");
+    assert_eq!(oq_deck::upstream::newest_journal(empty.path()), None);
+}
+
+/// A deploy restarts the trader, which opens a new journal; that is what
+/// brings the next check forward instead of waiting out the schedule.
+#[tokio::test]
+async fn a_trader_restart_is_noticed_after_a_check() {
+    let dir = tempfile::tempdir().expect("dir");
+    touch(&dir.path().join("oqp-live-20261001-163813.oqj"), 600);
+    let s = Settings {
+        journals_dir: Some(dir.path().to_path_buf()),
+        ..settings(6)
+    };
+    let fetch = Arc::new(behind_by_three());
+    let up = Upstream::new(&s, fetch.clone());
+
+    assert!(
+        !up.trader_restarted().await,
+        "nothing to compare before a check"
+    );
+    up.check().await;
+    let asked = fetch.asked();
+    assert!(!up.trader_restarted().await, "the same run");
+
+    touch(&dir.path().join("oqp-live-20261001-175804.oqj"), 0);
+    assert!(up.trader_restarted().await, "a new journal is a restart");
+    assert_eq!(fetch.asked(), asked, "noticing it asks GitHub nothing");
+
+    up.check().await;
+    assert!(
+        !up.trader_restarted().await,
+        "seen by the check that followed"
+    );
+}
