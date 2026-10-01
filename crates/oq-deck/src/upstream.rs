@@ -34,6 +34,12 @@ const FIRST_CHECK: Duration = Duration::from_secs(20);
 /// configured interval: a blip at startup should not leave the page on
 /// an error for six hours.
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(30 * 60);
+/// How often the scheduler looks for a trader restart between checks.
+///
+/// A trader changes revision only by restarting, and a restart opens a
+/// new journal. Looking for one is a directory listing, so it can run
+/// far more often than the GitHub check without costing anything there.
+const WATCH_EVERY: Duration = Duration::from_secs(5 * 60);
 /// The least time between two checks the operator asks for.
 pub const MANUAL_EVERY: Duration = Duration::from_secs(60);
 
@@ -109,6 +115,9 @@ pub struct Upstream {
     repo: String,
     every_hours: u64,
     agent_socket: Option<PathBuf>,
+    journals: Option<PathBuf>,
+    /// The journal the trader was writing when the last check began.
+    run_at_check: Mutex<Option<String>>,
     fetch: Arc<dyn Fetch + Send + Sync>,
     cache: Mutex<Cache>,
     /// Held for the length of a check. A request that finds it held
@@ -124,6 +133,8 @@ impl Upstream {
             repo: settings.upstream_repo.clone(),
             every_hours: settings.upstream_every_hours,
             agent_socket: settings.agent_socket.clone(),
+            journals: settings.journals_dir.clone(),
+            run_at_check: Mutex::new(None),
             fetch,
             cache: Mutex::new(Cache::default()),
             running: tokio::sync::Mutex::new(()),
@@ -190,6 +201,10 @@ impl Upstream {
             return false;
         }
         let _one = self.running.lock().await;
+        let run = self.current_run().await;
+        if let Ok(mut seen) = self.run_at_check.lock() {
+            *seen = run;
+        }
         let running = vec![deck_running(), self.trader_running().await];
         let fetch = Arc::clone(&self.fetch);
         let repo = self.repo.clone();
@@ -260,6 +275,34 @@ impl Upstream {
     }
 
     /// Check shortly after startup, then on the schedule, forever.
+    /// The journal the trader is writing now: the most recently modified
+    /// `.oqj` in the journals directory, by file name.
+    ///
+    /// `None` when no directory is configured or nothing is in it; a
+    /// restart cannot be told apart then, and the schedule alone applies.
+    pub async fn current_run(&self) -> Option<String> {
+        let dir = self.journals.clone()?;
+        tokio::task::spawn_blocking(move || newest_journal(&dir))
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// Whether the trader has restarted since the last check began.
+    ///
+    /// Restarting is the only way its revision changes, so this is what
+    /// makes a deploy show up within minutes rather than at the next
+    /// scheduled check — until it did, the card went on comparing the
+    /// release the trader had been running for up to six hours. Before
+    /// the first check there is nothing to compare against: `false`.
+    pub async fn trader_restarted(&self) -> bool {
+        let seen = self.run_at_check.lock().ok().and_then(|s| s.clone());
+        let Some(seen) = seen else {
+            return false;
+        };
+        self.current_run().await.is_some_and(|now| now != seen)
+    }
+
     pub fn spawn(self: &Arc<Self>) {
         if !self.enabled() {
             return;
@@ -267,20 +310,44 @@ impl Upstream {
         let me = Arc::clone(self);
         tokio::spawn(async move {
             let every = Duration::from_secs(me.every_hours * 3600);
-            tokio::time::sleep(FIRST_CHECK).await;
+            let mut due = Instant::now() + FIRST_CHECK;
             loop {
-                let next = if me.check().await {
-                    every
-                } else {
-                    every.min(RETRY_AFTER_FAILURE)
-                };
-                tokio::time::sleep(next).await;
+                if Instant::now() >= due || me.trader_restarted().await {
+                    let ok = me.check().await;
+                    due = Instant::now()
+                        + if ok {
+                            every
+                        } else {
+                            every.min(RETRY_AFTER_FAILURE)
+                        };
+                }
+                let until_due = due.saturating_duration_since(Instant::now());
+                tokio::time::sleep(until_due.min(WATCH_EVERY)).await;
             }
         });
     }
 }
 
 /// This deck's own revision, as built.
+/// The most recently modified `.oqj` file in `dir`, by name.
+///
+/// Modification time rather than name order: the running journal is the
+/// one being appended to, and file names are only sortable within one
+/// strategy's prefix.
+#[must_use]
+pub fn newest_journal(dir: &std::path::Path) -> Option<String> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "oqj"))
+        .filter_map(|e| {
+            let modified = e.metadata().ok()?.modified().ok()?;
+            Some((modified, e.file_name().to_string_lossy().into_owned()))
+        })
+        .max()
+        .map(|(_, name)| name)
+}
+
 fn deck_running() -> Running {
     Running {
         what: What::Deck,

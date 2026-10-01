@@ -12,7 +12,10 @@
   `Cargo.lock`, and the trader's, from the `framework` field of the
   current release's manifest through the host agent. The overview has an
   "Upstream release" card and the top bar a badge when something is
-  behind.
+  behind. A trader restart — a new journal in `OQ_DECK_JOURNALS_DIR`,
+  looked for every 5 minutes without touching the network — brings the
+  next check forward, so a deploy shows within minutes rather than at
+  the next scheduled check.
 - **"Cannot tell" stays "cannot tell".** A timeout, an exhausted rate
   limit or a reply that does not parse is an error with its reason and
   time, shown beside the last successful answer and that answer's age —
