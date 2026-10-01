@@ -195,3 +195,89 @@ fn a_symbolic_link_is_not_resolved() {
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_file(&outside).ok();
 }
+
+/// Put a file's modification time in the past, out of the window in
+/// which the cache will not yet trust it.
+fn settle(path: &Path, secs_ago: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open")
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(secs_ago))
+        .expect("set mtime");
+}
+
+fn summary<'a>(entries: &'a [runs::Entry], id: &str) -> &'a runs::RunSummary {
+    entries
+        .iter()
+        .find_map(|e| match e {
+            runs::Entry::Read(s) if s.id == id => Some(s),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{id} reads: {entries:?}"))
+}
+
+/// A cached listing says what an uncached one says, after every change:
+/// a rewrite (the same length, even), a file that stops reading, and one
+/// that is removed.
+#[test]
+fn a_cached_listing_follows_the_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let a = dir.path().join("a.run");
+    let b = dir.path().join("b.run");
+    std::fs::copy(fixtures().join("baseline.run"), &a).expect("copy");
+    std::fs::copy(fixtures().join("config-moved.run"), &b).expect("copy");
+    settle(&a, 600);
+    settle(&b, 600);
+
+    let cache = runs::Cache::default();
+    let first = runs::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(cache.len(), 2, "both settled files are kept");
+    assert_eq!(summary(&first, "a").identity.code_commit, "a1b2c3d");
+    assert_eq!(
+        format!("{first:?}"),
+        format!("{:?}", runs::list(dir.path()).expect("reads"))
+    );
+
+    // Another run of exactly the same length, with an old time stamped
+    // on it: what tells the cache is the inode's change time.
+    assert_eq!(
+        std::fs::metadata(fixtures().join("baseline.run"))
+            .unwrap()
+            .len(),
+        std::fs::metadata(fixtures().join("same-experiment.run"))
+            .unwrap()
+            .len(),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::copy(fixtures().join("same-experiment.run"), &a).expect("copy");
+    settle(&a, 600);
+    let rewritten = runs::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(summary(&rewritten, "a").identity.code_commit, "e4f5g6h");
+
+    // A file that stops reading is listed with its reason, and the total
+    // is withheld, exactly as without a cache.
+    std::fs::copy(fixtures().join("truncated.run"), &b).expect("copy");
+    settle(&b, 300);
+    let broken = runs::list_cached(dir.path(), &cache).expect("reads");
+    assert!(
+        broken
+            .iter()
+            .any(|e| matches!(e, runs::Entry::Unreadable { id, .. } if id == "b")),
+        "{broken:?}"
+    );
+    assert_eq!(runs::total_pnl(&broken), None);
+
+    std::fs::remove_file(&b).expect("remove");
+    let removed = runs::list_cached(dir.path(), &cache).expect("reads");
+    assert_eq!(ids(&removed), vec!["a".to_owned()]);
+    assert_eq!(cache.len(), 1, "a removed file is forgotten");
+
+    std::fs::remove_file(&a).expect("remove");
+    assert!(
+        runs::list_cached(dir.path(), &cache)
+            .expect("reads")
+            .is_empty()
+    );
+    assert!(cache.is_empty());
+}

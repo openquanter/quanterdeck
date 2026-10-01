@@ -2,6 +2,7 @@
 
 pub mod attribution;
 pub mod auth;
+pub mod cache;
 pub mod capabilities;
 pub mod devices;
 pub mod gate;

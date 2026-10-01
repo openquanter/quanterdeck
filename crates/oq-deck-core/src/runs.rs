@@ -106,6 +106,27 @@ fn read_run(path: &Path) -> Result<Run, String> {
     Run::parse(&text).map_err(|e| e.to_string())
 }
 
+/// Summaries already worked out, for files that have not changed since.
+///
+/// What is kept is the summary, not the run: a listing never needed the
+/// fills, and a thousand runs' fills are not something to hold onto.
+#[derive(Debug, Default)]
+pub struct Cache(crate::cache::ParseCache<RunSummary>);
+
+impl Cache {
+    /// How many runs are remembered.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether no run is remembered.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Every run file in a directory, newest name last.
 ///
 /// A missing directory is an empty listing, not an error: a deck pointed
@@ -117,9 +138,21 @@ fn read_run(path: &Path) -> Result<Run, String> {
 /// read is not an empty one: listed as empty, it told the operator there
 /// were no runs when it could not tell whether there were.
 pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
+    list_cached(dir, &Cache::default())
+}
+
+/// [`list`], remembering each summary in `cache` while its file is
+/// unchanged. The listing is the same either way; see [`crate::cache`].
+///
+/// # Errors
+/// As [`list`].
+pub fn list_cached(dir: &Path, cache: &Cache) -> Result<Vec<Entry>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            cache.0.retain(&[]);
+            return Ok(Vec::new());
+        }
         Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
 
@@ -129,6 +162,7 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
         .map(|e| e.path())
         .collect();
     paths.sort();
+    cache.0.retain(&paths);
 
     Ok(paths
         .iter()
@@ -136,8 +170,10 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>, String> {
             let id = path
                 .file_stem()
                 .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
-            match read_run(path) {
-                Ok(run) => Entry::Read(summarise(&id, path, &run)),
+            match cache.0.get_or_parse(path, |path| {
+                read_run(path).map(|run| summarise(&id, path, &run))
+            }) {
+                Ok(summary) => Entry::Read(summary),
                 Err(error) => Entry::Unreadable {
                     id,
                     path: path.display().to_string(),

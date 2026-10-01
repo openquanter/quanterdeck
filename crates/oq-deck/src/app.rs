@@ -59,6 +59,18 @@ pub struct Deck {
     /// reopen is ninety seconds against an attacker who must also hold
     /// the password.
     pub last_login_step: Arc<std::sync::Mutex<i64>>,
+    /// What the listings parsed, for files unchanged since. Shared by
+    /// every request, bounded by what the directories hold.
+    pub listings: Arc<Listings>,
+}
+
+/// The listings' parse caches. See `oq_deck_core::cache` for when an
+/// entry is trusted.
+#[derive(Debug, Default)]
+pub struct Listings {
+    pub runs: runs::Cache,
+    pub sweeps: sweeps::Cache,
+    pub journals: live::Cache,
 }
 
 impl Deck {
@@ -997,18 +1009,37 @@ fn unreadable_dir(why: String) -> Refusal {
     )
 }
 
+/// Do file work off the async workers.
+///
+/// Every read from here on parses files, and a listing parses all of
+/// them — the journal listing replays each journal whole. On an async
+/// worker that stalls every other request behind it, the session checks
+/// included. The work is handed only paths and values: the request's
+/// language is a task-local this task has and the blocking pool does
+/// not, so every sentence for the operator is chosen after the await.
+async fn off_worker<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, Refusal> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| Refusal::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 async fn list_runs(State(deck): State<Deck>, headers: HeaderMap) -> Response {
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
-        Ok(dir) => match runs::list(&dir) {
-            Ok(entries) => {
-                let total_pnl = runs::total_pnl(&entries);
-                axum::Json(Listing { entries, total_pnl }).into_response()
-            }
-            Err(why) => unreadable_dir(why).into_response(),
-        },
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let listings = Arc::clone(&deck.listings);
+    match off_worker(move || runs::list_cached(&dir, &listings.runs)).await {
+        Ok(Ok(entries)) => {
+            let total_pnl = runs::total_pnl(&entries);
+            axum::Json(Listing { entries, total_pnl }).into_response()
+        }
+        Ok(Err(why)) => unreadable_dir(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1021,10 +1052,13 @@ async fn run_detail(
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR")
-        .and_then(|dir| runs::detail(&dir, &id).map_err(Refusal::not_found))
-    {
-        Ok(detail) => axum::Json(detail).into_response(),
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match off_worker(move || runs::detail(&dir, &id)).await {
+        Ok(Ok(detail)) => axum::Json(detail).into_response(),
+        Ok(Err(why)) => Refusal::not_found(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1034,11 +1068,14 @@ async fn list_sweeps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
-        Ok(dir) => match sweeps::list(&dir) {
-            Ok(entries) => axum::Json(entries).into_response(),
-            Err(why) => unreadable_dir(why).into_response(),
-        },
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let listings = Arc::clone(&deck.listings);
+    match off_worker(move || sweeps::list_cached(&dir, &listings.sweeps)).await {
+        Ok(Ok(entries)) => axum::Json(entries).into_response(),
+        Ok(Err(why)) => unreadable_dir(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1051,10 +1088,13 @@ async fn sweep_detail(
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR")
-        .and_then(|dir| sweeps::detail(&dir, &id).map_err(Refusal::not_found))
-    {
-        Ok(detail) => axum::Json(detail).into_response(),
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match off_worker(move || sweeps::detail(&dir, &id)).await {
+        Ok(Ok(detail)) => axum::Json(detail).into_response(),
+        Ok(Err(why)) => Refusal::not_found(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1077,11 +1117,14 @@ async fn compare_runs(
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR").and_then(|dir| {
-        runs::compare_ids(&dir, &query.baseline, &query.candidate, query.tolerance)
-            .map_err(Refusal::not_found)
-    }) {
-        Ok(comparison) => axum::Json(comparison).into_response(),
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let work = move || runs::compare_ids(&dir, &query.baseline, &query.candidate, query.tolerance);
+    match off_worker(work).await {
+        Ok(Ok(comparison)) => axum::Json(comparison).into_response(),
+        Ok(Err(why)) => Refusal::not_found(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1198,10 +1241,15 @@ async fn attribution_report(
         fees: AttributionQuery::pair(query.venue_fees, query.model_fees),
         lang: lang(),
     };
-    match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR").and_then(|dir| {
-        attribution::from_runs(&dir, &query.live, &query.model, inputs).map_err(Refusal::not_found)
-    }) {
-        Ok(report) => axum::Json(report).into_response(),
+    let dir = match dir_of(deck.settings.runs_dir.as_ref(), "OQ_DECK_RUNS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    // `inputs` carries the language, resolved above while it still could be.
+    let work = move || attribution::from_runs(&dir, &query.live, &query.model, inputs);
+    match off_worker(work).await {
+        Ok(Ok(report)) => axum::Json(report).into_response(),
+        Ok(Err(why)) => Refusal::not_found(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1212,11 +1260,14 @@ async fn list_journals(State(deck): State<Deck>, headers: HeaderMap) -> Response
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
-        Ok(dir) => match live::list(&dir) {
-            Ok(entries) => axum::Json(entries).into_response(),
-            Err(why) => unreadable_dir(why).into_response(),
-        },
+    let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let listings = Arc::clone(&deck.listings);
+    match off_worker(move || live::list_cached(&dir, &listings.journals)).await {
+        Ok(Ok(entries)) => axum::Json(entries).into_response(),
+        Ok(Err(why)) => unreadable_dir(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1229,10 +1280,13 @@ async fn journal_belief(
     if let Err(refusal) = guard_read(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR")
-        .and_then(|dir| live::belief(&dir, &id).map_err(Refusal::not_found))
-    {
-        Ok(belief) => axum::Json(belief).into_response(),
+    let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match off_worker(move || live::belief(&dir, &id)).await {
+        Ok(Ok(belief)) => axum::Json(belief).into_response(),
+        Ok(Err(why)) => Refusal::not_found(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1262,10 +1316,13 @@ async fn reconcile(
     if let Err(refusal) = check_session(&deck, &headers) {
         return refusal.into_response();
     }
-    match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR").and_then(|dir| {
-        live::reconcile(&dir, &id, &body.venue_record).map_err(Refusal::bad_request)
-    }) {
-        Ok(result) => axum::Json(result).into_response(),
+    let dir = match dir_of(deck.settings.journals_dir.as_ref(), "OQ_DECK_JOURNALS_DIR") {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match off_worker(move || live::reconcile(&dir, &id, &body.venue_record)).await {
+        Ok(Ok(result)) => axum::Json(result).into_response(),
+        Ok(Err(why)) => Refusal::bad_request(why).into_response(),
         Err(refusal) => refusal.into_response(),
     }
 }
@@ -1290,23 +1347,39 @@ async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         Ok(d) => d,
         Err(refusal) => return refusal.into_response(),
     };
-    let newest = std::fs::read_dir(&dir).ok().and_then(|rd| {
-        rd.filter_map(Result::ok)
-            .filter(|e| e.path().extension().is_some_and(|x| x == "oqj"))
-            .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-            .max_by_key(|(t, _)| *t)
-            .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-    });
-    let Some(id) = newest else {
-        return Refusal::not_found(t(
-            "日志目录里还没有交易日志",
-            "The journals directory has no journal yet",
-        ))
-        .into_response();
+    // What went wrong, without words: the words are chosen after the
+    // await, where the request's language is.
+    enum Latest {
+        NoJournal,
+        NoRecord(std::path::PathBuf, std::io::Error),
+        Reconciled(Result<live::Reconciliation, String>),
+    }
+    let work = move || {
+        let newest = std::fs::read_dir(&dir).ok().and_then(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| e.path().extension().is_some_and(|x| x == "oqj"))
+                .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+                .max_by_key(|(t, _)| *t)
+                .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        });
+        let Some(id) = newest else {
+            return Latest::NoJournal;
+        };
+        match std::fs::read_to_string(&record_path) {
+            Ok(text) => Latest::Reconciled(live::reconcile(&dir, &id, &text)),
+            Err(e) => Latest::NoRecord(record_path, e),
+        }
     };
-    let text = match std::fs::read_to_string(&record_path) {
-        Ok(t) => t,
-        Err(e) => {
+    let reconciled = match off_worker(work).await {
+        Ok(Latest::Reconciled(reconciled)) => reconciled,
+        Ok(Latest::NoJournal) => {
+            return Refusal::not_found(t(
+                "日志目录里还没有交易日志",
+                "The journals directory has no journal yet",
+            ))
+            .into_response();
+        }
+        Ok(Latest::NoRecord(record_path, e)) => {
             return Refusal::not_found(t(
                 format!("读不到交易所记录 {}：{e}", record_path.display()),
                 format!(
@@ -1316,8 +1389,9 @@ async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Respo
             ))
             .into_response();
         }
+        Err(refusal) => return refusal.into_response(),
     };
-    match live::reconcile(&dir, &id, &text) {
+    match reconciled {
         Ok(result) => {
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1913,6 +1987,7 @@ pub fn router(
         devices,
         enrolments: Arc::new(crate::enrol::Enrolments::default()),
         last_login_step: Arc::new(std::sync::Mutex::new(i64::MIN)),
+        listings: Arc::new(Listings::default()),
     };
 
     let api = Router::new()
