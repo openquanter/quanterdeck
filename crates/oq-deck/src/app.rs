@@ -51,9 +51,36 @@ pub struct Deck {
     /// challenge that outlived a restart would be a credential that
     /// outlived the process that minted it.
     pub enrolments: Arc<crate::enrol::Enrolments>,
+    /// The newest TOTP step a login has been let in on. A code stays
+    /// valid for its whole window, so without this the six digits typed
+    /// at a login could be typed again by anyone who saw them — over a
+    /// shoulder, in a screen share, in a proxy log — until the window
+    /// closed. In memory: a restart forgets it, and the window it could
+    /// reopen is ninety seconds against an attacker who must also hold
+    /// the password.
+    pub last_login_step: Arc<std::sync::Mutex<i64>>,
 }
 
 impl Deck {
+    /// Take a matched login step, once.
+    ///
+    /// Refuses the step if it is at or before the last one taken, the
+    /// same rule the agent's step-up applies: "before" as well as "at",
+    /// because the window spans three steps and a code from an earlier
+    /// one, accepted after a later one, is the same replay a step late.
+    /// Called only once the password has passed, so a stranger cannot
+    /// spend the operator's current code by guessing at it.
+    fn take_login_step(&self, step: i64) -> bool {
+        let Ok(mut last) = self.last_login_step.lock() else {
+            return false;
+        };
+        if step <= *last {
+            return false;
+        }
+        *last = step;
+        true
+    }
+
     /// Whether a token belongs to a device the operator enrolled.
     #[must_use]
     pub fn enrolled(&self, token: &str) -> bool {
@@ -720,8 +747,11 @@ async fn login(
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
         match auth::verify_totp(secret, &body.totp, now) {
-            Ok(()) => {}
-            Err(auth::AuthError::Rejected) => {
+            Ok(step) if deck.take_login_step(step) => {}
+            // A replay is refused in the same words as a wrong code and
+            // counted like one: telling them apart would confirm to
+            // whoever replayed it that the code they hold was real.
+            Ok(_) | Err(auth::AuthError::Rejected) => {
                 deck.sessions.record_failure(&source);
                 return rejected.into_response();
             }
@@ -1869,6 +1899,7 @@ pub fn router(
         setup_token: Arc::new(std::sync::Mutex::new(setup_token)),
         devices,
         enrolments: Arc::new(crate::enrol::Enrolments::default()),
+        last_login_step: Arc::new(std::sync::Mutex::new(i64::MIN)),
     };
 
     let api = Router::new()

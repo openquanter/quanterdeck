@@ -61,6 +61,9 @@ fn a_totp_code_verifies_within_the_window_and_not_outside_it() {
     let code = totp_code(&secret, now).expect("a code");
 
     assert!(verify_totp(&secret, &code, now).is_ok());
+    // The step is named, so the caller can refuse it a second time.
+    assert_eq!(verify_totp(&secret, &code, now).ok(), Some(now / 30));
+    assert_eq!(verify_totp(&secret, &code, now + 30).ok(), Some(now / 30));
     // One step either side is accepted, two is not: ninety seconds of
     // tolerance, not an afternoon. Each extra step is another window in
     // which a code read over someone's shoulder still works.

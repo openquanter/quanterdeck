@@ -182,20 +182,27 @@ pub fn totp_code(secret: &str, now_seconds: i64) -> Result<String, AuthError> {
     totp_at(&key, now_seconds.div_euclid(TOTP_STEP_SECONDS))
 }
 
-/// Check a six-digit code against a base32 secret.
+/// Check a six-digit code against a base32 secret, and name the step it
+/// matched.
 ///
 /// `now_seconds` is passed in rather than read here so the check is a
 /// pure function and the window can be tested without waiting.
 ///
+/// The step is returned rather than swallowed because a code that is
+/// right is not yet a code that may be accepted: the same six digits
+/// stay valid for the whole window, so whoever calls this must remember
+/// the last step it let through and refuse anything at or before it.
+/// That memory is state, and state belongs to the caller, not here.
+///
 /// # Errors
 /// `Rejected` when no accepted step produces the code.
-pub fn verify_totp(secret: &str, code: &str, now_seconds: i64) -> Result<(), AuthError> {
+pub fn verify_totp(secret: &str, code: &str, now_seconds: i64) -> Result<i64, AuthError> {
     let key = decode_totp_secret(secret)?;
     let step = now_seconds.div_euclid(TOTP_STEP_SECONDS);
     for offset in -TOTP_SKEW_STEPS..=TOTP_SKEW_STEPS {
         let expected = totp_at(&key, step + offset)?;
         if secrets_match(&expected, code.trim()) {
-            return Ok(());
+            return Ok(step + offset);
         }
     }
     Err(AuthError::Rejected)
