@@ -5,6 +5,17 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+### Framework pin moves to 2fbff0e
+
+- The framework is pinned at `2fbff0e`: a liquidated account settles at
+  the bankruptcy price, a sweep's deflated Sharpe counts every sweep in
+  its trial ledger, a maker winner's markout gates the sweep, and the
+  fidelity report compares tiers by what they conclude.
+- **The sweeps page reads version-2 sweep files** and shows the trials
+  the deflation counted (this sweep's and the ledger's) and the
+  winner's markout with the limits it was judged against. Version-1
+  files still read, and say those lines were not recorded.
+
 ### Several traders on one host
 
 - **The agent finds every trader by its control socket.** A new
