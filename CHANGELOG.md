@@ -5,6 +5,27 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+### Alerts also go to Telegram
+
+- **A second channel beside Discord.** With `OQ_AGENT_TELEGRAM_CHAT` set
+  and a `TELEGRAM_BOT_TOKEN` credential, the agent posts every message —
+  alerts, recoveries, audited actions, the channel test — to that chat
+  too, as plain text with an `oq-agent · <host>` footer, cut to
+  Telegram's 4096-character limit. Exactly one of the two present is a
+  startup warning naming the missing half, and Telegram stays off.
+- **One channel failing does not hold up the other.** Each message is
+  tried on every configured channel; a failure is logged per channel.
+  The token is part of Telegram's request URL, so errors are scrubbed of
+  it before they are printed, and the sink's `Debug` redacts it.
+- **The anchor stays on Discord.** The audit trail's and the journal's
+  off-host anchors are read back from Discord only: a Telegram bot
+  cannot read a chat's history, so it carries alerts but cannot be an
+  anchor.
+- **The Alerts page says which channels are configured.** The agent's
+  alerts view gains `channels` (`["discord", "telegram"]`, empty when
+  alerts are only printed); an agent from before it is shown as "does
+  not report", not as "none".
+
 ## 1.0.0 — 2026-10-01
 
 The first tagged release. Everything below is "since the repository
