@@ -6,7 +6,7 @@
  * are the types the server serves.
  */
 
-import { acceptLanguage, tr } from "@/i18n";
+import { acceptLanguage, locale, tr } from "@/i18n";
 
 export class ApiError extends Error {
   constructor(
@@ -87,6 +87,32 @@ export interface Capabilities {
   writes: Capability;
   /** Checking the framework's newest release against what runs. */
   upstream: Capability;
+  /** Scheduled reports: one file per period, kept on the deck's host. */
+  reports: Capability;
+}
+
+/** A part of a report that may be missing, with its reason. */
+export type ReportSection = "trader" | "pnl" | "reconciliation" | "events" | "host";
+
+/** One kept report. */
+export interface ReportEntry {
+  id: string;
+  period_from_ms: number;
+  period_to_ms: number;
+  /** `null` when the file would not read; `error` says why. */
+  generated_at_ms: number | null;
+  trigger: "scheduled" | "manual" | null;
+  /** `null` when reconciliation was unavailable — not "agree". */
+  verdict: "agree" | "disagree" | "cannot_tell" | null;
+  /** Net P&L over the period; `null` is "not measured", never zero. */
+  net: number | null;
+  unavailable: ReportSection[];
+  error: string | null;
+}
+
+export interface ReportListing {
+  every_hours: number;
+  reports: ReportEntry[];
 }
 
 /** The framework's newest GitHub release. */
@@ -711,6 +737,8 @@ export interface RuntimeSettings {
   /** The upstream release check. `proxy` says whether one is set, not
    * which: a proxy URL may carry a password. */
   upstream: { repo: string; self_repo: string; every_hours: number; proxy: boolean; framework_rev: string };
+  /** Where reports are kept, and their period; `dir` is null when there is nowhere. */
+  reports: { dir: string | null; every_hours: number };
   version: string;
 }
 
@@ -789,6 +817,10 @@ export const api = {
   releases: () => request<Releases>("/ops/releases"),
   upstream: () => request<UpstreamReport>("/upstream"),
   upstreamRefresh: () => post<UpstreamReport>("/upstream/refresh", {}),
+  reports: () => request<ReportListing>("/reports"),
+  reportGenerate: () => post<ReportEntry>("/reports/generate", {}),
+  /** The report as a page, in the interface's language rather than the browser's. */
+  reportUrl: (id: string) => `/api/v1/reports/${encodeURIComponent(id)}?lang=${locale()}`,
   act: (action: OpsAction, reason: string, stepUp: string) =>
     post<unknown>("/ops/action", { ...action, reason, step_up: stepUp || null }),
   liveLatest: () => request<LiveReconciliation>("/live/latest"),

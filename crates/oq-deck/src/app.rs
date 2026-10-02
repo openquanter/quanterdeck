@@ -15,7 +15,7 @@
 //! learn whether a session exists.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -24,7 +24,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use oq_deck_core::lang::Lang;
-use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, runs, sweeps};
+use oq_deck_core::{attribution, auth, capabilities, live, markout, ops, report, runs, sweeps};
 use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -64,6 +64,8 @@ pub struct Deck {
     pub listings: Arc<Listings>,
     /// The upstream release check: its settings and its last results.
     pub upstream: Arc<crate::upstream::Upstream>,
+    /// Scheduled reports: where they are kept, and what makes them.
+    pub reports: Arc<crate::reports::Reports>,
 }
 
 /// The listings' parse caches. See `oq_deck_core::cache` for when an
@@ -977,6 +979,7 @@ async fn caps(State(deck): State<Deck>, headers: HeaderMap) -> Response {
         deck.settings.agent_socket.as_deref(),
         deck.settings.allow_writes,
         deck.settings.upstream_every_hours,
+        deck.reports.capability(lang()),
         lang(),
     ))
     .into_response()
@@ -1350,47 +1353,12 @@ async fn reconcile_latest(State(deck): State<Deck>, headers: HeaderMap) -> Respo
         Ok(d) => d,
         Err(refusal) => return refusal.into_response(),
     };
-    // What went wrong, without words: the words are chosen after the
-    // await, where the request's language is.
-    enum Latest {
-        NoJournal,
-        NoRecord(std::path::PathBuf, std::io::Error),
-        Reconciled(Result<live::Reconciliation, String>),
-    }
-    let work = move || {
-        let newest = std::fs::read_dir(&dir).ok().and_then(|rd| {
-            rd.filter_map(Result::ok)
-                .filter(|e| e.path().extension().is_some_and(|x| x == "oqj"))
-                .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-                .max_by_key(|(t, _)| *t)
-                .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-        });
-        let Some(id) = newest else {
-            return Latest::NoJournal;
-        };
-        match std::fs::read_to_string(&record_path) {
-            Ok(text) => Latest::Reconciled(live::reconcile(&dir, &id, &text)),
-            Err(e) => Latest::NoRecord(record_path, e),
-        }
-    };
-    let reconciled = match off_worker(work).await {
-        Ok(Latest::Reconciled(reconciled)) => reconciled,
-        Ok(Latest::NoJournal) => {
-            return Refusal::not_found(t(
-                "日志目录里还没有交易日志",
-                "The journals directory has no journal yet",
-            ))
-            .into_response();
-        }
-        Ok(Latest::NoRecord(record_path, e)) => {
-            return Refusal::not_found(t(
-                format!("读不到交易所记录 {}：{e}", record_path.display()),
-                format!(
-                    "Cannot read the venue record {}: {e}",
-                    record_path.display()
-                ),
-            ))
-            .into_response();
+    let reconciled = match off_worker(move || live::reconcile_newest(&dir, &record_path)).await {
+        Ok(Ok(result)) => Ok(result),
+        // Chosen here, after the await, where the request's language is.
+        Ok(Err(live::NoLatest::Failed(e))) => Err(e),
+        Ok(Err(missing)) => {
+            return Refusal::not_found(missing.said().in_lang(lang())).into_response();
         }
         Err(refusal) => return refusal.into_response(),
     };
@@ -1775,6 +1743,10 @@ async fn runtime_settings(State(deck): State<Deck>, headers: HeaderMap) -> Respo
             "proxy": s.upstream_proxy.is_some(),
             "framework_rev": crate::upstream::DECK_FRAMEWORK_REV,
         },
+        "reports": {
+            "dir": path(&s.reports_dir),
+            "every_hours": s.report_every_hours,
+        },
         "version": env!("CARGO_PKG_VERSION"),
     }))
     .into_response()
@@ -2031,6 +2003,174 @@ async fn upstream_refresh(State(deck): State<Deck>, headers: HeaderMap) -> Respo
     }
 }
 
+// -- reports ----------------------------------------------------------------
+
+/// Where reports are kept, or the refusal that says why there are none.
+fn reports_dir(deck: &Deck) -> Result<PathBuf, Refusal> {
+    deck.reports
+        .dir()
+        .map(Path::to_path_buf)
+        .map_err(|why| Refusal::new(StatusCode::PRECONDITION_REQUIRED, why.in_lang(lang())))
+}
+
+#[derive(Serialize)]
+struct ReportListing {
+    every_hours: u64,
+    reports: Vec<report::Entry>,
+}
+
+/// The reports kept, newest period first.
+async fn reports_list(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let dir = match reports_dir(&deck) {
+        Ok(dir) => dir,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match off_worker(move || report::list(&dir)).await {
+        Ok(Ok(reports)) => axum::Json(ReportListing {
+            every_hours: deck.reports.every_hours(),
+            reports,
+        })
+        .into_response(),
+        Ok(Err(why)) => unreadable_dir(why).into_response(),
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+/// One report, read from the directory's own listing. The id comes from
+/// the URL, so it is matched there and never joined onto a path.
+async fn read_report(deck: &Deck, id: String) -> Result<report::ReportData, Refusal> {
+    let dir = reports_dir(deck)?;
+    match off_worker(move || report::read(&dir, &id)).await? {
+        Ok(data) => Ok(data),
+        Err(report::ReadError::NotFound) => Err(Refusal::not_found(t(
+            "没有这份报告。",
+            "There is no such report.",
+        ))),
+        Err(report::ReadError::Unreadable(why)) => Err(Refusal::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            t(
+                format!("这份报告读不出来：{why}"),
+                format!("This report cannot be read: {why}"),
+            ),
+        )),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReportQuery {
+    /// `zh` or `en`: the language to render in, when it should not be
+    /// the browser's — a new tab sends the browser's own preference, not
+    /// the one chosen in the console.
+    lang: Option<String>,
+}
+
+/// The policy a report page is served under.
+pub const REPORT_CSP: &str =
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+
+/// A report as one self-contained HTML page, in the reader's language.
+///
+/// Its own Content-Security-Policy, stricter than the console's: no
+/// script, nothing fetched, and sandboxed — the page is a document, and
+/// a document whose strings came from logs and a venue has no business
+/// running anything.
+async fn report_html(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+    Query(q): Query<ReportQuery>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    let lang = match q.lang.as_deref() {
+        None => lang(),
+        Some("zh") => Lang::Zh,
+        Some("en") => Lang::En,
+        Some(_) => {
+            return Refusal::bad_request(t("lang 只能是 zh 或 en。", "lang must be zh or en."))
+                .into_response();
+        }
+    };
+    let data = match read_report(&deck, id).await {
+        Ok(data) => data,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let mut response = report::render_html(&data, lang).into_response();
+    let h = response.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    h.insert(
+        header::CONTENT_SECURITY_POLICY,
+        header::HeaderValue::from_static(REPORT_CSP),
+    );
+    h.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+/// A report's stored data.
+async fn report_data(
+    State(deck): State<Deck>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
+    if let Err(refusal) = guard_read(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match read_report(&deck, id).await {
+        Ok(data) => axum::Json(data).into_response(),
+        Err(refusal) => refusal.into_response(),
+    }
+}
+
+/// Write a report now, for the period ending now.
+///
+/// A POST, so `Host`, `Origin` and the session are checked as for any
+/// write: a page elsewhere must not make this deck call its agent. But
+/// not behind `OQ_DECK_ALLOW_WRITES`: that switch says the console may
+/// act on the host, and this changes nothing there — the agent is only
+/// read, and the one file written is the deck's own, in its own
+/// directory. A read-only deck that could not write down what it reads
+/// would be refusing a read. It reads a period of the black box, so it
+/// runs at most once a minute whoever asks.
+async fn report_generate(State(deck): State<Deck>, headers: HeaderMap) -> Response {
+    if let Err(refusal) = guard_admin(&deck, &headers) {
+        return refusal.into_response();
+    }
+    match deck.reports.generate_now().await {
+        Ok(entry) => axum::Json(entry).into_response(),
+        Err(crate::reports::Refused::Off(why)) => {
+            Refusal::new(StatusCode::CONFLICT, why.in_lang(lang())).into_response()
+        }
+        Err(crate::reports::Refused::Failed(why)) => {
+            Refusal::new(StatusCode::SERVICE_UNAVAILABLE, why.in_lang(lang())).into_response()
+        }
+        Err(crate::reports::Refused::TooSoon(left)) => {
+            let secs = left.as_secs().max(1);
+            let mut response = Refusal::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                t(
+                    format!("一分钟内只生成一次；{secs} 秒后再试。"),
+                    format!("One report a minute at most; try again in {secs} s."),
+                ),
+            )
+            .into_response();
+            if let Ok(v) = header::HeaderValue::from_str(&secs.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, v);
+            }
+            response
+        }
+    }
+}
+
 // -- assembly -------------------------------------------------------------
 
 /// Build the router.
@@ -2058,6 +2198,20 @@ pub fn router_with_upstream(
     devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
     upstream: Arc<crate::upstream::Upstream>,
 ) -> Router {
+    let reports = crate::reports::Reports::from_settings(&settings);
+    router_with(settings, web_dist, setup_token, devices, upstream, reports)
+}
+
+/// [`router_with_upstream`], with the reports supplied too: the binary
+/// passes the one whose schedule it started.
+pub fn router_with(
+    settings: Settings,
+    web_dist: Option<PathBuf>,
+    setup_token: Option<String>,
+    devices: Option<Arc<std::sync::Mutex<oq_deck_core::devices::Devices>>>,
+    upstream: Arc<crate::upstream::Upstream>,
+    reports: Arc<crate::reports::Reports>,
+) -> Router {
     let hosts = Hosts::for_bind(settings.host, settings.port, &settings.extra_hosts);
     // Read before the settings are moved: the session store outlives the
     // reference to them.
@@ -2072,6 +2226,7 @@ pub fn router_with_upstream(
         last_login_step: Arc::new(std::sync::Mutex::new(i64::MIN)),
         listings: Arc::new(Listings::default()),
         upstream,
+        reports,
     };
 
     let api = Router::new()
@@ -2121,6 +2276,10 @@ pub fn router_with_upstream(
         .route("/ops/action", post(ops_action))
         .route("/upstream", get(upstream_report))
         .route("/upstream/refresh", post(upstream_refresh))
+        .route("/reports", get(reports_list))
+        .route("/reports/generate", post(report_generate))
+        .route("/reports/{id}", get(report_html))
+        .route("/reports/{id}/data", get(report_data))
         // An API path that does not exist is a 404 in the API's own
         // shape, not the interface's index page with a 200 — which told a
         // client asking for a mistyped route that it had succeeded.
@@ -2193,13 +2352,17 @@ async fn security_headers(
     set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
     set(h, header::X_FRAME_OPTIONS, "DENY");
     set(h, header::REFERRER_POLICY, "no-referrer");
-    set(
-        h,
-        header::CONTENT_SECURITY_POLICY,
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; \
-         base-uri 'none'; form-action 'self'",
-    );
+    // A route that set its own policy keeps it: the report pages carry
+    // a stricter one than the console's.
+    if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
+        set(
+            h,
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+             img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; \
+             base-uri 'none'; form-action 'self'",
+        );
+    }
     response
 }
 

@@ -5,6 +5,38 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+### A report is written every period, not only shown
+
+- **A durable artifact.** Every `OQ_DECK_REPORT_HOURS` (24 by default,
+  aligned to UTC; `0` turns it off, at most 168) the deck writes a report
+  of the period that just ended into `OQ_DECK_REPORTS_DIR` (default:
+  `reports` under the state directory), and once about a minute after
+  startup if that period has none yet. Written whole or not at all (a
+  temporary file, then a rename), owner-only, kept 90 days.
+- **What it holds.** The period's P&L — net, realized, fees, funding,
+  summed run by run across trader restarts — first and last equity and
+  an equity curve, the trader's state at the end, the reconciliation
+  verdict as of generation (the same comparison as `/live/latest`),
+  alerts, halts and service starts and stops, and the host's peak load,
+  least available memory and least free disk. Inputs come from the host
+  agent's black box (actor `deck:report`) and the journals; a part that
+  could not be read is listed under `unavailable` with the reason, and
+  its figures are absent rather than zero.
+- **Rendered when read.** Stored as JSON and rendered on request as one
+  self-contained HTML page — inline CSS, an inline SVG chart, light and
+  dark, no script and nothing fetched — in the reader's language
+  (`Accept-Language`, or `?lang=zh|en`), under its own
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
+  img-src data:; sandbox`.
+- **Routes.** `GET /api/v1/reports`, `GET /api/v1/reports/{id}` (the
+  page), `GET /api/v1/reports/{id}/data` (the JSON) — ids matched against
+  the directory listing, never joined into a path — and
+  `POST /api/v1/reports/generate`, which writes one for the period ending
+  now: checked for `Host`, `Origin` and session like any write, not
+  behind write mode (it changes nothing on the host), at most once a
+  minute (429 with `Retry-After`). A `reports` capability, a Reports page
+  under Diagnose, and a row in Settings.
+
 ## 1.0.0 — 2026-10-01
 
 The first tagged release. Everything below is "since the repository
