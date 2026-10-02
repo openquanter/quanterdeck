@@ -42,21 +42,65 @@ pub enum Op {
     Host,
     /// The managed units' state.
     Units,
+    /// Every trader's status, by the name of its control socket.
+    Traders,
     /// The trading process's own status, through its control port.
-    Status,
+    Status {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// The orders it believes resting.
-    Orders,
+    Orders {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// Its Prometheus text.
-    Metrics,
+    Metrics {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// The gap between what the venue made and what its shadow backtest
     /// made, decomposed, from the trader's own evidence.
-    Attribution,
+    Attribution {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// Stop opening, withdraw opening orders.
-    Halt,
+    Halt {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// Withdraw everything and exit.
-    Shutdown,
+    Shutdown {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// Clear the kill switch.
-    Resume,
+    Resume {
+        /// Which trader, by its control socket's name; `None` means the
+        /// only one, and is refused when there are several. Left out of
+        /// the request when `None`, so an agent from before it reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trader: Option<String>,
+    },
     /// Start, stop or restart a managed unit.
     Unit { unit: String, verb: String },
     /// The log files there are.
@@ -159,10 +203,11 @@ impl Op {
         match self {
             Self::Host
             | Self::Units
-            | Self::Status
-            | Self::Orders
-            | Self::Metrics
-            | Self::Attribution
+            | Self::Traders
+            | Self::Status { .. }
+            | Self::Orders { .. }
+            | Self::Metrics { .. }
+            | Self::Attribution { .. }
             | Self::Logs
             | Self::LogTail { .. }
             | Self::Audit { .. }
@@ -176,11 +221,11 @@ impl Op {
             | Self::ConfigList
             | Self::ConfigGet { .. }
             | Self::Strategies => Risk::Read,
-            Self::Halt | Self::AlertTest | Self::AlertSilence { .. } => Risk::Reduce,
+            Self::Halt { .. } | Self::AlertTest | Self::AlertSilence { .. } => Risk::Reduce,
             // Shutdown withdraws the take-profits too, leaving the position
             // unprotected and unmanaged: not a risk reduction.
-            Self::Shutdown
-            | Self::Resume
+            Self::Shutdown { .. }
+            | Self::Resume { .. }
             | Self::Unit { .. }
             | Self::Deploy { .. }
             | Self::Rollback
@@ -211,6 +256,19 @@ impl Op {
             Self::StrategyAdvance { id } => format!("strategy {id} advance"),
             Self::AlertSilence { key, minutes } => format!("silence {key} {minutes}m"),
             Self::Audit { .. } => "audit".into(),
+            Self::Status { trader: Some(t) }
+            | Self::Orders { trader: Some(t) }
+            | Self::Metrics { trader: Some(t) }
+            | Self::Attribution { trader: Some(t) }
+            | Self::Halt { trader: Some(t) }
+            | Self::Shutdown { trader: Some(t) }
+            | Self::Resume { trader: Some(t) } => {
+                let kind = serde_json::to_value(self)
+                    .ok()
+                    .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(str::to_string))
+                    .unwrap_or_default();
+                format!("{kind} {t}")
+            }
             other => serde_json::to_value(other)
                 .ok()
                 .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(str::to_string))
@@ -291,10 +349,10 @@ mod tests {
 
     #[test]
     fn only_reads_and_the_halt_go_without_a_step_up() {
-        assert_eq!(Op::Halt.risk(), Risk::Reduce);
+        assert_eq!(Op::Halt { trader: None }.risk(), Risk::Reduce);
         for op in [
-            Op::Shutdown,
-            Op::Resume,
+            Op::Shutdown { trader: None },
+            Op::Resume { trader: None },
             Op::Rollback,
             Op::Deploy { id: "x".into() },
             Op::Unit {
@@ -304,7 +362,22 @@ mod tests {
         ] {
             assert_eq!(op.risk(), Risk::High, "{op:?}");
         }
-        assert_eq!(Op::Status.risk(), Risk::Read);
-        assert_eq!(Op::Halt.describe(), "halt");
+        assert_eq!(Op::Status { trader: None }.risk(), Risk::Read);
+        assert_eq!(Op::Halt { trader: None }.describe(), "halt");
+    }
+
+    #[test]
+    fn a_request_naming_no_trader_is_the_request_it_always_was() {
+        // An agent from before the field reads it, because it is not there.
+        let v = serde_json::to_value(Op::Status { trader: None }).expect("json");
+        assert_eq!(v, serde_json::json!({"kind": "status"}));
+        let back: Op = serde_json::from_value(serde_json::json!({"kind": "halt"})).expect("read");
+        assert_eq!(back, Op::Halt { trader: None });
+        let named = Op::Halt {
+            trader: Some("oq-live.b".into()),
+        };
+        assert_eq!(named.describe(), "halt oq-live.b");
+        assert_eq!(named.risk(), Risk::Reduce);
+        assert_eq!(Op::Traders.risk(), Risk::Read);
     }
 }

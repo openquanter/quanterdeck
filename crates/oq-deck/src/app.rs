@@ -1545,12 +1545,39 @@ macro_rules! ops_read {
 
 ops_read!(ops_host, ops::Op::Host);
 ops_read!(ops_units, ops::Op::Units);
-ops_read!(ops_status, ops::Op::Status);
-ops_read!(ops_orders, ops::Op::Orders);
+/// Which trader a per-trader read is about: its control socket's name, or
+/// none for the only one.
+#[derive(Deserialize)]
+struct TraderQuery {
+    #[serde(default)]
+    trader: Option<String>,
+}
+
+macro_rules! ops_read_trader {
+    ($name:ident, $variant:ident) => {
+        async fn $name(
+            State(deck): State<Deck>,
+            peer: Option<axum::Extension<ConnectInfo<SocketAddr>>>,
+            headers: HeaderMap,
+            Query(q): Query<TraderQuery>,
+        ) -> Response {
+            if let Err(refusal) = guard_read(&deck, &headers) {
+                return refusal.into_response();
+            }
+            let actor = actor_of(peer.as_ref(), &headers);
+            let trader = q.trader.filter(|t| !t.trim().is_empty());
+            ask_agent(&deck, ops::Op::$variant { trader }, None, None, actor).await
+        }
+    };
+}
+
+ops_read!(ops_traders, ops::Op::Traders);
+ops_read_trader!(ops_status, Status);
+ops_read_trader!(ops_orders, Orders);
 ops_read!(ops_alerts, ops::Op::Alerts);
 ops_read!(ops_logs, ops::Op::Logs);
 ops_read!(ops_releases, ops::Op::Releases);
-ops_read!(ops_attribution, ops::Op::Attribution);
+ops_read_trader!(ops_attribution, Attribution);
 ops_read!(ops_accounts, ops::Op::Accounts);
 ops_read!(ops_configs, ops::Op::ConfigList);
 ops_read!(ops_strategies, ops::Op::Strategies);
@@ -1833,6 +1860,9 @@ async fn ops_audit(
 #[derive(Deserialize)]
 struct ActionBody {
     action: String,
+    /// The trader a halt, shutdown or resume is for; none means the only one.
+    #[serde(default)]
+    trader: Option<String>,
     #[serde(default)]
     unit: Option<String>,
     #[serde(default)]
@@ -1878,9 +1908,15 @@ async fn ops_action(
         return Refusal::bad_request(t("请填写原因", "A reason is required")).into_response();
     }
     let op = match body.action.as_str() {
-        "halt" => ops::Op::Halt,
-        "shutdown" => ops::Op::Shutdown,
-        "resume" => ops::Op::Resume,
+        "halt" => ops::Op::Halt {
+            trader: body.trader.clone(),
+        },
+        "shutdown" => ops::Op::Shutdown {
+            trader: body.trader.clone(),
+        },
+        "resume" => ops::Op::Resume {
+            trader: body.trader.clone(),
+        },
         "rollback" => ops::Op::Rollback,
         "unit" => match (body.unit, body.verb) {
             (Some(unit), Some(verb)) => ops::Op::Unit { unit, verb },
@@ -2112,6 +2148,7 @@ pub fn router_with_upstream(
         .route("/ops/host", get(ops_host))
         .route("/ops/units", get(ops_units))
         .route("/ops/status", get(ops_status))
+        .route("/ops/traders", get(ops_traders))
         .route("/ops/orders", get(ops_orders))
         .route("/ops/alerts", get(ops_alerts))
         .route("/ops/logs", get(ops_logs))

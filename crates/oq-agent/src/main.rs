@@ -343,10 +343,34 @@ fn handle(state: &State, line: &str) -> AgentResponse {
                 })
                 .collect::<Vec<_>>()
         )),
-        Op::Status => control::ask(&cfg.control_dir, "status", &origin, ""),
-        Op::Orders => control::ask(&cfg.control_dir, "orders", &origin, ""),
-        Op::Metrics => control::ask(&cfg.control_dir, "metrics", &origin, ""),
-        Op::Attribution => control::ask(&cfg.control_dir, "attribution", &origin, ""),
+        Op::Traders => control::ask_each(&cfg.control_dir, "status", &origin).map(|all| {
+            // Each trader by the name of its socket; one that does not
+            // answer is listed with why, not left out.
+            json!(
+                all.into_iter()
+                    .map(|(id, answer)| match answer {
+                        Ok(status) => json!({"id": id, "status": status}),
+                        Err(why) => json!({"id": id, "error": why.zh, "error_en": why.en}),
+                    })
+                    .collect::<Vec<_>>()
+            )
+        }),
+        Op::Status { trader } => {
+            control::ask_trader(&cfg.control_dir, trader.as_deref(), "status", &origin, "")
+        }
+        Op::Orders { trader } => {
+            control::ask_trader(&cfg.control_dir, trader.as_deref(), "orders", &origin, "")
+        }
+        Op::Metrics { trader } => {
+            control::ask_trader(&cfg.control_dir, trader.as_deref(), "metrics", &origin, "")
+        }
+        Op::Attribution { trader } => control::ask_trader(
+            &cfg.control_dir,
+            trader.as_deref(),
+            "attribution",
+            &origin,
+            "",
+        ),
         Op::Logs => Ok(system::log_files(&cfg.log_dir)),
         Op::LogTail { name, lines, grep } => {
             system::tail(&cfg.log_dir, name, *lines, grep.as_deref())
@@ -478,11 +502,25 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
         }
     };
     match op {
-        Op::Halt => control::ask(&cfg.control_dir, "halt", origin, reason),
-        Op::Resume => control::ask(&cfg.control_dir, "resume", origin, reason),
-        Op::Shutdown => {
+        Op::Halt { trader } => {
+            control::ask_trader(&cfg.control_dir, trader.as_deref(), "halt", origin, reason)
+        }
+        Op::Resume { trader } => control::ask_trader(
+            &cfg.control_dir,
+            trader.as_deref(),
+            "resume",
+            origin,
+            reason,
+        ),
+        Op::Shutdown { trader } => {
             set_stopped(true);
-            control::ask(&cfg.control_dir, "shutdown", origin, reason)
+            control::ask_trader(
+                &cfg.control_dir,
+                trader.as_deref(),
+                "shutdown",
+                origin,
+                reason,
+            )
         }
         Op::Unit { unit, verb } => {
             if !cfg.manageable.contains(unit) {
