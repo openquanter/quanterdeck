@@ -7,6 +7,7 @@ import {
   Bell,
   ChevronDown,
   FileCog,
+  FileText,
   FlaskConical,
   GitCompareArrows,
   History,
@@ -57,6 +58,7 @@ const nav = (): { group: string | null; hue: Hue; items: Item[] }[] => [
     items: [
       { to: "/alerts", label: tr("告警", "Alerts"), icon: Bell, capability: "ops" },
       { to: "/blackbox", label: tr("黑匣子复盘", "Black box"), icon: History, capability: "ops" },
+      { to: "/reports", label: tr("报告", "Reports"), icon: FileText, capability: "reports" },
       { to: "/logs", label: tr("日志", "Logs"), icon: TerminalSquare, capability: "ops" },
       { to: "/journal", label: tr("事件回放", "Journal replay"), icon: ListTree, capability: "live" },
     ],

@@ -158,6 +158,15 @@ trading host as its own user, it also operates that host:
   that moved without a fill, a counter that went down, a net P&L that is
   not realized less fees plus funding — agree, disagree or cannot tell,
   and a disagreement is an event and an alert
+- **scheduled reports**: after each period (a UTC day by default) a
+  report file, kept 90 days — the period's P&L (summed across trader
+  restarts), equity curve, reconciliation verdict, alert, halt and
+  service events, and the host's peak load, least free memory and disk.
+  Stored as JSON and rendered on request as one self-contained HTML page
+  in the reader's language (inline CSS and SVG, no script, nothing
+  fetched); a part that could not be read is listed with the reason,
+  never shown as zero. One up to now can be asked for from the Reports
+  page, at most once a minute
 
 It also says whether what runs is behind the framework's newest
 GitHub release: the deck's own pinned commit (read from `Cargo.lock` at
@@ -266,6 +275,8 @@ The deck:
 | `OQ_DECK_SELF_REPO` | `openquanter/quanterdeck` | This console's own repository: its newest release is compared with the version the deck was built as. Same schedule, switch and proxy as the framework check; one request more |
 | `OQ_DECK_UPSTREAM_CHECK_HOURS` | `6` | How often to check, 0 to 168. `0` turns the check off: no request to GitHub at all |
 | `OQ_DECK_UPSTREAM_PROXY` | — | An `http://` proxy for that check only; the ambient `HTTPS_PROXY` is not read |
+| `OQ_DECK_REPORTS_DIR` | `reports` under the state directory | Where scheduled reports are kept; with neither this nor a state directory there are no reports, and the console says why |
+| `OQ_DECK_REPORT_HOURS` | `24` | A report's period and how often one is written, 0 to 168. `0` turns reports off |
 | `OQ_DECK_WEB_DIST` | The built interface; `web/dist` beside the source by default |
 
 The agent (`oq-agent`), whose defaults fit a host laid out as the

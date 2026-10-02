@@ -177,6 +177,13 @@ export function Settings() {
               ),
               row(tr("上游检查走的代理", "Proxy for the upstream check"), d.upstream.proxy ? tr("已设置", "Set") : tr("无，直连", "None; direct"), "OQ_DECK_UPSTREAM_PROXY"),
               row(tr("deck 构建所用的框架提交", "Framework commit the deck was built from"), d.upstream.framework_rev || null),
+              row(
+                tr("定期报告", "Scheduled reports"),
+                d.reports.every_hours > 0 && d.reports.dir
+                  ? tr(`${d.reports.dir}，每 ${d.reports.every_hours} 小时`, `${d.reports.dir}, every ${d.reports.every_hours} h`)
+                  : null,
+                "OQ_DECK_REPORTS_DIR / OQ_DECK_REPORT_HOURS",
+              ),
             ]}
           />
         </Card>

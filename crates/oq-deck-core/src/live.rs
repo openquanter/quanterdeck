@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use oq_gateway::record::Record;
 use oq_live::belief::Belief;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// What a process believed it held.
 #[derive(Debug, Clone, Serialize)]
@@ -244,7 +244,7 @@ pub struct Reconciliation {
 }
 
 /// What a reconciliation concluded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
     /// Nothing differs, and the belief is whole.
@@ -260,7 +260,7 @@ pub enum Verdict {
 ///
 /// A fact about the inputs rather than a sentence: the console says it
 /// in the reader's language, and says something different for each.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CannotTell {
     /// Frames in the journal did not decode, so a belief rebuilt from it
@@ -336,6 +336,59 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
         undecodable: belief.undecodable,
         hedged: belief.hedged,
     })
+}
+
+/// Why the newest journal could not be reconciled against the newest
+/// venue reading.
+#[derive(Debug)]
+pub enum NoLatest {
+    /// The journals directory holds no journal (or cannot be read).
+    NoJournal,
+    /// The venue reading could not be read: its path and the error.
+    NoRecord(PathBuf, std::io::Error),
+    /// The journal or the reading would not parse.
+    Failed(String),
+}
+
+impl NoLatest {
+    /// The reason, in both languages.
+    #[must_use]
+    pub fn said(&self) -> crate::lang::Said {
+        use crate::lang::Said;
+        match self {
+            Self::NoJournal => Said::new(
+                "日志目录里还没有交易日志",
+                "The journals directory has no journal yet",
+            ),
+            Self::NoRecord(path, e) => Said::new(
+                format!("读不到交易所记录 {}：{e}", path.display()),
+                format!("Cannot read the venue record {}: {e}", path.display()),
+            ),
+            Self::Failed(e) => Said::same(e.clone()),
+        }
+    }
+}
+
+/// The newest journal in `dir` — by modification time, the one being
+/// written — against the venue reading kept at `record`.
+///
+/// # Errors
+/// There is no journal, the reading cannot be read, or either will not
+/// parse.
+pub fn reconcile_newest(dir: &Path, record: &Path) -> Result<Reconciliation, NoLatest> {
+    let newest = fs::read_dir(dir)
+        .ok()
+        .and_then(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| crate::regular_with(e, "oqj"))
+                .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+                .max_by_key(|(t, _)| *t)
+        })
+        .and_then(|(_, p)| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .ok_or(NoLatest::NoJournal)?;
+    let text =
+        fs::read_to_string(record).map_err(|e| NoLatest::NoRecord(record.to_path_buf(), e))?;
+    reconcile(dir, &newest, &text).map_err(NoLatest::Failed)
 }
 
 /// One journal record, as the interface shows it.

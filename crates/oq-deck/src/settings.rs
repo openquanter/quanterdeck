@@ -76,11 +76,22 @@ pub struct Settings {
     /// `HTTPS_PROXY` is deliberately not read: the one outbound path
     /// this deck has should be the one its settings name.
     pub upstream_proxy: Option<String>,
+    /// Where scheduled reports are kept: `OQ_DECK_REPORTS_DIR`, else
+    /// `reports` under the state directory. `None` turns reports off,
+    /// and the console says so.
+    pub reports_dir: Option<PathBuf>,
+    /// The length of a report's period, in hours, and how often one is
+    /// written. Zero turns reports off.
+    pub report_every_hours: u64,
 }
 
 /// The longest gap between two upstream checks: a week. Longer is a
 /// check that is effectively off while claiming to be on.
 pub const UPSTREAM_MAX_HOURS: u64 = 168;
+
+/// The longest report period: a week, which is also the longest window
+/// the host agent's black box answers for in one request.
+pub const REPORT_MAX_HOURS: u64 = 168;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -106,6 +117,8 @@ impl Default for Settings {
             self_repo: "openquanter/quanterdeck".to_owned(),
             upstream_every_hours: 6,
             upstream_proxy: None,
+            reports_dir: None,
+            report_every_hours: 24,
         }
     }
 }
@@ -194,6 +207,12 @@ impl Settings {
             }
         }
         self.validate_upstream()?;
+        if self.report_every_hours > REPORT_MAX_HOURS {
+            return Err(ConfigError(format!(
+                "OQ_DECK_REPORT_HOURS is not a whole number between 0 and {REPORT_MAX_HOURS}: {}",
+                self.report_every_hours
+            )));
+        }
         if !self.is_exposed() {
             return Ok(());
         }
@@ -334,6 +353,20 @@ impl Settings {
             })?;
         }
         settings.upstream_proxy = set("OQ_DECK_UPSTREAM_PROXY").map(|p| p.trim().to_owned());
+
+        // Reports live beside the deck's other state unless told
+        // otherwise; with neither, there is nowhere to keep them.
+        settings.reports_dir = set("OQ_DECK_REPORTS_DIR")
+            .map(PathBuf::from)
+            .or_else(|| settings.state_dir.as_ref().map(|d| d.join("reports")));
+        if let Some(text) = set("OQ_DECK_REPORT_HOURS") {
+            settings.report_every_hours = text.trim().parse::<u64>().map_err(|_| {
+                ConfigError(format!(
+                    "OQ_DECK_REPORT_HOURS is not a whole number between 0 and \
+                     {REPORT_MAX_HOURS}: {text}"
+                ))
+            })?;
+        }
 
         settings.extra_hosts = std::env::var("OQ_DECK_EXTRA_HOSTS")
             .ok()

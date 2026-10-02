@@ -8,6 +8,7 @@ pub mod app;
 pub mod enrol;
 pub mod guard;
 pub mod lockfile;
+pub mod reports;
 pub mod session;
 pub mod settings;
 pub mod upstream;
