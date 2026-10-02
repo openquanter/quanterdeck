@@ -215,7 +215,8 @@ deck：
 | `OQ_AGENT_CONFIG_DIR` | `/var/lib/oq/config` | 允许它修改的策略配置 |
 | `OQ_AGENT_JOURNALS` | `/var/lib/oq/journals` | journal，作为上线门控的证据 |
 | `OQ_AGENT_HOST` | `host` | 告警里的主机名 |
-| `OQ_AGENT_DISCORD_GUILD`、`OQ_AGENT_DISCORD_CHANNEL` | —、`alerts` | 告警发往哪里；机器人令牌以 systemd 凭据传入 |
+| `OQ_AGENT_DISCORD_GUILD`、`OQ_AGENT_DISCORD_CHANNEL` | —、`alerts` | 告警发往哪里；机器人令牌以 systemd 凭据 `DISCORD_BOT_TOKEN` 传入。审计链与 journal 靠读回这个频道锚定在主机外 |
+| `OQ_AGENT_TELEGRAM_CHAT` | — | 同时接收每条告警的 Telegram 会话；机器人令牌以 systemd 凭据 `TELEGRAM_BOT_TOKEN` 传入。两者都在才开启（只有一半时启动日志会说缺哪一半）。只负责送达：Telegram 机器人读不到会话历史，主机外锚点仍只在 Discord |
 | `OQ_AGENT_PROXY` | — | 告警渠道使用的 HTTP 代理 |
 
 ## 文档

@@ -43,6 +43,8 @@ struct State {
     strategies: Mutex<strategies::Strategies>,
     progress: Arc<Mutex<deploy::Progress>>,
     notify: std::sync::mpsc::Sender<Message>,
+    /// The alert channels configured, by kind (`discord`, `telegram`).
+    channels: Vec<&'static str>,
 }
 
 /// Longest request line.
@@ -80,13 +82,41 @@ fn main() {
             cfg.proxy.clone(),
         )),
         _ => {
-            eprintln!("oq-agent: no Discord credential or guild; alerts are only printed");
+            eprintln!(
+                "oq-agent: no Discord credential or guild; no Discord alerts, and the audit \
+                 trail and journal are not anchored off this host"
+            );
             None
         }
     };
-    let notify = notify::start(discord.clone(), cfg.host.clone());
-    // The channel is the one copy of this trail that is not on this
-    // machine. An entry deleted from the **end** of the local file leaves
+    let (telegram, telegram_warning) = notify::Telegram::from_parts(
+        cfg.credential("TELEGRAM_BOT_TOKEN"),
+        cfg.telegram_chat.clone(),
+        cfg.proxy.clone(),
+    );
+    if let Some(w) = telegram_warning {
+        eprintln!("oq-agent: {w}");
+    }
+    // Every channel gets every message. Only Discord is also read back
+    // (below): a Telegram bot cannot read a chat's history, so it can
+    // carry alerts but cannot serve as the anchor off this machine.
+    let mut sinks: Vec<Box<dyn notify::Sink>> = Vec::new();
+    if let Some(d) = discord.clone() {
+        sinks.push(Box::new(d));
+    }
+    if let Some(t) = telegram {
+        sinks.push(Box::new(t));
+    }
+    let channels: Vec<&'static str> = sinks.iter().map(|s| s.name()).collect();
+    if channels.is_empty() {
+        eprintln!("oq-agent: no alert channel is configured; alerts are only printed");
+    } else {
+        eprintln!("oq-agent: alerts go to {}", channels.join(", "));
+    }
+    let notify = notify::start(sinks, cfg.host.clone());
+    // The Discord channel is the one copy of this trail that is not on
+    // this machine — Telegram gets the same messages but cannot be read
+    // back, so it is no anchor (see `notify`). An entry deleted from the **end** of the local file leaves
     // a chain that still verifies — the check walks the entries that are
     // there, and there is nothing after the last one to disagree with —
     // so what was posted is what says the trail used to be longer. Read
@@ -161,6 +191,7 @@ fn main() {
         raised,
         progress: Arc::new(Mutex::new(last_deploy)),
         notify,
+        channels,
     });
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
@@ -328,7 +359,13 @@ fn handle(state: &State, line: &str) -> AgentResponse {
         Op::Alerts => state
             .raised
             .lock()
-            .map(|r| json!({"active": alerts::list(&r), "history": alerts::history(&r)}))
+            .map(|r| {
+                json!({
+                    "active": alerts::list(&r),
+                    "history": alerts::history(&r),
+                    "channels": state.channels,
+                })
+            })
             .map_err(|_| Said::new("告警状态已损坏。", "alert state poisoned")),
         Op::Releases => state
             .progress

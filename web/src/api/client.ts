@@ -370,6 +370,8 @@ export interface Alert {
 export interface AlertsView {
   active: Alert[];
   history: { at_ms: number; key: string; message: string; message_en?: string; raised: boolean }[];
+  /** The alert channels the agent delivers to (`discord`, `telegram`); absent from agents before it was added. */
+  channels?: string[];
 }
 
 export interface ConfigFile {
