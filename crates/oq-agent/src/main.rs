@@ -20,6 +20,7 @@ mod control;
 mod deploy;
 mod guard;
 mod notify;
+mod selfcheck;
 mod strategies;
 mod system;
 
