@@ -404,7 +404,7 @@ fn thin<T: Copy>(all: &[T], n: usize) -> Vec<T> {
 }
 
 fn events_of(window: &Value, in_period: &impl Fn(&Value) -> Option<i64>) -> (Vec<Event>, usize) {
-    const KEPT: [&str; 9] = [
+    const KEPT: [&str; 10] = [
         "alert_raised",
         "alert_cleared",
         "trader_halted",
@@ -414,6 +414,7 @@ fn events_of(window: &Value, in_period: &impl Fn(&Value) -> Option<i64>) -> (Vec
         "control_lost",
         "control_back",
         "recording_started",
+        "selfcheck_disagree",
     ];
     let str_of = |v: &Value| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned);
     let pair = |zh: &Value, en: &Value| {
@@ -812,6 +813,7 @@ fn event_name(what: &str) -> Said {
         "control_lost" => Said::new("控制端口无应答", "Control port lost"),
         "control_back" => Said::new("控制端口恢复", "Control port back"),
         "recording_started" => Said::new("黑匣子开始记录", "Black box started recording"),
+        "selfcheck_disagree" => Said::new("样本自检不一致", "Sample self-check disagreed"),
         other => Said::same(other),
     }
 }

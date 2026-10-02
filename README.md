@@ -148,7 +148,11 @@ trading host as its own user, it also operates that host:
   pressure, clock, disks), each service (memory, CPU, tasks) and the
   trader's status, with state changes and alerts as events — and a
   review page that opens any moment: the snapshot then, the trader's
-  decisions and fills around it, and its output around it
+  decisions and fills around it, and its output around it. Each trader
+  sample is checked against the one before — a position or realized P&L
+  that moved without a fill, a counter that went down, a net P&L that is
+  not realized less fees plus funding — agree, disagree or cannot tell,
+  and a disagreement is an event and an alert
 - **scheduled reports**: after each period (a UTC day by default) a
   report file, kept 90 days — the period's P&L (summed across trader
   restarts), equity curve, reconciliation verdict, alert, halt and
@@ -289,8 +293,9 @@ reference deployment is:
 | `OQ_AGENT_CONFIG_DIR` | `/var/lib/oq/config` | Strategy configuration it may change |
 | `OQ_AGENT_JOURNALS` | `/var/lib/oq/journals` | Journals, for the promotion gate's evidence |
 | `OQ_AGENT_HOST` | `host` | The host's name in alerts |
-| `OQ_AGENT_DISCORD_GUILD`, `OQ_AGENT_DISCORD_CHANNEL` | —, `alerts` | Where alerts go; the bot token comes as a systemd credential |
-| `OQ_AGENT_PROXY` | — | An HTTP proxy for the alert channel |
+| `OQ_AGENT_DISCORD_GUILD`, `OQ_AGENT_DISCORD_CHANNEL` | —, `alerts` | Where alerts go; the bot token comes as the `DISCORD_BOT_TOKEN` systemd credential. The audit trail and the journal are anchored by reading this channel back |
+| `OQ_AGENT_TELEGRAM_CHAT` | — | A Telegram chat that also gets every alert; the bot token comes as the `TELEGRAM_BOT_TOKEN` systemd credential. On only when both are present (a startup warning names the missing half). Delivery only: a Telegram bot cannot read a chat's history, so the off-host anchor stays on Discord |
+| `OQ_AGENT_PROXY` | — | An HTTP proxy for the alert channels |
 
 ## Docs
 

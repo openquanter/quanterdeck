@@ -703,6 +703,7 @@ mod tests {
             host: "test".into(),
             discord_guild: None,
             discord_channel: "c".into(),
+            telegram_chat: None,
             proxy: None,
         }
     }

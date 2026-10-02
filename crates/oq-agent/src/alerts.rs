@@ -219,6 +219,11 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
         for (unit, msg) in &grown {
             found.insert(format!("mem:{unit}"), msg.clone());
         }
+        // The trader's sample against its previous one: its books
+        // contradicting themselves between two looks.
+        if let Some(msg) = recorder.disagreement() {
+            found.insert("selfcheck".to_string(), msg);
+        }
         if let Ok(s) = &status {
             last_unreadable = s["feed"]["unreadable"].as_u64();
         }

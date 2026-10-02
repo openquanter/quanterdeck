@@ -17,7 +17,8 @@ publishes it verbatim, and refuses a tag without one.
   summed run by run across trader restarts — first and last equity and
   an equity curve, the trader's state at the end, the reconciliation
   verdict as of generation (the same comparison as `/live/latest`),
-  alerts, halts and service starts and stops, and the host's peak load,
+  alerts, halts, self-check disagreements and service starts and stops,
+  and the host's peak load,
   least available memory and least free disk. Inputs come from the host
   agent's black box (actor `deck:report`) and the journals; a part that
   could not be read is listed under `unavailable` with the reason, and
@@ -36,6 +37,38 @@ publishes it verbatim, and refuses a tag without one.
   behind write mode (it changes nothing on the host), at most once a
   minute (429 with `Retry-After`). A `reports` capability, a Reports page
   under Diagnose, and a row in Settings.
+
+### Black box checks each sample against the last
+
+- **The black box checks each trader sample against the one before.**
+  A position or realized P&L that moved without a fill, a cumulative
+  counter that went down, or a net P&L that is not realized − fees +
+  funding is a disagreement: recorded inside the sample, as a
+  `selfcheck_disagree` event on the review timeline, and as the
+  `selfcheck` alert. A restart between samples, unknown fees or a
+  missing field is "cannot tell", never agreement. The review page's
+  moment panel shows it.
+
+### Alerts also go to Telegram
+
+- **A second channel beside Discord.** With `OQ_AGENT_TELEGRAM_CHAT` set
+  and a `TELEGRAM_BOT_TOKEN` credential, the agent posts every message —
+  alerts, recoveries, audited actions, the channel test — to that chat
+  too, as plain text with an `oq-agent · <host>` footer, cut to
+  Telegram's 4096-character limit. Exactly one of the two present is a
+  startup warning naming the missing half, and Telegram stays off.
+- **One channel failing does not hold up the other.** Each message is
+  tried on every configured channel; a failure is logged per channel.
+  The token is part of Telegram's request URL, so errors are scrubbed of
+  it before they are printed, and the sink's `Debug` redacts it.
+- **The anchor stays on Discord.** The audit trail's and the journal's
+  off-host anchors are read back from Discord only: a Telegram bot
+  cannot read a chat's history, so it carries alerts but cannot be an
+  anchor.
+- **The Alerts page says which channels are configured.** The agent's
+  alerts view gains `channels` (`["discord", "telegram"]`, empty when
+  alerts are only printed); an agent from before it is shown as "does
+  not report", not as "none".
 
 ## 1.0.0 — 2026-10-01
 

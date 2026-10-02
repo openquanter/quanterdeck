@@ -51,8 +51,8 @@ export function Alerts() {
                 setPending({
                   title: tr("发送测试消息", "Send a test message"),
                   consequence: tr(
-                    "向 Discord 告警频道发一条测试消息，确认渠道通着。",
-                    "Sends a test message to the Discord alerts channel to confirm it works.",
+                    "向已配置的每个告警渠道（Discord、Telegram）各发一条测试消息，确认渠道通着。",
+                    "Sends a test message to every configured alert channel (Discord, Telegram) to confirm each one works.",
                   ),
                   action: { action: "alert_test" },
                 })
@@ -119,12 +119,18 @@ export function Alerts() {
             ))}
           </Table>
         </Card>
-        <Card title={tr("渠道", "Channel")} icon={<Send className="h-4 w-4" />} className="xl:col-span-2">
-          <p className="text-sm leading-relaxed text-ink">{tr("告警发往一个 Discord 频道，机器人令牌以 systemd 凭据传入。", "Alerts go to a Discord channel; the bot token arrives as a systemd credential.")}</p>
+        <Card title={tr("渠道", "Channels")} icon={<Send className="h-4 w-4" />} className="xl:col-span-2">
+          <Channels channels={q.data?.channels} loaded={q.isSuccess} />
+          <p className="mt-3 text-sm leading-relaxed text-ink">
+            {tr(
+              "告警可发往一个 Discord 频道和一个 Telegram 会话，两者都配置时每条消息各发一份；机器人令牌以 systemd 凭据传入。",
+              "Alerts can go to a Discord channel and a Telegram chat; with both configured, each gets every message. Bot tokens arrive as systemd credentials.",
+            )}
+          </p>
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">
             {tr(
-              "每一条操作审计也会同步发到这个频道。静默只停推送，页面上照常显示。",
-              "Every audited operator action is also posted to this channel. Silencing only stops the pushes; alerts still show on this page.",
+              "每一条操作审计也会同步发出。审计链与 journal 的主机外锚点只读回 Discord：Telegram 机器人读不到会话历史，当不了锚点。静默只停推送，页面上照常显示。",
+              "Every audited operator action is also posted. The audit trail's and the journal's off-host anchor is read back from Discord only: a Telegram bot cannot read a chat's history, so it cannot serve as one. Silencing only stops the pushes; alerts still show on this page.",
             )}
           </p>
           {!writable && <p className="mt-3 text-xs text-ink-faint">{tr("写入未开启：测试渠道与静默不可用。", "Writes are off: the channel test and silencing are unavailable.")}</p>}
@@ -132,6 +138,35 @@ export function Alerts() {
       </div>
 
       {pending && <ActionDialog {...pending} highRisk={false} onClose={() => setPending(null)} />}
+    </div>
+  );
+}
+
+/**
+ * Which channels the agent delivers to. An agent from before the field
+ * existed is "cannot tell", not "none": the two are different facts.
+ */
+function Channels({ channels, loaded }: { channels: string[] | undefined; loaded: boolean }) {
+  if (!loaded) return null;
+  if (channels === undefined) {
+    return <p className="text-xs text-ink-faint">{tr("这个版本的主机代理不报告配置了哪些渠道。", "This host agent's version does not report which channels are configured.")}</p>;
+  }
+  if (channels.length === 0) {
+    return (
+      <Badge tone="warn" dot>
+        {tr("未配置任何渠道：告警只打印在主机日志里", "No channel configured: alerts are only printed in the host's log")}
+      </Badge>
+    );
+  }
+  const label = (c: string) => (c === "discord" ? "Discord" : c === "telegram" ? "Telegram" : c);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-ink-muted">{tr("已配置：", "Configured:")}</span>
+      {channels.map((c) => (
+        <Badge key={c} tone="good" dot>
+          {label(c)}
+        </Badge>
+      ))}
     </div>
   );
 }

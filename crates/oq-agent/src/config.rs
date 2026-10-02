@@ -43,6 +43,9 @@ pub struct Config {
     /// Discord: guild, channel name, and the proxy that reaches it.
     pub discord_guild: Option<String>,
     pub discord_channel: String,
+    /// Telegram: the chat alerts also go to. The bot token is the
+    /// `TELEGRAM_BOT_TOKEN` credential.
+    pub telegram_chat: Option<String>,
     pub proxy: Option<String>,
 }
 
@@ -126,6 +129,10 @@ impl Config {
             host: var("OQ_AGENT_HOST", "host"),
             discord_guild: std::env::var("OQ_AGENT_DISCORD_GUILD").ok(),
             discord_channel: var("OQ_AGENT_DISCORD_CHANNEL", "alerts"),
+            telegram_chat: std::env::var("OQ_AGENT_TELEGRAM_CHAT")
+                .ok()
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty()),
             proxy: std::env::var("OQ_AGENT_PROXY")
                 .ok()
                 .filter(|p| !p.is_empty()),
