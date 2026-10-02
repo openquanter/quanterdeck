@@ -214,6 +214,36 @@ function SweepView({ s }: { s: Sweep }) {
         )}{" "}
         · {tr(`权益每 ${s.equity_every} 个 tick 采样一次`, `equity sampled every ${s.equity_every} ticks`)}
       </p>
+      <p className="text-xs text-ink-muted">
+        {tr("试验计数：", "Trials counted: ")}
+        {s.trials ? (
+          s.trials[1] > s.trials[0] ? (
+            tr(
+              `本次 ${s.trials[0]} 组，加上此前同一问题的扫描共 ${s.trials[1]} 组——deflated Sharpe 按 ${s.trials[1]} 组折算`,
+              `${s.trials[0]} in this sweep, ${s.trials[1]} with earlier sweeps on the same question — the deflated Sharpe is deflated by ${s.trials[1]}`,
+            )
+          ) : (
+            tr(`${s.trials[1]} 组（没有接续此前扫描的试验账本）`, `${s.trials[1]} (no ledger of earlier sweeps carried in)`)
+          )
+        ) : (
+          <span className="text-warn">{tr("旧格式文件没有记录。", "not recorded in an older file.")}</span>
+        )}
+      </p>
+      <p className="text-xs text-ink-muted">
+        {tr("逆向选择（胜出者成交后的 markout）：", "Adverse selection (the winner's markout after its fills): ")}
+        {s.adverse ? (
+          <span className="font-mono">
+            {s.adverse[0]} — {s.adverse[1]}
+          </span>
+        ) : (
+          <span className="text-warn">{tr("没有记录（旧格式文件，或没有可评分的配置）。", "not recorded (an older file, or nothing scored).")}</span>
+        )}
+        {s.adverse_thresholds &&
+          ` · ${tr(
+            `maker 占比 ≥ ${(s.adverse_thresholds[0] * 100).toFixed(0)}% 时要求平均 markout ≥ ${s.adverse_thresholds[1]} bps`,
+            `with maker share ≥ ${(s.adverse_thresholds[0] * 100).toFixed(0)}%, mean markout must be ≥ ${s.adverse_thresholds[1]} bps`,
+          )}`}
+      </p>
     </div>
   );
 }

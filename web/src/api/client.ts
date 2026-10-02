@@ -568,6 +568,12 @@ export interface Sweep {
   }[];
   unscorable: string[];
   lookahead: [string, string] | null;
+  /** [configurations in this sweep, trials the deflation counted]; null in a version-1 file. */
+  trials: [number, number] | null;
+  /** [maker share judged as a maker, smallest mean maker markout in bps]; null in a version-1 file. */
+  adverse_thresholds: [number, number] | null;
+  /** The winner and its markout summary; null in a version-1 file or when nothing scored. */
+  adverse: [string, string] | null;
 }
 
 export interface LogFile {

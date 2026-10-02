@@ -70,6 +70,15 @@ pub struct Sweep {
     pub configs: Vec<Config>,
     pub unscorable: Vec<String>,
     pub lookahead: Option<(String, String)>,
+    /// `(configurations in this sweep, trials the deflation counted)`;
+    /// `None` in a version-1 file, which did not record it.
+    pub trials: Option<(usize, usize)>,
+    /// `(maker share judged as a maker, smallest mean maker markout)`;
+    /// `None` in a version-1 file.
+    pub adverse_thresholds: Option<(f64, f64)>,
+    /// The winner's markout, as the framework worded it; `None` in a
+    /// version-1 file or when nothing scored.
+    pub adverse: Option<(String, String)>,
 }
 
 impl Sweep {
@@ -112,6 +121,9 @@ impl Sweep {
                 .collect(),
             unscorable: f.unscorable,
             lookahead: f.lookahead,
+            trials: f.trials,
+            adverse_thresholds: f.adverse_thresholds,
+            adverse: f.adverse,
         }
     }
 }
@@ -322,5 +334,22 @@ mod tests {
         assert!(matches!(&s.pbo, Stat::Value { value } if value.logits.len() == 3));
         assert!(detail(dir.path(), "../a").is_err());
         assert!(detail(dir.path(), "nope").is_err());
+    }
+
+    #[test]
+    fn a_version_2_sweep_carries_its_trial_count_and_the_winners_markout() {
+        let dir = tempfile::tempdir().expect("dir");
+        let text = "openquanter-sweep 2\nlabel ladder\nequity-every 64\ntrials 100 340\n\
+            thresholds 0.35 0.95 0\ndeflated-sharpe 0.2\npbo - too short\n\
+            adverse-thresholds 0.5 0\nadverse grid=3\tmaker 92.0%: 1 s -0.41 bps (63% against, n=812)\n";
+        fs::write(dir.path().join("b.sweep"), text).expect("write");
+        let sweep = detail(dir.path(), "b").expect("reads");
+        assert_eq!(sweep.trials, Some((100, 340)));
+        assert_eq!(sweep.adverse_thresholds, Some((0.5, 0.0)));
+        assert_eq!(sweep.adverse.as_ref().map(|a| a.0.as_str()), Some("grid=3"));
+        // A version-1 file still reads, without them.
+        fs::write(dir.path().join("a.sweep"), REFUSED).expect("write");
+        let old = detail(dir.path(), "a").expect("reads");
+        assert_eq!((old.trials, old.adverse), (None, None));
     }
 }
