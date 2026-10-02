@@ -5,6 +5,17 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+### Black box checks each sample against the last
+
+- **The black box checks each trader sample against the one before.**
+  A position or realized P&L that moved without a fill, a cumulative
+  counter that went down, or a net P&L that is not realized − fees +
+  funding is a disagreement: recorded inside the sample, as a
+  `selfcheck_disagree` event on the review timeline, and as the
+  `selfcheck` alert. A restart between samples, unknown fees or a
+  missing field is "cannot tell", never agreement. The review page's
+  moment panel shows it.
+
 ### Alerts also go to Telegram
 
 - **A second channel beside Discord.** With `OQ_AGENT_TELEGRAM_CHAT` set

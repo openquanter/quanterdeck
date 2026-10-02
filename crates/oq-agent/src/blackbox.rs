@@ -16,6 +16,11 @@
 //! * **event**: a service starting or stopping (with its exit status), the
 //!   trader halting or resuming, its control port going quiet or coming
 //!   back. Changes, recorded when they happen.
+//! * **check**, inside each trader sample: the sample against the one
+//!   before it (see [`crate::selfcheck`]) — a position or realized P&L
+//!   that moved without a fill, a counter that went down, a net P&L that
+//!   is not realized less fees plus funding. A disagreement is also an
+//!   event, and an alert.
 //!
 //! The trader's decisions, fills and market observations are in its
 //! journal, and its output in the systemd journal with timestamps; this
@@ -145,6 +150,10 @@ pub struct Recorder {
     control_ok: Option<bool>,
     disks: Value,
     disks_at: i64,
+    /// The previous trader sample, which the next is checked against.
+    last_trader: Option<Value>,
+    /// What the last check found.
+    findings: Vec<crate::selfcheck::Finding>,
 }
 
 impl Recorder {
@@ -216,7 +225,26 @@ impl Recorder {
         }
         match status {
             Ok(s) => {
-                lines.push(json!({"at": now_ms, "k": "trader", "trader": trader(s)}));
+                let mut sample = trader(s);
+                let was = crate::selfcheck::overall(&self.findings);
+                self.findings = self
+                    .last_trader
+                    .as_ref()
+                    .map(|prev| crate::selfcheck::check(prev, &sample))
+                    .unwrap_or_default();
+                self.last_trader = Some(sample.clone());
+                if !self.findings.is_empty() {
+                    sample["check"] = crate::selfcheck::to_json(&self.findings);
+                }
+                lines.push(json!({"at": now_ms, "k": "trader", "trader": sample}));
+                if let Some(msg) = crate::selfcheck::disagreement(&self.findings)
+                    && was != crate::selfcheck::Verdict::Disagree
+                {
+                    lines.push(
+                        json!({"at": now_ms, "k": "event", "what": "selfcheck_disagree",
+                        "message": msg.zh, "message_en": msg.en}),
+                    );
+                }
                 let halted = s["halted"] == true;
                 if self.halted.is_some_and(|was| was != halted) {
                     lines.push(json!({"at": now_ms, "k": "event",
@@ -241,6 +269,12 @@ impl Recorder {
         }
         self.write(now_ms, &lines)?;
         Ok(host_now)
+    }
+
+    /// The last sample's disagreement with the one before, if any.
+    #[must_use]
+    pub fn disagreement(&self) -> Option<Said> {
+        crate::selfcheck::disagreement(&self.findings)
     }
 
     /// Record one event now: an alert raised or cleared.
@@ -562,6 +596,56 @@ mod tests {
         let r = Recorder::new(state);
         r.write(lines[0]["at"].as_i64().expect("at"), lines)
             .expect("write");
+    }
+
+    /// Each trader sample carries its check against the one before, and
+    /// the first disagreement is an event the review timeline shows.
+    #[test]
+    fn a_trader_sample_is_checked_against_the_last_and_a_contradiction_is_an_event() {
+        let d = tempfile::tempdir().expect("dir");
+        let base = 1_790_000_000_000;
+        let mut r = Recorder::new(d.path());
+        let status = |pos: &str, fills: u64| {
+            json!({"pid": 42, "halted": false, "resting": 1,
+                "positions": [{"side": "LONG", "amount": pos}],
+                "counters": {"fills": fills},
+                "pnl": {"realized": "1", "fees": "0.1", "funding": "0", "net": "0.9"}})
+        };
+        let samples = [
+            status("0.01", 1),
+            status("0.02", 2),
+            status("0.03", 2),
+            status("0.03", 2),
+        ];
+        for (i, s) in samples.iter().enumerate() {
+            r.tick(base + i as i64 * 30_000, &[], Ok(s)).expect("tick");
+        }
+        assert_eq!(r.disagreement(), None, "the last pair agrees again");
+        let w = window(d.path(), base - 1, base + 120_000, 100);
+        let traders = w["trader"].as_array().expect("traders");
+        assert!(
+            traders[0]["trader"]["check"].is_null(),
+            "nothing to check the first against"
+        );
+        assert_eq!(traders[1]["trader"]["check"]["verdict"], "agree");
+        assert_eq!(traders[2]["trader"]["check"]["verdict"], "disagree");
+        assert_eq!(traders[3]["trader"]["check"]["verdict"], "agree");
+        let flagged: Vec<&Value> = w["events"]
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| e["what"] == "selfcheck_disagree")
+            .collect();
+        assert_eq!(
+            flagged.len(),
+            1,
+            "one event per contradiction, not per sample"
+        );
+        assert!(
+            flagged[0]["message_en"]
+                .as_str()
+                .is_some_and(|m| m.contains("the position changed with no fill"))
+        );
     }
 
     #[test]

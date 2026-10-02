@@ -449,7 +449,16 @@ export interface HostSample {
 }
 
 /** The trader's status as the black box keeps it: a subset, possibly from an older build. */
-export type TraderSample = Partial<Pick<TraderStatus, "halted" | "halt_reason" | "journal_lost" | "resting" | "ticks" | "positions" | "feed" | "reconcile" | "pid" | "pnl">>;
+/** A trader sample checked against the one before it (oq-agent `selfcheck`). */
+export interface SnapshotCheck {
+  verdict: "agree" | "disagree" | "cannot_tell";
+  checks: { name: string; verdict: "agree" | "disagree" | "cannot_tell"; why: string | null; why_en: string | null }[];
+}
+
+export type TraderSample = Partial<Pick<TraderStatus, "halted" | "halt_reason" | "journal_lost" | "resting" | "ticks" | "positions" | "feed" | "reconcile" | "pid" | "pnl">> & {
+  /** Absent on the first sample after a start: there was nothing to check it against. */
+  check?: SnapshotCheck;
+};
 
 export interface BlackboxEvent {
   at: number;

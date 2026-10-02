@@ -28,6 +28,7 @@ const eventNames = (): Record<string, string> => ({
   control_back: tr("控制口恢复", "Control port back"),
   alert_raised: tr("告警触发", "Alert raised"),
   alert_cleared: tr("告警恢复", "Alert cleared"),
+  selfcheck_disagree: tr("交易进程的快照前后对不上", "Trader snapshots contradict each other"),
   recording_started: tr("主机代理启动，开始记录（此前的空白没有记录）", "Host agent started recording (nothing was recorded in the gap before)"),
 });
 
@@ -38,7 +39,7 @@ function eventName(what: string): string {
 
 /** An event's state colour: trouble starting is amber, trouble ending is green, the rest neutral. */
 function eventTone(what: string): Tone {
-  if (/stopped|halted|lost|raised/.test(what)) return "warn";
+  if (/stopped|halted|lost|raised|disagree/.test(what)) return "warn";
   if (/started|resumed|back|cleared/.test(what) && what !== "recording_started") return "good";
   return "neutral";
 }
@@ -384,6 +385,31 @@ function Moment({ at, onClose }: { at: number; onClose: () => void }) {
                         // "Not yet checked" is its own answer, never shown as agreement.
                         <span key="r" className={t.reconcile?.agreed === false ? "text-bad" : t.reconcile?.agreed == null ? "text-warn" : "text-good"}>
                           {t.reconcile?.agreed === true ? tr("一致", "Agrees") : t.reconcile?.agreed === false ? tr("不一致", "Disagrees") : tr("尚未核对", "Not yet checked")}
+                        </span>,
+                      ],
+                      [
+                        tr("快照自检", "Snapshot check"),
+                        // Against the previous sample: no check yet, or one that could
+                        // not run, is its own answer and never shown as agreement.
+                        <span
+                          key="c"
+                          className={
+                            t.check?.verdict === "disagree" ? "text-bad" : t.check?.verdict === "agree" ? "text-good" : "text-warn"
+                          }
+                        >
+                          {t.check?.verdict === "agree"
+                            ? tr("前后一致", "Consistent with the previous sample")
+                            : t.check?.verdict === "disagree"
+                              ? t.check.checks
+                                  .filter((c) => c.verdict === "disagree")
+                                  .map((c) => pair(c.why, c.why_en))
+                                  .join(tr("；", "; "))
+                              : t.check
+                                ? t.check.checks
+                                    .filter((c) => c.verdict === "cannot_tell")
+                                    .map((c) => pair(c.why, c.why_en))
+                                    .join(tr("；", "; ")) || tr("无法判断", "Cannot tell")
+                                : tr("尚无上一个样本可比", "No earlier sample to compare with")}
                         </span>,
                       ],
                       ...(t.pnl

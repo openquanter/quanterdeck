@@ -148,7 +148,11 @@ trading host as its own user, it also operates that host:
   pressure, clock, disks), each service (memory, CPU, tasks) and the
   trader's status, with state changes and alerts as events — and a
   review page that opens any moment: the snapshot then, the trader's
-  decisions and fills around it, and its output around it
+  decisions and fills around it, and its output around it. Each trader
+  sample is checked against the one before — a position or realized P&L
+  that moved without a fill, a counter that went down, a net P&L that is
+  not realized less fees plus funding — agree, disagree or cannot tell,
+  and a disagreement is an event and an alert
 
 It also says whether what runs is behind the framework's newest
 GitHub release: the deck's own pinned commit (read from `Cargo.lock` at
