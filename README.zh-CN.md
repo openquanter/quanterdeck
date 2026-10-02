@@ -107,6 +107,7 @@
 
 - 从交易进程的控制口读状态：持仓、挂单、本次运行盈亏、生效中的风控限额、停机情况；查看和启停服务；停机、退出、解除停机
 - 日志：日志文件，以及每个服务的 systemd journal（带时间戳）
+- 一台主机上的多个交易进程：按各自的控制口发现；"交易进程"页按策略和品种分组；状态与停机、解除停机、退出可以按名字指向其中一个（`?trader=`）；告警和黑匣子记录写明是哪个交易进程——只有一个交易进程时一切照旧
 - 部署签名构件，带健康检查和自动回滚
 - 策略配置：表单与原始 JSON、保存前 diff、每个版本自动备份、回滚
 - 每个策略实例从草稿到实盘的上线门控，写明某一步为什么不能走；配置一改就退回草稿
@@ -210,7 +211,7 @@ deck：
 | `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | 允许启停的服务 |
 | `OQ_AGENT_TRADER_UNIT` | `trader.service` | 交易进程 |
 | `OQ_AGENT_RELEASE_BINARIES` | 交易进程的二进制、`oq-recon` | 一个签名发布允许携带的二进制 |
-| `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | 交易进程控制口所在目录 |
+| `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | 交易进程控制口所在目录；每个 `<名字>.sock` 是一个交易进程 |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | 日志文件 |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | 审计、告警、黑匣子、门控状态 |
 | `OQ_AGENT_RELEASES`、`OQ_AGENT_INCOMING` | `/opt/oq/releases`、`/var/lib/oq/incoming` | 已安装与待部署的构件 |

@@ -5,6 +5,23 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+### Several traders on one host
+
+- **The agent finds every trader by its control socket.** A new
+  `traders` read returns each one's status by socket name, and a trader
+  that does not answer is listed with why. `status`, `orders`,
+  `metrics`, `attribution`, `halt`, `resume` and `shutdown` take an
+  optional `trader`; without one they behave as before and, with
+  several traders present, refuse and name them. The field is left out
+  of a request that names none, so an older agent still reads it.
+- **The watch looks at each trader.** Black-box trader lines and their
+  events carry the trader's `id`, each is checked against its own
+  previous sample, a moment opens with every trader's last sample, and
+  alert keys and sentences name the trader (`halted:<id>`). With one
+  trader nothing changes: no `id`, the same keys.
+- **A Traders page** groups them by strategy and symbol, with each
+  one's state, position, equity, net P&L, position check and feed.
+
 ### A report is written every period, not only shown
 
 - **A durable artifact.** Every `OQ_DECK_REPORT_HOURS` (24 by default,

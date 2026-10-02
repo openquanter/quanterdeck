@@ -51,13 +51,17 @@ impl Raised {
 
 /// What one look found: keys and messages of the conditions that hold.
 #[must_use]
+///
+/// `traders` is each trader's look by its control socket's name, `""` when
+/// there is one; `last_unreadable` its unreadable-message count at the
+/// previous look. With several, every trader's keys and sentences name it.
 pub fn assess(
-    status: Result<&Value, &Said>,
+    traders: &[(String, Result<&Value, &Said>)],
     units: &[(String, bool)],
     trader_unit: &str,
     host: &Value,
     stopped_on_purpose: bool,
-    last_unreadable: Option<u64>,
+    last_unreadable: &BTreeMap<String, u64>,
 ) -> BTreeMap<String, Said> {
     let mut found = BTreeMap::new();
     let trader_up = units.iter().any(|(u, up)| u == trader_unit && *up);
@@ -72,6 +76,56 @@ pub fn assess(
             );
         }
     }
+    for (id, status) in traders {
+        for (key, said) in assess_trader(status, trader_up, last_unreadable.get(id).copied()) {
+            if id.is_empty() {
+                found.insert(key, said);
+            } else {
+                found.insert(
+                    format!("{key}:{id}"),
+                    Said::new(format!("[{id}] {}", said.zh), format!("[{id}] {}", said.en)),
+                );
+            }
+        }
+    }
+    if let Some(disks) = host["disks"].as_array() {
+        for d in disks {
+            if let (Some(size), Some(avail)) = (d["size"].as_u64(), d["avail"].as_u64())
+                && size > 0
+                && avail * 10 < size
+            {
+                found.insert(
+                    format!("disk:{}", d["mount"].as_str().unwrap_or("?")),
+                    Said::new(
+                        format!("{} 剩余空间不足 10%", d["mount"].as_str().unwrap_or("?")),
+                        format!(
+                            "{} has less than 10% free",
+                            d["mount"].as_str().unwrap_or("?")
+                        ),
+                    ),
+                );
+            }
+        }
+    }
+    if host["clock_synced"] == false {
+        found.insert(
+            "clock".into(),
+            Said::new(
+                "系统时钟未与 NTP 同步",
+                "The system clock is not synced with NTP",
+            ),
+        );
+    }
+    found
+}
+
+/// The conditions one trader's look shows, unprefixed.
+fn assess_trader(
+    status: &Result<&Value, &Said>,
+    trader_up: bool,
+    last_unreadable: Option<u64>,
+) -> BTreeMap<String, Said> {
+    let mut found = BTreeMap::new();
     match status {
         Ok(s) => {
             if s["halted"] == true {
@@ -141,34 +195,6 @@ pub fn assess(
         }
         Err(_) => {}
     }
-    if let Some(disks) = host["disks"].as_array() {
-        for d in disks {
-            if let (Some(size), Some(avail)) = (d["size"].as_u64(), d["avail"].as_u64())
-                && size > 0
-                && avail * 10 < size
-            {
-                found.insert(
-                    format!("disk:{}", d["mount"].as_str().unwrap_or("?")),
-                    Said::new(
-                        format!("{} 剩余空间不足 10%", d["mount"].as_str().unwrap_or("?")),
-                        format!(
-                            "{} has less than 10% free",
-                            d["mount"].as_str().unwrap_or("?")
-                        ),
-                    ),
-                );
-            }
-        }
-    }
-    if host["clock_synced"] == false {
-        found.insert(
-            "clock".into(),
-            Said::new(
-                "系统时钟未与 NTP 同步",
-                "The system clock is not synced with NTP",
-            ),
-        );
-    }
     found
 }
 
@@ -177,7 +203,7 @@ const GROWTH_EVERY_MS: i64 = 10 * 60_000;
 
 /// Run the watch forever on this thread.
 pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::Sender<Message>) {
-    let mut last_unreadable: Option<u64> = None;
+    let mut last_unreadable: BTreeMap<String, u64> = BTreeMap::new();
     let mut recorder = crate::blackbox::Recorder::new(&cfg.state_dir);
     let (mut grown, mut grown_at): (Vec<(String, Said)>, i64) = (Vec::new(), 0);
     loop {
@@ -187,11 +213,15 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             .iter()
             .map(|u| (u.clone(), crate::blackbox::Recorder::running(u)))
             .collect();
-        let status = crate::control::ask(&cfg.control_dir, "status", "oq-agent watch", "");
-        // The black box takes its sample from this same look: the trader
+        let looks = look(&cfg.control_dir);
+        let traders: Vec<(String, Result<&Value, &Said>)> = looks
+            .iter()
+            .map(|(id, status)| (id.clone(), status.as_ref()))
+            .collect();
+        // The black box takes its sample from this same look: each trader
         // is asked once, and the host read once.
         let host = recorder
-            .tick(system::now_ms(), &cfg.units, status.as_ref())
+            .tick(system::now_ms(), &cfg.units, &traders)
             .unwrap_or_else(|e| {
                 eprintln!("oq-agent: black box not written: {e}");
                 Value::Null
@@ -201,12 +231,12 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
             .map(|r| r.trader_stopped_on_purpose)
             .unwrap_or(false);
         let found = assess(
-            status.as_ref(),
+            &traders,
             &units,
             &cfg.trader_unit,
             &host,
             on_purpose,
-            last_unreadable,
+            &last_unreadable,
         );
         let mut found = found;
         // Growth is judged over hours; asked every ten minutes, and the
@@ -221,11 +251,22 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
         }
         // The trader's sample against its previous one: its books
         // contradicting themselves between two looks.
-        if let Some(msg) = recorder.disagreement() {
-            found.insert("selfcheck".to_string(), msg);
+        for (id, msg) in recorder.disagreements() {
+            if id.is_empty() {
+                found.insert("selfcheck".to_string(), msg);
+            } else {
+                found.insert(
+                    format!("selfcheck:{id}"),
+                    Said::new(format!("[{id}] {}", msg.zh), format!("[{id}] {}", msg.en)),
+                );
+            }
         }
-        if let Ok(s) = &status {
-            last_unreadable = s["feed"]["unreadable"].as_u64();
+        for (id, status) in &looks {
+            if let Ok(s) = status
+                && let Some(n) = s["feed"]["unreadable"].as_u64()
+            {
+                last_unreadable.insert(id.clone(), n);
+            }
         }
         let now = system::now_ms();
         if let Ok(mut r) = raised.lock() {
@@ -268,6 +309,22 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
     }
 }
 
+/// Each trader's status, by its control socket's name.
+///
+/// One trader — or none — is asked as it always was, under the name `""`,
+/// so its alerts and black-box lines are what they were before there could
+/// be several. With several, each is asked by name.
+fn look(dir: &std::path::Path) -> Vec<crate::control::Look> {
+    match crate::control::sockets(dir) {
+        Ok(socks) if socks.len() > 1 => crate::control::ask_each(dir, "status", "oq-agent watch")
+            .unwrap_or_else(|why| vec![(String::new(), Err(why))]),
+        _ => vec![(
+            String::new(),
+            crate::control::ask(dir, "status", "oq-agent watch", ""),
+        )],
+    }
+}
+
 /// The raised alerts as JSON.
 #[must_use]
 pub fn list(raised: &Raised) -> Value {
@@ -302,6 +359,15 @@ pub fn history(raised: &Raised) -> Value {
 mod tests {
     use super::*;
 
+    /// One trader, unnamed, as the watch looks at it when there is one.
+    fn one<'a>(status: Result<&'a Value, &'a Said>) -> Vec<(String, Result<&'a Value, &'a Said>)> {
+        vec![(String::new(), status)]
+    }
+
+    fn before(n: Option<u64>) -> BTreeMap<String, u64> {
+        n.map(|n| (String::new(), n)).into_iter().collect()
+    }
+
     fn healthy() -> Value {
         json!({"halted": false, "journal_lost": null,
                "reconcile": {"agreed": true, "mismatches": 0},
@@ -315,12 +381,12 @@ mod tests {
             json!({"disks": [{"mount": "/", "size": 100, "avail": 50}], "clock_synced": true});
         assert!(
             assess(
-                Ok(&healthy()),
+                &one(Ok(&healthy())),
                 &units,
                 "trader.service",
                 &host,
                 false,
-                Some(0)
+                &before(Some(0))
             )
             .is_empty()
         );
@@ -339,7 +405,14 @@ mod tests {
         s["feed"]["unreadable"] = json!(3);
         let host =
             json!({"disks": [{"mount": "/", "size": 100, "avail": 5}], "clock_synced": false});
-        let found = assess(Ok(&s), &units, "trader.service", &host, false, Some(1));
+        let found = assess(
+            &one(Ok(&s)),
+            &units,
+            "trader.service",
+            &host,
+            false,
+            &before(Some(1)),
+        );
         let keys: Vec<&str> = found.keys().map(String::as_str).collect();
         assert_eq!(
             keys,
@@ -361,13 +434,37 @@ mod tests {
         let down = vec![("trader.service".to_string(), false)];
         let host = json!({});
         let gone = Said::new("端口不在了", "the socket is gone");
-        assert!(assess(Err(&gone), &down, "trader.service", &host, true, None).is_empty());
         assert!(
-            assess(Err(&gone), &down, "trader.service", &host, false, None)
-                .contains_key("unit:trader.service")
+            assess(
+                &one(Err(&gone)),
+                &down,
+                "trader.service",
+                &host,
+                true,
+                &before(None)
+            )
+            .is_empty()
+        );
+        assert!(
+            assess(
+                &one(Err(&gone)),
+                &down,
+                "trader.service",
+                &host,
+                false,
+                &before(None)
+            )
+            .contains_key("unit:trader.service")
         );
         let up = vec![("trader.service".to_string(), true)];
-        let found = assess(Err(&gone), &up, "trader.service", &host, false, None);
+        let found = assess(
+            &one(Err(&gone)),
+            &up,
+            "trader.service",
+            &host,
+            false,
+            &before(None),
+        );
         // The agent's reason for not reaching the port is the agent's
         // sentence, so each rendering carries its own.
         assert!(found["control"].zh.contains("端口不在了"), "{found:?}");
@@ -376,5 +473,38 @@ mod tests {
             "{found:?}"
         );
         assert!(!found["control"].en.contains("端口"), "{found:?}");
+    }
+
+    /// With several traders each one's conditions name it, and one that
+    /// does not answer is that trader's alert, not every trader's.
+    #[test]
+    fn with_several_traders_each_alert_names_its_trader() {
+        let units = vec![("trader.service".to_string(), true)];
+        let host = json!({"disks": [], "clock_synced": true});
+        let mut halted = healthy();
+        halted["halted"] = json!(true);
+        halted["halt_reason"] = json!("operator: test");
+        let gone = Said::new("无应答", "no answer");
+        let ok = healthy();
+        let looks = vec![
+            ("oq-live.a".to_string(), Ok(&ok)),
+            ("oq-live.b".to_string(), Ok(&halted)),
+            ("oq-live.c".to_string(), Err(&gone)),
+        ];
+        let found = assess(
+            &looks,
+            &units,
+            "trader.service",
+            &host,
+            false,
+            &BTreeMap::new(),
+        );
+        let keys: Vec<&str> = found.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["control:oq-live.c", "halted:oq-live.b"]);
+        assert!(
+            found["halted:oq-live.b"]
+                .en
+                .starts_with("[oq-live.b] The trader has halted")
+        );
     }
 }

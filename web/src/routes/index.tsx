@@ -39,6 +39,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Overview /> },
       // 交易
       { path: "live", element: page(() => import("./Trading"), "Trading") },
+      { path: "traders", element: page(() => import("./Traders"), "Traders") },
       { path: "reconcile", element: page(() => import("./Reconcile"), "Reconcile") },
       // 诊断
       { path: "alerts", element: page(() => import("./Alerts"), "Alerts") },

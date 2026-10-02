@@ -475,6 +475,9 @@ export interface HostSample {
 }
 
 /** The trader's status as the black box keeps it: a subset, possibly from an older build. */
+/** One trader on the host, by its control socket's name: its status, or why there is none. */
+export type TraderEntry = { id: string; status: TraderStatus } | { id: string; error: string; error_en: string };
+
 /** A trader sample checked against the one before it (oq-agent `selfcheck`). */
 export interface SnapshotCheck {
   verdict: "agree" | "disagree" | "cannot_tell";
@@ -800,6 +803,7 @@ export const api = {
   host: () => request<HostHealth>("/ops/host"),
   units: () => request<UnitState[]>("/ops/units"),
   traderStatus: () => request<TraderStatus>("/ops/status"),
+  traders: () => request<TraderEntry[]>("/ops/traders"),
   orders: () => request<{ orders: RestingOrder[] }>("/ops/orders"),
   alerts: async () => (await request<AlertsView>("/ops/alerts")).active,
   alertsView: () => request<AlertsView>("/ops/alerts"),

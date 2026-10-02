@@ -135,6 +135,11 @@ trading host as its own user, it also operates that host:
   risk limits in force, halt state — from its control port; unit state
   and start/stop/restart; halt, shutdown and resume
 - log tails, from files and from each service's systemd journal
+- several traders on one host: each found by its control socket, a
+  Traders page grouping them by strategy and symbol, status and
+  halt/resume/shutdown addressed to one by name (`?trader=`), and alerts
+  and black-box lines that name the trader they are about — with one
+  trader everything reads exactly as before
 - signed-release deployment with a health check and automatic rollback
 - strategy configuration: form and raw JSON, a diff before saving, a
   backup of every version, rollback
@@ -285,7 +290,7 @@ reference deployment is:
 | `OQ_AGENT_MANAGEABLE` | `trader.service,oq-recon.service` | Units it may start and stop |
 | `OQ_AGENT_TRADER_UNIT` | `trader.service` | The trader |
 | `OQ_AGENT_RELEASE_BINARIES` | the trader's binary, `oq-recon` | The binaries a signed release may carry |
-| `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | The trader's control socket directory |
+| `OQ_AGENT_CONTROL_DIR` | `/run/oq-live` | The traders' control socket directory; each `<name>.sock` is one trader |
 | `OQ_AGENT_LOG_DIR` | `/var/log/oq` | Log files |
 | `OQ_AGENT_STATE` | `/var/lib/oq-agent` | Audit trail, alerts, black box, gate state |
 | `OQ_AGENT_RELEASES`, `OQ_AGENT_INCOMING` | `/opt/oq/releases`, `/var/lib/oq/incoming` | Installed and staged releases |

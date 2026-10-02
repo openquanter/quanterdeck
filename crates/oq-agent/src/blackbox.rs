@@ -146,12 +146,20 @@ fn trader(status: &Value) -> Value {
 pub struct Recorder {
     state: PathBuf,
     units: BTreeMap<String, bool>,
-    halted: Option<bool>,
-    control_ok: Option<bool>,
+    /// Each trader, by its control socket's name; `""` when there is one.
+    traders: BTreeMap<String, Track>,
+    started: bool,
     disks: Value,
     disks_at: i64,
-    /// The previous trader sample, which the next is checked against.
-    last_trader: Option<Value>,
+}
+
+/// What the recorder remembers about one trader between looks.
+#[derive(Debug, Default)]
+struct Track {
+    halted: Option<bool>,
+    control_ok: Option<bool>,
+    /// The previous sample, which the next is checked against.
+    last: Option<Value>,
     /// What the last check found.
     findings: Vec<crate::selfcheck::Finding>,
 }
@@ -177,11 +185,16 @@ impl Recorder {
     ///
     /// # Errors
     /// The write failed.
+    ///
+    /// `traders` is each trader's look by its control socket's name. With
+    /// one trader the name is `""` and its lines carry no `id`, exactly as
+    /// before there could be several; with several, each line names its
+    /// trader.
     pub fn tick(
         &mut self,
         now_ms: i64,
         units: &[String],
-        status: Result<&Value, &Said>,
+        traders: &[(String, Result<&Value, &Said>)],
     ) -> Result<Value, String> {
         if now_ms - self.disks_at >= DISK_EVERY_MS {
             self.disks = json!(crate::system::host_health()["disks"]);
@@ -189,7 +202,8 @@ impl Recorder {
         }
         let host_now = host(&self.disks);
         let mut lines = vec![json!({"at": now_ms, "k": "host", "host": host_now})];
-        if self.units.is_empty() && self.control_ok.is_none() {
+        if !self.started {
+            self.started = true;
             // The first look since the agent started: whatever happened
             // between the last sample and this one was not recorded, and
             // the review says so rather than drawing a line across it.
@@ -223,58 +237,79 @@ impl Recorder {
             }
             self.units.insert(unit.clone(), active);
         }
-        match status {
-            Ok(s) => {
-                let mut sample = trader(s);
-                let was = crate::selfcheck::overall(&self.findings);
-                self.findings = self
-                    .last_trader
-                    .as_ref()
-                    .map(|prev| crate::selfcheck::check(prev, &sample))
-                    .unwrap_or_default();
-                self.last_trader = Some(sample.clone());
-                if !self.findings.is_empty() {
-                    sample["check"] = crate::selfcheck::to_json(&self.findings);
+        for (id, status) in traders {
+            let track = self.traders.entry(id.clone()).or_default();
+            // Stamped on every line about a trader once there is more than
+            // one; left off when there is one, so its lines are unchanged.
+            let tag = |mut line: Value| {
+                if !id.is_empty() {
+                    line["id"] = json!(id);
                 }
-                lines.push(json!({"at": now_ms, "k": "trader", "trader": sample}));
-                if let Some(msg) = crate::selfcheck::disagreement(&self.findings)
-                    && was != crate::selfcheck::Verdict::Disagree
-                {
-                    lines.push(
-                        json!({"at": now_ms, "k": "event", "what": "selfcheck_disagree",
-                        "message": msg.zh, "message_en": msg.en}),
-                    );
+                line
+            };
+            match status {
+                Ok(s) => {
+                    let mut sample = trader(s);
+                    let was = crate::selfcheck::overall(&track.findings);
+                    track.findings = track
+                        .last
+                        .as_ref()
+                        .map(|prev| crate::selfcheck::check(prev, &sample))
+                        .unwrap_or_default();
+                    track.last = Some(sample.clone());
+                    if !track.findings.is_empty() {
+                        sample["check"] = crate::selfcheck::to_json(&track.findings);
+                    }
+                    lines.push(tag(json!({"at": now_ms, "k": "trader", "trader": sample})));
+                    if let Some(msg) = crate::selfcheck::disagreement(&track.findings)
+                        && was != crate::selfcheck::Verdict::Disagree
+                    {
+                        lines.push(tag(
+                            json!({"at": now_ms, "k": "event", "what": "selfcheck_disagree",
+                            "message": msg.zh, "message_en": msg.en}),
+                        ));
+                    }
+                    let halted = s["halted"] == true;
+                    if track.halted.is_some_and(|was| was != halted) {
+                        lines.push(tag(json!({"at": now_ms, "k": "event",
+                            "what": if halted { "trader_halted" } else { "trader_resumed" },
+                            "reason": s["halt_reason"]})));
+                    }
+                    track.halted = Some(halted);
+                    if track.control_ok == Some(false) {
+                        lines.push(tag(
+                            json!({"at": now_ms, "k": "event", "what": "control_back"}),
+                        ));
+                    }
+                    track.control_ok = Some(true);
                 }
-                let halted = s["halted"] == true;
-                if self.halted.is_some_and(|was| was != halted) {
-                    lines.push(json!({"at": now_ms, "k": "event",
-                        "what": if halted { "trader_halted" } else { "trader_resumed" },
-                        "reason": s["halt_reason"]}));
+                Err(why) => {
+                    if track.control_ok != Some(false) {
+                        // The reason is the agent's own sentence, so the
+                        // review reads it in the language it is being read in.
+                        lines.push(tag(
+                            json!({"at": now_ms, "k": "event", "what": "control_lost",
+                            "reason": why.zh, "reason_en": why.en}),
+                        ));
+                    }
+                    track.control_ok = Some(false);
                 }
-                self.halted = Some(halted);
-                if self.control_ok == Some(false) {
-                    lines.push(json!({"at": now_ms, "k": "event", "what": "control_back"}));
-                }
-                self.control_ok = Some(true);
-            }
-            Err(why) => {
-                if self.control_ok != Some(false) {
-                    // The reason is the agent's own sentence, so the
-                    // review reads it in the language it is being read in.
-                    lines.push(json!({"at": now_ms, "k": "event", "what": "control_lost",
-                        "reason": why.zh, "reason_en": why.en}));
-                }
-                self.control_ok = Some(false);
             }
         }
         self.write(now_ms, &lines)?;
         Ok(host_now)
     }
 
-    /// The last sample's disagreement with the one before, if any.
+    /// Each trader's last sample's disagreement with the one before, by
+    /// the trader's name (`""` when there is one).
     #[must_use]
-    pub fn disagreement(&self) -> Option<Said> {
-        crate::selfcheck::disagreement(&self.findings)
+    pub fn disagreements(&self) -> Vec<(String, Said)> {
+        self.traders
+            .iter()
+            .filter_map(|(id, t)| {
+                crate::selfcheck::disagreement(&t.findings).map(|m| (id.clone(), m))
+            })
+            .collect()
     }
 
     /// Record one event now: an alert raised or cleared.
@@ -496,7 +531,14 @@ pub fn at(state: &Path, at_ms: i64) -> Value {
         .into_iter()
         .filter_map(|u| last("unit", Some(&u)).map(|v| (u, v)))
         .collect();
-    json!({"at_ms": at_ms, "host": last("host", None), "trader": last("trader", None), "units": units})
+    // With several traders each line names its own; the last of each.
+    let traders: BTreeMap<String, Value> = lines
+        .iter()
+        .filter(|v| v["k"] == "trader")
+        .filter_map(|v| v["id"].as_str().map(|id| (id.to_string(), v.clone())))
+        .collect();
+    json!({"at_ms": at_ms, "host": last("host", None), "trader": last("trader", None),
+        "traders": traders, "units": units})
 }
 
 /// Summary over the last `hours` for the operations page.
@@ -618,9 +660,10 @@ mod tests {
             status("0.03", 2),
         ];
         for (i, s) in samples.iter().enumerate() {
-            r.tick(base + i as i64 * 30_000, &[], Ok(s)).expect("tick");
+            r.tick(base + i as i64 * 30_000, &[], &[(String::new(), Ok(s))])
+                .expect("tick");
         }
-        assert_eq!(r.disagreement(), None, "the last pair agrees again");
+        assert!(r.disagreements().is_empty(), "the last pair agrees again");
         let w = window(d.path(), base - 1, base + 120_000, 100);
         let traders = w["trader"].as_array().expect("traders");
         assert!(
@@ -645,6 +688,53 @@ mod tests {
             flagged[0]["message_en"]
                 .as_str()
                 .is_some_and(|m| m.contains("the position changed with no fill"))
+        );
+    }
+
+    /// With several traders each one's lines carry its name, each is
+    /// checked against its own previous sample, and a moment has all of them.
+    #[test]
+    fn several_traders_are_recorded_and_checked_each_on_its_own() {
+        let d = tempfile::tempdir().expect("dir");
+        let base = 1_790_000_000_000;
+        let mut r = Recorder::new(d.path());
+        let status = |pid: u64, pos: &str, fills: u64| {
+            json!({"pid": pid, "halted": false, "positions": [{"side": "LONG", "amount": pos}],
+                "counters": {"fills": fills},
+                "pnl": {"realized": "0", "fees": "0", "funding": "0", "net": "0"}})
+        };
+        let (a0, b0) = (status(1, "1", 1), status(2, "5", 9));
+        let (a1, b1) = (status(1, "2", 2), status(2, "6", 9));
+        r.tick(base, &[], &[("a".into(), Ok(&a0)), ("b".into(), Ok(&b0))])
+            .expect("tick");
+        r.tick(
+            base + 30_000,
+            &[],
+            &[("a".into(), Ok(&a1)), ("b".into(), Ok(&b1))],
+        )
+        .expect("tick");
+        let flagged: Vec<String> = r.disagreements().into_iter().map(|(id, _)| id).collect();
+        assert_eq!(
+            flagged,
+            ["b"],
+            "a's position moved with a fill, b's without"
+        );
+        let moment = at(d.path(), base + 30_000);
+        assert_eq!(
+            moment["traders"]["a"]["trader"]["check"]["verdict"],
+            "agree"
+        );
+        assert_eq!(
+            moment["traders"]["b"]["trader"]["check"]["verdict"],
+            "disagree"
+        );
+        let w = window(d.path(), base - 1, base + 30_000, 100);
+        assert!(
+            w["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["what"] == "selfcheck_disagree" && e["id"] == "b")
         );
     }
 

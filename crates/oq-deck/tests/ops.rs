@@ -119,6 +119,39 @@ fn settings(sock: std::path::PathBuf, writes: bool) -> Settings {
 }
 
 #[tokio::test]
+async fn a_trader_is_named_by_query_and_the_list_is_one_read() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!([])));
+    let app = router(settings(sock, false), None, None, None);
+    let cookie = login(&app).await;
+
+    let (status, _) = call(&app, &cookie, "GET", "/api/v1/ops/traders", None).await;
+    assert_eq!(status, StatusCode::OK);
+    call(
+        &app,
+        &cookie,
+        "GET",
+        "/api/v1/ops/status?trader=oq-live.b",
+        None,
+    )
+    .await;
+    call(&app, &cookie, "GET", "/api/v1/ops/orders?trader=", None).await;
+    let seen = seen.lock().expect("lock");
+    assert_eq!(seen[0].op, Op::Traders);
+    assert_eq!(
+        seen[1].op,
+        Op::Status {
+            trader: Some("oq-live.b".into())
+        }
+    );
+    assert_eq!(
+        seen[2].op,
+        Op::Orders { trader: None },
+        "an empty name is no name"
+    );
+}
+
+#[tokio::test]
 async fn a_read_is_carried_across_with_a_fresh_nonce_and_the_askers_name() {
     let dir = tempfile::tempdir().expect("dir");
     let (sock, seen) = fake_agent(dir.path(), AgentResponse::ok(json!({"halted": false})));
@@ -133,7 +166,7 @@ async fn a_read_is_carried_across_with_a_fresh_nonce_and_the_askers_name() {
 
     call(&app, &cookie, "GET", "/api/v1/ops/status", None).await;
     let seen = seen.lock().expect("lock");
-    assert_eq!(seen[0].op, Op::Status);
+    assert_eq!(seen[0].op, Op::Status { trader: None });
     assert!(
         seen[0].actor.starts_with("deck:operator@"),
         "{}",

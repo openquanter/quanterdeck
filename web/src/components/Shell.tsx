@@ -20,6 +20,7 @@ import {
   Server,
   Settings as SettingsIcon,
   ShieldCheck,
+  Layers,
   Target,
   TerminalSquare,
 } from "lucide-react";
@@ -47,6 +48,7 @@ const nav = (): { group: string | null; hue: Hue; items: Item[] }[] => [
     hue: "blue",
     items: [
       { to: "/live", label: tr("实盘", "Live"), icon: Activity, capability: "ops" },
+      { to: "/traders", label: tr("交易进程", "Traders"), icon: Layers, capability: "ops" },
       { to: "/reconcile", label: tr("对账与归因", "Reconciliation"), icon: GitCompareArrows, capability: "live" },
     ],
   },
