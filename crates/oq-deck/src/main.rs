@@ -162,7 +162,31 @@ async fn main() -> ExitCode {
         );
     }
     upstream.spawn();
-    let router = app::router_with_upstream(settings, web_dist(), setup_token, devices, upstream);
+    // Likewise: the tests build routers, and their reports must not be
+    // written on a schedule.
+    let reports = oq_deck::reports::Reports::from_settings(&settings);
+    match reports.dir() {
+        Ok(dir) => match reports.prepare() {
+            Ok(()) => tracing::info!(
+                "writing a report every {} h into {}",
+                settings.report_every_hours,
+                dir.display()
+            ),
+            // Not a refusal to start: the console works without reports,
+            // and the capability says why there are none.
+            Err(error) => tracing::warn!("reports directory cannot be made: {error}"),
+        },
+        Err(why) => tracing::info!("no scheduled reports: {}", why.en),
+    }
+    reports.spawn();
+    let router = app::router_with(
+        settings,
+        web_dist(),
+        setup_token,
+        devices,
+        upstream,
+        reports,
+    );
     let listener = match tokio::net::TcpListener::bind(address).await {
         Ok(listener) => listener,
         Err(error) => {

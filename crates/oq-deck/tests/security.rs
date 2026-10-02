@@ -96,6 +96,9 @@ async fn every_read_needs_a_session_even_on_loopback() {
         "/api/v1/runtime/capabilities",
         "/api/v1/attribution?live=baseline&model=same-experiment",
         "/api/v1/journals",
+        "/api/v1/reports",
+        "/api/v1/reports/1-2",
+        "/api/v1/reports/1-2/data",
     ] {
         let (status, _, _) = send(&app, get(uri, HOST, None)).await;
         assert_eq!(

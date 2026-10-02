@@ -43,6 +43,7 @@ export const router = createBrowserRouter([
       // 诊断
       { path: "alerts", element: page(() => import("./Alerts"), "Alerts") },
       { path: "blackbox", element: page(() => import("./Blackbox"), "Blackbox") },
+      { path: "reports", element: page(() => import("./Reports"), "Reports") },
       { path: "logs", element: page(() => import("./Logs"), "Logs") },
       { path: "journal", element: page(() => import("./Journal"), "Journal") },
       // 变更

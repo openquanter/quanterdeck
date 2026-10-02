@@ -65,6 +65,11 @@ pub struct Capabilities {
     /// On means the deck will ask; whether the last ask succeeded is
     /// the check's own report, not this.
     pub upstream: Capability,
+    /// Scheduled reports: a file per period, kept, rendered on request.
+    ///
+    /// Worked out by the deck, which owns the schedule and the directory,
+    /// and handed in: this module does not know where reports live.
+    pub reports: Capability,
 }
 
 fn directory(configured: Option<&Path>, variable: &str, lang: Lang) -> Capability {
@@ -91,7 +96,11 @@ fn directory(configured: Option<&Path>, variable: &str, lang: Lang) -> Capabilit
 }
 
 /// Work out what is available from what is on disk and configured.
+///
+/// One argument per thing configured, each one a capability's input: a
+/// struct around them would only rename the list.
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn detect(
     runs_dir: Option<&Path>,
     journals_dir: Option<&Path>,
@@ -99,6 +108,7 @@ pub fn detect(
     agent_socket: Option<&Path>,
     writes_allowed: bool,
     upstream_every_hours: u64,
+    reports: Capability,
     lang: Lang,
 ) -> Capabilities {
     let ops = match agent_socket {
@@ -172,19 +182,20 @@ pub fn detect(
                 "Off: OQ_DECK_UPSTREAM_CHECK_HOURS=0, so the deck makes no request to GitHub",
             ))
         },
+        reports,
     }
 }
 
 #[cfg(test)]
 mod writes {
-    use super::{Lang, detect};
+    use super::{Capability, Lang, detect};
 
     /// Allowed is not available without an agent: every write goes
     /// through it, and a capability reported on is a promise that a route
     /// delivers.
     #[test]
     fn writes_are_not_offered_before_there_is_anything_to_write_with() {
-        let caps = detect(None, None, None, None, true, 6, Lang::Zh);
+        let caps = detect(None, None, None, None, true, 6, Capability::on(), Lang::Zh);
         assert!(!caps.writes.available);
         assert!(
             caps.writes.reason.contains("主机代理"),
@@ -192,7 +203,7 @@ mod writes {
             caps.writes.reason
         );
         assert!(!caps.ops.available);
-        let en = detect(None, None, None, None, true, 6, Lang::En);
+        let en = detect(None, None, None, None, true, 6, Capability::on(), Lang::En);
         assert!(
             en.writes.reason.contains("host agent"),
             "{}",
@@ -204,11 +215,11 @@ mod writes {
     #[test]
     fn the_upstream_check_reports_when_it_is_off() {
         assert!(
-            detect(None, None, None, None, false, 6, Lang::En)
+            detect(None, None, None, None, false, 6, Capability::on(), Lang::En)
                 .upstream
                 .available
         );
-        let off = detect(None, None, None, None, false, 0, Lang::En).upstream;
+        let off = detect(None, None, None, None, false, 0, Capability::on(), Lang::En).upstream;
         assert!(!off.available);
         assert!(
             off.reason.contains("OQ_DECK_UPSTREAM_CHECK_HOURS=0"),
