@@ -11,7 +11,7 @@ import { Button, Card, Help, PageHeader, cx } from "@/ui/kit";
 import { RecordRows } from "./Trading";
 
 /** What a replay shows before anything is chosen: every decision, not the market data. */
-const DEFAULT_KINDS = ["submitted", "outcome", "fill", "cancelled", "refused", "operator", "reconciled", "session_start"];
+const DEFAULT_KINDS = ["submitted", "outcome", "fill", "execution", "cancelled", "refused", "operator", "reconciled", "session_start", "ledger_start", "fee_evidence", "funding", "funding_evidence", "funding_recovered", "funding_state"];
 
 /**
  * A run's decisions in the order they happened (事件回放, docs/UI-V4

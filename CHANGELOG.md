@@ -5,12 +5,26 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
-### Framework pin moves to 2fbff0e
+## 1.0.1 — 2026-10-11
 
-- The framework is pinned at `2fbff0e`: a liquidated account settles at
-  the bankruptcy price, a sweep's deflated Sharpe counts every sweep in
-  its trial ledger, a maker winner's markout gates the sweep, and the
-  fidelity report compares tiers by what they conclude.
+### Framework pin moves to OpenQuanter 2.0.1
+
+- The framework is pinned at `b60fdf48719a9ca116cd24b7ccb2b600f1273e53`,
+  the OpenQuanter `v2.0.1` release commit. This includes precise net
+  accounting, native fee/funding recovery and coverage evidence,
+  comparable position-read cuts, L2 gap/snapshot handling, and warm-up
+  decision/research-lineage diagnostics.
+- Journal and fills pages recognize native execution, ledger initial state,
+  fee evidence, funding evidence/recovery and pending funding obligations.
+  Missing execution fees and unavailable recovered funding models remain
+  explicitly unavailable rather than being displayed as zero. Resume copy
+  describes the fresh, revision-matched position check required by the trader.
+- Previously introduced framework improvements remain included:
+  bankruptcy-price liquidation settlement, cumulative trial deflation,
+  maker-winner markout gates, and conclusion-oriented tier comparisons.
+- Framework publication and console publication remain separately
+  visible in the upstream-version card. Historical production G12
+  acceptance is not implied by the version bump.
 - **The sweeps page reads version-2 sweep files** and shows the trials
   the deflation counted (this sweep's and the ledger's) and the
   winner's markout with the limits it was judged against. Version-1

@@ -192,13 +192,13 @@ function Positions({ s }: { s: TraderStatus }) {
   );
 }
 
-const ORDER_KINDS = ["submitted", "outcome", "cancelled", "fill", "refused"];
+const ORDER_KINDS = ["submitted", "outcome", "cancelled", "fill", "execution", "refused"];
 
 function Fills() {
   const journal = useNewestJournal();
   const [only, setOnly] = useState<"fill" | "orders">("fill");
   const [cursor, setCursor] = useState<number | null>(null);
-  const kinds = only === "fill" ? ["fill"] : ORDER_KINDS;
+  const kinds = only === "fill" ? ["fill", "execution"] : ORDER_KINDS;
   const q = useQuery({
     queryKey: ["records", journal.id, kinds.join(","), cursor],
     queryFn: () => api.records(journal.id as string, kinds, 100, cursor),
@@ -272,7 +272,7 @@ export function RecordRows({ page, empty }: { page: RecordsPage; empty: string }
           <tr key={r.seq}>
             <td className="whitespace-nowrap font-mono text-xs text-ink-muted">{r.at ? fmtTime(r.at / 1e6) : "—"}</td>
             <td className="whitespace-nowrap">
-              <Badge tone={r.kind === "fill" ? "accent" : r.kind === "refused" ? "warn" : "neutral"}>{kindNames()[r.kind] ?? r.kind}</Badge>
+              <Badge tone={r.kind === "fill" || r.kind === "execution" ? "accent" : r.kind === "refused" ? "warn" : "neutral"}>{kindNames()[r.kind] ?? r.kind}</Badge>
             </td>
             <td className="font-mono text-xs text-ink">{recordText(r, page.price_scale, page.qty_scale)}</td>
             <td className="font-mono text-xs text-ink-faint">{String(r.fields.client_id ?? "")}</td>
