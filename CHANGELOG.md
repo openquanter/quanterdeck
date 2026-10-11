@@ -16,7 +16,7 @@ publishes it verbatim, and refuses a tag without one.
   framework section of a new Upgrade page, also accessible from System.
   Console upgrades show bundle downloads, checksum commands and service
   replacement steps; framework upgrades connect to signed trader deployment.
-- Release notes link directly to a complete, version-specific Chinese translation.
+- ([#77](https://github.com/openquanter/quanterdeck/pull/77)) Release notes link directly to a complete, version-specific Chinese translation.
   The framework remains pinned to OpenQuanter v2.0.1.
 
 ## 1.0.1 — 2026-10-11
