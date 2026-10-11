@@ -5,6 +5,11 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+- The run P&L card emphasizes the signed amount, with a smaller share of
+  current equity and compact accounting details. Unmeasured net P&L falls
+  back to explicitly labelled realized P&L. Gains are green, losses red,
+  and zero neutral; missing or non-positive equity has no percentage.
+
 - New-release notices use green and open the corresponding console or
   framework section of a new Upgrade page, also accessible from System.
   Console upgrades show bundle downloads, checksum commands and service
