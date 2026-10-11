@@ -60,6 +60,7 @@ export const router = createBrowserRouter([
       { path: "host", element: page(() => import("./Host"), "Host") },
       { path: "accounts", element: page(() => import("./Accounts"), "Accounts") },
       { path: "audit", element: page(() => import("./Audit"), "Audit") },
+      { path: "upgrade", element: page(() => import("./Upgrade"), "Upgrade") },
       { path: "settings", element: page(() => import("./Settings"), "Settings") },
       // Where things were before docs/UI-V4, so bookmarks still land.
       { path: "ops", element: <Navigate to="/host" replace /> },

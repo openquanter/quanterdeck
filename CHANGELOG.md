@@ -5,6 +5,11 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
+- New-release notices use green and open the corresponding console or
+  framework section of a new Upgrade page, also accessible from System.
+  Console upgrades show bundle downloads, checksum commands and service
+  replacement steps; framework upgrades connect to signed trader deployment.
+
 ## 1.0.1 — 2026-10-11
 
 ### Framework pin moves to OpenQuanter 2.0.1

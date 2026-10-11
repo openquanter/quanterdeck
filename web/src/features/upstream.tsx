@@ -38,7 +38,7 @@ function verdict(r: UpstreamRevision): { tone: Tone; text: string } {
         text: r.ahead_by ? tr(`已包含该版本，另领先 ${r.ahead_by} 个提交`, `Includes the release, ${r.ahead_by} commits ahead`) : tr("已包含该版本", "Includes the release"),
       };
     case "behind":
-      return { tone: "warn", text: tr(`落后 ${r.behind_by ?? "?"} 个提交，有新版本`, `${r.behind_by ?? "?"} commits behind: a newer release exists`) };
+      return { tone: "good", text: tr(`落后 ${r.behind_by ?? "?"} 个提交，有新版本`, `${r.behind_by ?? "?"} commits behind: a newer release exists`) };
     case "diverged":
       return {
         tone: "warn",
@@ -57,7 +57,7 @@ function standing(c: ConsoleRelease): { tone: Tone; text: string } {
     case "ahead":
       return { tone: "good", text: tr("比最新发布更新", "Newer than the newest release") };
     case "behind":
-      return { tone: "warn", text: tr("有新版本", "A newer release exists") };
+      return { tone: "good", text: tr("有新版本", "A newer release exists") };
     default:
       return c.published === false ? { tone: "neutral", text: tr("尚无发布", "No release yet") } : { tone: "neutral", text: tr("无法判断", "Cannot tell") };
   }
@@ -107,7 +107,7 @@ export function UpstreamCard({ available }: { available: boolean }) {
       title={tr("上游版本", "Upstream release")}
       icon={<Tag />}
       hue="purple"
-      tone={r?.behind || r?.console?.behind ? "warn" : undefined}
+      tone={r?.behind || r?.console?.behind ? "good" : undefined}
       extra={r?.enabled ? <RefreshButton report={r} /> : undefined}
       className="h-full"
     >
@@ -298,17 +298,21 @@ export function UpstreamBadge({ available }: { available: boolean }) {
   const own = r.console?.behind && r.console.latest ? r.console.latest.tag : null;
   if (!framework && !own) return null;
   return (
-    <Link to="/" className="inline-flex items-center gap-1.5" title={tr("有更新的版本，见总览「上游版本」", "A newer release exists; see \"Upstream release\" on the overview")}>
+    <span className="inline-flex items-center gap-1.5">
       {own && (
-        <Badge tone="warn" dot>
-          {tr(`quanterdeck 新版本 ${own}`, `New quanterdeck release ${own}`)}
-        </Badge>
+        <Link to="/upgrade?component=console" className="rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-good" title={tr("升级 Quanterdeck 控制台", "Upgrade the Quanterdeck console")}>
+          <Badge tone="good" dot>
+            {tr(`quanterdeck 新版本 ${own}`, `New quanterdeck release ${own}`)}
+          </Badge>
+        </Link>
       )}
       {framework && (
-        <Badge tone="warn" dot>
-          {tr(`新版本 ${framework}`, `New release ${framework}`)}
-        </Badge>
+        <Link to="/upgrade?component=framework" className="rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-good" title={tr("升级 OpenQuanter 框架", "Upgrade the OpenQuanter framework")}>
+          <Badge tone="good" dot>
+            {tr(`OpenQuanter 新版本 ${framework}`, `New OpenQuanter release ${framework}`)}
+          </Badge>
+        </Link>
       )}
-    </Link>
+    </span>
   );
 }

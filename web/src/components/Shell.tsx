@@ -87,6 +87,7 @@ const nav = (): { group: string | null; hue: Hue; items: Item[] }[] => [
       { to: "/host", label: tr("主机与服务", "Host & services"), icon: Server, capability: "ops" },
       { to: "/accounts", label: tr("交易所账户", "Venue accounts"), icon: KeyRound, capability: "ops" },
       { to: "/audit", label: tr("审计日志", "Audit log"), icon: ShieldCheck, capability: "ops" },
+      { to: "/upgrade", label: tr("版本升级", "Upgrade"), icon: Rocket, capability: null },
       { to: "/settings", label: tr("设置", "Settings"), icon: SettingsIcon, capability: null },
     ],
   },
