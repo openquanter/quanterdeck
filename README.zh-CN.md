@@ -156,7 +156,7 @@ Release 都写明它是对着框架的哪个提交构建的。每次发布提供
 `OQ_DECK_WEB_DIST` 指向它），并附 SHA-256。运行时不需要 Node 或 Rust 工具链。
 
 ```bash
-v=1.0.0; t=x86_64-unknown-linux-gnu
+v=1.0.1; t=x86_64-unknown-linux-gnu
 curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
 sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
 ```

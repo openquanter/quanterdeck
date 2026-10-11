@@ -42,6 +42,12 @@ export function kindNames(): Record<string, string> {
     outcome: tr("回报", "Outcome"),
     cancelled: tr("撤单", "Cancelled"),
     fill: tr("成交", "Fill"),
+    execution: tr("规范成交", "Execution"),
+    ledger_start: tr("账本初态", "Ledger start"),
+    fee_evidence: tr("费用证据", "Fee evidence"),
+    funding_evidence: tr("资金费证据", "Funding evidence"),
+    funding_recovered: tr("资金费恢复", "Funding recovered"),
+    funding_state: tr("资金费义务", "Funding obligations"),
     refused: tr("风控拒绝", "Refused"),
     reconciled: tr("接管仓位", "Adopted"),
     waiting: tr("策略等待", "Waiting"),
@@ -57,6 +63,16 @@ export function recordText(r: RecordsPage["records"][number], ps: number, qs: nu
   switch (r.kind) {
     case "fill":
       return `${f.side} ${f.qty} @ ${f.price}${f.leg ? ` ${f.leg}` : ""}`;
+    case "execution": {
+      const fee = f.fee_state === "reported" ? String(f.fee_amount) : tr("不可得", "unavailable");
+      return tr(`${f.side} ${scale(f.qty_lots, qs)} @ ${scale(f.price_ticks, ps)} · 费用 ${fee} · trade ${f.trade_id}`, `${f.side} ${scale(f.qty_lots, qs)} @ ${scale(f.price_ticks, ps)} · fee ${fee} · trade ${f.trade_id}`);
+    }
+    case "fee_evidence":
+      return tr(`trade ${f.trade_id} · 已恢复费用 ${f.amount} · 来源 ${f.source_ms}`, `trade ${f.trade_id} · recovered fee ${f.amount} · source ${f.source_ms}`);
+    case "funding_recovered":
+      return tr(`历史范围 ${f.since_ms}–${f.through_ms} · 模型不可用 · 原始行 ${JSON.stringify(f.lines)}`, `History ${f.since_ms}–${f.through_ms} · model unavailable · original rows ${JSON.stringify(f.lines)}`);
+    case "funding_state":
+      return tr(`未决 ${JSON.stringify(f.pending_ms)} · 缺口 ${JSON.stringify(f.schedule_gaps)}${f.problem ? ` · ${f.problem}` : ""}`, `Pending ${JSON.stringify(f.pending_ms)} · gaps ${JSON.stringify(f.schedule_gaps)}${f.problem ? ` · ${f.problem}` : ""}`);
     case "submitted":
       return `${f.side} ${scale(f.qty, qs)} @ ${f.limit_price === 0 ? tr("市价", "market") : scale(f.limit_price, ps)}${f.leg ? ` ${f.leg}` : ""}${f.reduce_only ? tr(" 平仓", " close") : ""}`;
     case "outcome":
@@ -66,6 +82,7 @@ export function recordText(r: RecordsPage["records"][number], ps: number, qs: nu
     case "refused":
       return tr(`风控拒绝：${f.breach}`, `Refused: ${f.breach}`);
     case "funding":
+    case "funding_evidence":
       {
         const at = new Date(Number(f.settled_ms)).toLocaleString(intlLocale(), { hour12: false });
         const unverified = f.verified ? "" : tr(" · 实盘持仓复现不出交易所金额", " · the live positions did not reproduce the venue's figure");
@@ -106,8 +123,8 @@ export function resumeAction(): Pending {
   return {
     title: tr("解除停机", "Resume"),
     consequence: tr(
-      "清除停机状态，策略恢复下单。进程会先确认最近一次持仓核对一致、日志可写，否则拒绝。",
-      "Clear the halt and let the strategy trade again. The process first checks that the last position check agreed and the journal is writable, and refuses otherwise.",
+      "清除停机状态，策略恢复下单。进程要求当前成交 revision 的新鲜持仓核对一致、日志可写；需要新核对时会拒绝当次请求，核对成功后再试。",
+      "Clear the halt and let the strategy trade again. The process requires a fresh agreeing position cut of the current execution revision and a writable journal. If a new check is needed, this attempt is refused; retry after the check succeeds.",
     ),
     action: { action: "resume" },
     highRisk: true,

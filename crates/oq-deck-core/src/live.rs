@@ -428,6 +428,15 @@ fn view(seq: u64, record: oq_live::record::Record) -> JournalRecord {
         oq_types::Side::Buy => "buy",
         oq_types::Side::Sell => "sell",
     };
+    let fill_fields = |fill: oq_types::Fill| {
+        json!({
+            "exchange_at": fill.stamp.exch.0, "received_at": fill.stamp.local.0,
+            "instrument_id": fill.instrument.0, "order_id": fill.order.0, "trade_id": fill.trade.0,
+            "side": side(fill.side), "offset": format!("{:?}", fill.offset),
+            "qty_lots": fill.qty.0, "price_ticks": fill.price.0,
+            "liquidity": format!("{:?}", fill.liquidity),
+        })
+    };
     let (kind, at, fields) = match record {
         R::SessionStart {
             prefix,
@@ -533,6 +542,90 @@ fn view(seq: u64, record: oq_live::record::Record) -> JournalRecord {
             json!({
                 "settled_ms": settled_ms, "rate": rate, "mark": mark,
                 "venue": cash_text(venue), "model": cash_text(model), "verified": verified,
+            }),
+        ),
+        R::Execution {
+            client_id,
+            fill,
+            fee,
+        } => {
+            let mut fields = fill_fields(fill);
+            fields["client_id"] = json!(client_id);
+            let (state, amount) = match fee {
+                oq_types::Fee::Reported(amount) => ("reported", Some(cash_text(amount))),
+                oq_types::Fee::Unreadable => ("unreadable", None),
+                oq_types::Fee::Unsaid => ("unsaid", None),
+            };
+            fields["fee_state"] = json!(state);
+            fields["fee_amount"] = json!(amount);
+            ("execution", Some(fill.stamp.local.0), fields)
+        }
+        R::FeeEvidence {
+            at,
+            source_ms,
+            fill,
+            amount,
+        } => {
+            let mut fields = fill_fields(fill);
+            fields["source_ms"] = json!(source_ms);
+            fields["amount"] = json!(cash_text(amount));
+            ("fee_evidence", Some(at.0), fields)
+        }
+        R::LedgerStart {
+            at,
+            instrument_id,
+            instrument,
+            tick_cash,
+            balance,
+            mode,
+        } => (
+            "ledger_start",
+            Some(at.0),
+            json!({
+                "instrument_id": instrument_id.0, "balance": cash_text(balance),
+                "tick_cash": tick_cash, "mode": format!("{mode:?}"),
+                "instrument": { "price_scale": instrument.price_scale, "qty_scale": instrument.qty_scale,
+                    "contract_size": instrument.contract_size, "price_tick": instrument.price_tick,
+                    "qty_step": instrument.qty_step, "min_notional": cash_text(instrument.min_notional) },
+            }),
+        ),
+        R::FundingEvidence {
+            at,
+            settled_ms,
+            rate,
+            mark,
+            venue,
+            model,
+            verified,
+            lines,
+        } => (
+            "funding_evidence",
+            Some(at.0),
+            json!({
+                "settled_ms": settled_ms, "rate": rate, "mark": mark,
+                "venue": cash_text(venue), "model": cash_text(model), "verified": verified,
+                "lines": lines.into_iter().map(|(id, time_ms, amount)| json!({"id": id, "time_ms": time_ms, "amount": cash_text(amount)})).collect::<Vec<_>>(),
+            }),
+        ),
+        R::FundingRecovered {
+            at,
+            since_ms,
+            through_ms,
+            lines,
+        } => (
+            "funding_recovered",
+            Some(at.0),
+            json!({
+                "since_ms": since_ms, "through_ms": through_ms, "model": null, "model_available": false,
+                "lines": lines.into_iter().map(|(id, time_ms, amount)| json!({"id": id, "time_ms": time_ms, "amount": cash_text(amount)})).collect::<Vec<_>>(),
+            }),
+        ),
+        R::FundingState { at, obligations } => (
+            "funding_state",
+            Some(at.0),
+            json!({
+                "pending_ms": obligations.pending_ms, "problem": obligations.problem,
+                "schedule_gaps": obligations.schedule_gaps.into_iter().map(|gap| json!({"since_ms": gap.since_ms, "until_ms": gap.until_ms})).collect::<Vec<_>>(),
             }),
         ),
     };

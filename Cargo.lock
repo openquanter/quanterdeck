@@ -755,7 +755,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "oq-agent"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "libc",
  "oq-deck-core",
@@ -769,8 +769,8 @@ dependencies = [
 
 [[package]]
 name = "oq-backtest"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-core",
  "oq-engine",
@@ -783,13 +783,13 @@ dependencies = [
 
 [[package]]
 name = "oq-book"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 
 [[package]]
 name = "oq-core"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-engine",
  "oq-journal",
@@ -799,8 +799,8 @@ dependencies = [
 
 [[package]]
 name = "oq-data"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-engine",
  "oq-hash",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "oq-deck"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "axum",
  "http-body-util",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "oq-deck-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "argon2",
  "base32",
@@ -856,17 +856,27 @@ dependencies = [
 
 [[package]]
 name = "oq-engine"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-book",
  "oq-types",
 ]
 
 [[package]]
+name = "oq-features"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
+dependencies = [
+ "oq-engine",
+ "oq-strategy",
+ "oq-types",
+]
+
+[[package]]
 name = "oq-gateway"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "ed25519-dalek",
  "k256",
@@ -880,13 +890,13 @@ dependencies = [
 
 [[package]]
 name = "oq-hash"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 
 [[package]]
 name = "oq-ingest"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-backtest",
  "oq-data",
@@ -898,8 +908,8 @@ dependencies = [
 
 [[package]]
 name = "oq-journal"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-hash",
  "oq-types",
@@ -907,8 +917,8 @@ dependencies = [
 
 [[package]]
 name = "oq-l2feed"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "libc",
  "oq-book",
@@ -922,8 +932,8 @@ dependencies = [
 
 [[package]]
 name = "oq-live"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-core",
  "oq-data",
@@ -942,44 +952,47 @@ dependencies = [
 
 [[package]]
 name = "oq-margin"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-types",
 ]
 
 [[package]]
 name = "oq-parity"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-data",
+ "oq-engine",
+ "oq-features",
  "oq-hash",
+ "oq-stats",
  "oq-types",
 ]
 
 [[package]]
 name = "oq-risk"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-types",
 ]
 
 [[package]]
 name = "oq-sim"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 
 [[package]]
 name = "oq-stats"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 
 [[package]]
 name = "oq-strategy"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 dependencies = [
  "oq-engine",
  "oq-types",
@@ -987,8 +1000,8 @@ dependencies = [
 
 [[package]]
 name = "oq-types"
-version = "2.0.0"
-source = "git+https://github.com/openquanter/openquanter?rev=2fbff0e#2fbff0e3910facbb616a7cd8da97897b9062ec2f"
+version = "2.0.1"
+source = "git+https://github.com/openquanter/openquanter?rev=b60fdf48719a9ca116cd24b7ccb2b600f1273e53#b60fdf48719a9ca116cd24b7ccb2b600f1273e53"
 
 [[package]]
 name = "password-hash"

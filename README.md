@@ -230,7 +230,7 @@ interface in `web-dist/` (point `OQ_DECK_WEB_DIST` at it), plus its
 SHA-256. No Node or Rust toolchain is needed to run one.
 
 ```bash
-v=1.0.0; t=x86_64-unknown-linux-gnu
+v=1.0.1; t=x86_64-unknown-linux-gnu
 curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
 sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
 ```

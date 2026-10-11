@@ -12,6 +12,96 @@ use oq_live::record::{OutcomeTag, Record};
 use oq_types::{Nanos, PriceTicks, QtyLots, Side};
 
 #[test]
+fn native_execution_and_economic_evidence_are_visible_without_zero_filling() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("native.oqj");
+    let instrument = oq_types::Instrument::linear(2, 3);
+    let fill = oq_types::Fill {
+        stamp: oq_types::Stamp::new(3, 4),
+        instrument: oq_types::InstrumentId(1),
+        order: oq_types::OrderId(1),
+        trade: oq_types::TradeId(1),
+        side: Side::Buy,
+        offset: oq_types::Offset::Open,
+        liquidity: oq_types::Liquidity::Taker,
+        qty: QtyLots(1),
+        price: PriceTicks(6_000_000),
+    };
+    let mut writer = Writer::open(&path, SyncPolicy::EveryRecordNoFsync).unwrap();
+    for record in [
+        Record::SessionStart {
+            prefix: "fixture".into(),
+            symbol: "SYNTH".into(),
+            price_scale: 2,
+            qty_scale: 3,
+        },
+        Record::LedgerStart {
+            at: Nanos(1),
+            instrument_id: oq_types::InstrumentId(1),
+            instrument,
+            tick_cash: 1000,
+            balance: oq_types::Cash::from_units(1000),
+            mode: Default::default(),
+        },
+        Record::Reconciled {
+            at: Nanos(2),
+            legs: vec![],
+        },
+        Record::Execution {
+            client_id: "fixture-1".into(),
+            fill,
+            fee: oq_types::Fee::Unsaid,
+        },
+        Record::FeeEvidence {
+            at: Nanos(5),
+            source_ms: 0,
+            fill,
+            amount: oq_types::Cash::ZERO,
+        },
+        Record::FundingEvidence {
+            at: Nanos(6),
+            settled_ms: 0,
+            rate: "0.00001".into(),
+            mark: "60000".into(),
+            venue: oq_types::Cash(-1),
+            model: oq_types::Cash(-1),
+            verified: true,
+            lines: vec![(6, 0, oq_types::Cash(-1))],
+        },
+        Record::FundingRecovered {
+            at: Nanos(7),
+            since_ms: 0,
+            through_ms: 0,
+            lines: vec![(7, 0, oq_types::Cash(-1))],
+        },
+        Record::FundingState {
+            at: Nanos(8),
+            obligations: oq_live::funding::FundingObligations {
+                pending_ms: vec![0],
+                schedule_gaps: vec![],
+                problem: Some("missing history".into()),
+            },
+        },
+    ] {
+        writer.append(record.kind(), &record.encode()).unwrap();
+    }
+    drop(writer);
+    let page = oq_deck_core::live::records(dir.path(), "native", &[], 100, None).unwrap();
+    assert_eq!(page.undecodable, 0);
+    assert_eq!(page.total, 8);
+    let find = |kind| page.records.iter().find(|r| r.kind == kind).unwrap();
+    assert_eq!(find("execution").fields["fee_state"], "unsaid");
+    assert!(find("execution").fields["fee_amount"].is_null());
+    assert_eq!(find("execution").fields["qty_lots"], 1);
+    assert_eq!(find("fee_evidence").fields["amount"], "0.00000000");
+    assert_eq!(find("funding_evidence").fields["lines"][0]["id"], 6);
+    assert!(find("funding_recovered").fields["model"].is_null());
+    assert_eq!(find("funding_recovered").fields["model_available"], false);
+    assert_eq!(find("funding_state").fields["pending_ms"][0], 0);
+    assert_eq!(find("ledger_start").fields["mode"], "OneWay");
+}
+
+#[test]
 fn a_cancelled_order_is_neither_resting_nor_undecodable() {
     let dir = std::env::temp_dir().join(format!("oq-deck-journal-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("dir");
