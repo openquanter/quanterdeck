@@ -162,6 +162,8 @@ sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.
 ```
 
 运行中的 deck 会告诉你有没有更新的版本：总览页的「上游版本」卡片会把它和最新发布对比。
+绿色顶部提示进入「系统 → 版本升级」，分别打开控制台或框架区域。控制台区域提供对应架构
+的发布包下载、校验命令和服务替换步骤；框架区域连接「发布」中的签名交易构件部署。
 
 **怎么发版。** 在一个 PR 里改 `Cargo.toml` 的 `[workspace.package].version` 和
 `web/package.json` 的 `version`（及其锁文件），把变更日志的 `## Unreleased` 改成

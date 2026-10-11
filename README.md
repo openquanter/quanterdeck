@@ -236,7 +236,11 @@ sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.
 ```
 
 A running deck tells you when a newer one exists: the overview's
-"Upstream release" card compares it with the newest release.
+"Upstream release" card compares it with the newest release. Green header
+notices open **System → Upgrade**, with separate console and framework
+sections. The console section provides architecture-specific bundle downloads,
+checksum commands and service replacement steps. The framework section links
+to signed trader-artifact deployment under **Releases**.
 
 **Cutting one.** In a pull request, set `[workspace.package].version` in
 `Cargo.toml` and `version` in `web/package.json` (and its lock file), and
