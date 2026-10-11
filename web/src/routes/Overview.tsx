@@ -215,21 +215,41 @@ export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
     );
   // Not `?? 0`: an unmeasured net is not a break-even run, and the
   // arrow and the colour are a verdict about direction.
-  const net = s.pnl?.net == null ? null : Number(s.pnl.net);
+  const measuredNet = s.pnl?.net != null;
+  const amount = measuredNet ? s.pnl!.net : s.pnl?.realized;
+  const parsed = amount == null || amount === "" ? NaN : Number(amount);
+  const net = Number.isFinite(parsed) ? parsed : null;
+  const capital = Number(s.pnl?.equity);
+  // A share of current equity, not a return on an unavailable opening balance.
+  const percent = net !== null && Number.isFinite(capital) && capital > 0 ? net / capital * 100 : null;
+  const direction = net === null || net === 0 ? "neutral" : net > 0 ? "good" : "bad";
   return (
     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
       <Stat
-        label={tr("本次运行盈亏", "Run P&L")}
-        icon={net == null ? <ActivityIcon /> : net >= 0 ? <TrendingUp /> : <ArrowDownRight />}
-        hue={net == null ? "blue" : net >= 0 ? "green" : "red"}
-        value={s.pnl ? <Money value={s.pnl.net} signed /> : "—"}
+        label={s.pnl && !measuredNet ? tr("本次已实现盈亏", "Run realized P&L") : tr("本次运行净盈亏", "Run net P&L")}
+        icon={net == null || net === 0 ? <ActivityIcon /> : net > 0 ? <TrendingUp /> : <ArrowDownRight />}
+        hue={net == null || net === 0 ? "blue" : net > 0 ? "green" : "red"}
+        value={
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-[32px] font-semibold tabular-nums"><Money value={net === null ? null : amount} signed /></span>
+            <span className={cx("text-xs font-normal tracking-normal", direction === "good" ? "text-good" : direction === "bad" ? "text-bad" : "text-ink-muted")}>
+              {percent === null ? tr("占当前权益 —", "Share of current equity —") : tr(
+                `占当前权益 ${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`,
+                `${percent > 0 ? "+" : ""}${percent.toFixed(2)}% of current equity`,
+              )}
+            </span>
+          </div>
+        }
         sub={
-          s.pnl
-            ? tr(
+          s.pnl ? (
+            <div className="space-y-1 whitespace-normal text-[11px] leading-relaxed">
+              {!measuredNet && <div>{tr("净盈亏未测得 · 主金额为已实现盈亏", "Net P&L not measured · primary amount is realized P&L")}</div>}
+              <div>{tr(
                 `已实现 ${s.pnl.realized} · ${feesLabel(s.pnl.fees)} · 资金费 ${s.pnl.funding}`,
                 `Realized ${s.pnl.realized} · ${feesLabel(s.pnl.fees)} · funding ${s.pnl.funding}`,
-              )
-            : tr("此版本的交易进程不报告盈亏", "This trader version does not report P&L")
+              )}</div>
+            </div>
+          ) : tr("此版本的交易进程不报告盈亏", "This trader version does not report P&L")
         }
         help="run_pnl"
         trend={spark(pnl)}
