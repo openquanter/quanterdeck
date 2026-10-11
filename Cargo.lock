@@ -755,7 +755,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "oq-agent"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "libc",
  "oq-deck-core",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "oq-deck"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "axum",
  "http-body-util",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "oq-deck-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "argon2",
  "base32",

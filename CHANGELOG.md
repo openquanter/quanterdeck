@@ -5,67 +5,71 @@ publishes it verbatim, and refuses a tag without one.
 
 ## Unreleased
 
-- The run P&L card emphasizes the signed amount, with a smaller share of
+## 1.0.2 — 2026-10-11
+
+- ([#76](https://github.com/openquanter/quanterdeck/pull/76)) The run P&L card emphasizes the signed amount, with a smaller share of
   current equity and compact accounting details. Unmeasured net P&L falls
   back to explicitly labelled realized P&L. Gains are green, losses red,
   and zero neutral; missing or non-positive equity has no percentage.
 
-- New-release notices use green and open the corresponding console or
+- ([#75](https://github.com/openquanter/quanterdeck/pull/75)) New-release notices use green and open the corresponding console or
   framework section of a new Upgrade page, also accessible from System.
   Console upgrades show bundle downloads, checksum commands and service
   replacement steps; framework upgrades connect to signed trader deployment.
+- ([#77](https://github.com/openquanter/quanterdeck/pull/77)) Release notes link directly to a complete, version-specific Chinese translation.
+  The framework remains pinned to OpenQuanter v2.0.1.
 
 ## 1.0.1 — 2026-10-11
 
 ### Framework pin moves to OpenQuanter 2.0.1
 
-- The framework is pinned at `b60fdf48719a9ca116cd24b7ccb2b600f1273e53`,
+- ([#74](https://github.com/openquanter/quanterdeck/pull/74)) The framework is pinned at `b60fdf48719a9ca116cd24b7ccb2b600f1273e53`,
   the OpenQuanter `v2.0.1` release commit. This includes precise net
   accounting, native fee/funding recovery and coverage evidence,
   comparable position-read cuts, L2 gap/snapshot handling, and warm-up
   decision/research-lineage diagnostics.
-- Journal and fills pages recognize native execution, ledger initial state,
+- ([#74](https://github.com/openquanter/quanterdeck/pull/74)) Journal and fills pages recognize native execution, ledger initial state,
   fee evidence, funding evidence/recovery and pending funding obligations.
   Missing execution fees and unavailable recovered funding models remain
   explicitly unavailable rather than being displayed as zero. Resume copy
   describes the fresh, revision-matched position check required by the trader.
-- Previously introduced framework improvements remain included:
+- ([#73](https://github.com/openquanter/quanterdeck/pull/73)) Previously introduced framework improvements remain included:
   bankruptcy-price liquidation settlement, cumulative trial deflation,
   maker-winner markout gates, and conclusion-oriented tier comparisons.
-- Framework publication and console publication remain separately
+- ([#74](https://github.com/openquanter/quanterdeck/pull/74)) Framework publication and console publication remain separately
   visible in the upstream-version card. Historical production G12
   acceptance is not implied by the version bump.
-- **The sweeps page reads version-2 sweep files** and shows the trials
+- ([#73](https://github.com/openquanter/quanterdeck/pull/73)) **The sweeps page reads version-2 sweep files** and shows the trials
   the deflation counted (this sweep's and the ledger's) and the
   winner's markout with the limits it was judged against. Version-1
   files still read, and say those lines were not recorded.
 
 ### Several traders on one host
 
-- **The agent finds every trader by its control socket.** A new
+- ([#72](https://github.com/openquanter/quanterdeck/pull/72)) **The agent finds every trader by its control socket.** A new
   `traders` read returns each one's status by socket name, and a trader
   that does not answer is listed with why. `status`, `orders`,
   `metrics`, `attribution`, `halt`, `resume` and `shutdown` take an
   optional `trader`; without one they behave as before and, with
   several traders present, refuse and name them. The field is left out
   of a request that names none, so an older agent still reads it.
-- **The watch looks at each trader.** Black-box trader lines and their
+- ([#72](https://github.com/openquanter/quanterdeck/pull/72)) **The watch looks at each trader.** Black-box trader lines and their
   events carry the trader's `id`, each is checked against its own
   previous sample, a moment opens with every trader's last sample, and
   alert keys and sentences name the trader (`halted:<id>`). With one
   trader nothing changes: no `id`, the same keys.
-- **A Traders page** groups them by strategy and symbol, with each
+- ([#72](https://github.com/openquanter/quanterdeck/pull/72)) **A Traders page** groups them by strategy and symbol, with each
   one's state, position, equity, net P&L, position check and feed.
 
 ### A report is written every period, not only shown
 
-- **A durable artifact.** Every `OQ_DECK_REPORT_HOURS` (24 by default,
+- ([#71](https://github.com/openquanter/quanterdeck/pull/71)) **A durable artifact.** Every `OQ_DECK_REPORT_HOURS` (24 by default,
   aligned to UTC; `0` turns it off, at most 168) the deck writes a report
   of the period that just ended into `OQ_DECK_REPORTS_DIR` (default:
   `reports` under the state directory), and once about a minute after
   startup if that period has none yet. Written whole or not at all (a
   temporary file, then a rename), owner-only, kept 90 days.
-- **What it holds.** The period's P&L — net, realized, fees, funding,
+- ([#71](https://github.com/openquanter/quanterdeck/pull/71)) **What it holds.** The period's P&L — net, realized, fees, funding,
   summed run by run across trader restarts — first and last equity and
   an equity curve, the trader's state at the end, the reconciliation
   verdict as of generation (the same comparison as `/live/latest`),
@@ -75,13 +79,13 @@ publishes it verbatim, and refuses a tag without one.
   agent's black box (actor `deck:report`) and the journals; a part that
   could not be read is listed under `unavailable` with the reason, and
   its figures are absent rather than zero.
-- **Rendered when read.** Stored as JSON and rendered on request as one
+- ([#71](https://github.com/openquanter/quanterdeck/pull/71)) **Rendered when read.** Stored as JSON and rendered on request as one
   self-contained HTML page — inline CSS, an inline SVG chart, light and
   dark, no script and nothing fetched — in the reader's language
   (`Accept-Language`, or `?lang=zh|en`), under its own
   `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
   img-src data:; sandbox`.
-- **Routes.** `GET /api/v1/reports`, `GET /api/v1/reports/{id}` (the
+- ([#71](https://github.com/openquanter/quanterdeck/pull/71)) **Routes.** `GET /api/v1/reports`, `GET /api/v1/reports/{id}` (the
   page), `GET /api/v1/reports/{id}/data` (the JSON) — ids matched against
   the directory listing, never joined into a path — and
   `POST /api/v1/reports/generate`, which writes one for the period ending
@@ -92,7 +96,7 @@ publishes it verbatim, and refuses a tag without one.
 
 ### Black box checks each sample against the last
 
-- **The black box checks each trader sample against the one before.**
+- ([#69](https://github.com/openquanter/quanterdeck/pull/69)) **The black box checks each trader sample against the one before.**
   A position or realized P&L that moved without a fill, a cumulative
   counter that went down, or a net P&L that is not realized − fees +
   funding is a disagreement: recorded inside the sample, as a
@@ -103,21 +107,21 @@ publishes it verbatim, and refuses a tag without one.
 
 ### Alerts also go to Telegram
 
-- **A second channel beside Discord.** With `OQ_AGENT_TELEGRAM_CHAT` set
+- ([#70](https://github.com/openquanter/quanterdeck/pull/70)) **A second channel beside Discord.** With `OQ_AGENT_TELEGRAM_CHAT` set
   and a `TELEGRAM_BOT_TOKEN` credential, the agent posts every message —
   alerts, recoveries, audited actions, the channel test — to that chat
   too, as plain text with an `oq-agent · <host>` footer, cut to
   Telegram's 4096-character limit. Exactly one of the two present is a
   startup warning naming the missing half, and Telegram stays off.
-- **One channel failing does not hold up the other.** Each message is
+- ([#70](https://github.com/openquanter/quanterdeck/pull/70)) **One channel failing does not hold up the other.** Each message is
   tried on every configured channel; a failure is logged per channel.
   The token is part of Telegram's request URL, so errors are scrubbed of
   it before they are printed, and the sink's `Debug` redacts it.
-- **The anchor stays on Discord.** The audit trail's and the journal's
+- ([#70](https://github.com/openquanter/quanterdeck/pull/70)) **The anchor stays on Discord.** The audit trail's and the journal's
   off-host anchors are read back from Discord only: a Telegram bot
   cannot read a chat's history, so it carries alerts but cannot be an
   anchor.
-- **The Alerts page says which channels are configured.** The agent's
+- ([#70](https://github.com/openquanter/quanterdeck/pull/70)) **The Alerts page says which channels are configured.** The agent's
   alerts view gains `channels` (`["discord", "telegram"]`, empty when
   alerts are only printed); an agent from before it is shown as "does
   not report", not as "none".

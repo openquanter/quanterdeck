@@ -156,7 +156,7 @@ Release 都写明它是对着框架的哪个提交构建的。每次发布提供
 `OQ_DECK_WEB_DIST` 指向它），并附 SHA-256。运行时不需要 Node 或 Rust 工具链。
 
 ```bash
-v=1.0.1; t=x86_64-unknown-linux-gnu
+v=1.0.2; t=x86_64-unknown-linux-gnu
 curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
 sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
 ```
@@ -166,7 +166,7 @@ sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.
 的发布包下载、校验命令和服务替换步骤；框架区域连接「发布」中的签名交易构件部署。
 
 **怎么发版。** 在一个 PR 里改 `Cargo.toml` 的 `[workspace.package].version` 和
-`web/package.json` 的 `version`（及其锁文件），把变更日志的 `## Unreleased` 改成
+`web/package.json` 的 `version`（及其锁文件），在 `docs/releases/` 添加本版本完整的英文与中文发布说明，再把变更日志的 `## Unreleased` 改成
 `## X.Y.Z — <日期>`，并在上面新开一个空的 `## Unreleased`。合并后在 `main` 的那个
 提交上打 tag：`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`。
 `.github/workflows/release.yml` 会在 tag、两处版本号、变更日志任何一处对不上或提交
