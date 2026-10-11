@@ -230,7 +230,7 @@ interface in `web-dist/` (point `OQ_DECK_WEB_DIST` at it), plus its
 SHA-256. No Node or Rust toolchain is needed to run one.
 
 ```bash
-v=1.0.1; t=x86_64-unknown-linux-gnu
+v=1.0.2; t=x86_64-unknown-linux-gnu
 curl -LO https://github.com/openquanter/quanterdeck/releases/download/v$v/quanterdeck-v$v-$t.tar.gz{,.sha256}
 sha256sum -c quanterdeck-v$v-$t.tar.gz.sha256 && tar xzf quanterdeck-v$v-$t.tar.gz
 ```
@@ -244,6 +244,7 @@ to signed trader-artifact deployment under **Releases**.
 
 **Cutting one.** In a pull request, set `[workspace.package].version` in
 `Cargo.toml` and `version` in `web/package.json` (and its lock file), and
+add complete English and Chinese release notes under `docs/releases/`, and
 rename the changelog's `## Unreleased` to `## X.Y.Z — <date>` with a new
 empty `## Unreleased` above it. Merge, then tag that commit on `main`:
 `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`.
