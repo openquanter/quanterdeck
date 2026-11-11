@@ -15,7 +15,7 @@ export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(" ");
 }
 
-export type Tone = "good" | "warn" | "bad" | "neutral" | "accent";
+export type Tone = "good" | "warn" | "bad" | "neutral" | "accent" | "long" | "short";
 
 const TONE_TEXT: Record<Tone, string> = {
   good: "text-good",
@@ -23,6 +23,8 @@ const TONE_TEXT: Record<Tone, string> = {
   bad: "text-bad",
   neutral: "text-ink",
   accent: "text-accent",
+  long: "text-long",
+  short: "text-short",
 };
 const TONE_DOT: Record<Tone, string> = {
   good: "bg-good",
@@ -30,6 +32,8 @@ const TONE_DOT: Record<Tone, string> = {
   bad: "bg-bad",
   neutral: "bg-ink-faint",
   accent: "bg-accent",
+  long: "bg-long",
+  short: "bg-short",
 };
 const TONE_SOFT: Record<Tone, string> = {
   good: "bg-good/12 text-good ring-good/25",
@@ -37,6 +41,8 @@ const TONE_SOFT: Record<Tone, string> = {
   bad: "bg-bad/12 text-bad ring-bad/30",
   neutral: "bg-surface-raised text-ink-muted ring-line-strong",
   accent: "bg-accent/12 text-accent ring-accent/25",
+  long: "bg-long/12 text-long ring-long/25",
+  short: "bg-short/12 text-short ring-short/25",
 };
 
 /** A page's title, what it is for, and its actions. */
@@ -126,13 +132,13 @@ export function Card({
       )}
     >
       {(title || extra) && (
-        <header className="flex items-center gap-2.5 border-b border-line/70 px-5 py-3.5">
+        <header className="flex items-center gap-2.5 border-b border-line/70 px-4 py-3">
           {icon && (hue ? <IconTile icon={icon} hue={hue} size="sm" /> : <span className="text-ink-muted">{icon}</span>)}
           <h2 className="text-[15px] font-medium text-ink">{title}</h2>
           <div className="ml-auto flex items-center gap-2 text-xs text-ink-muted">{extra}</div>
         </header>
       )}
-      <div className={cx("p-5", bodyClassName)}>{children}</div>
+      <div className={cx("p-4", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -187,13 +193,13 @@ export function Stat({
   trend?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col rounded-[var(--radius-card)] border border-line bg-surface px-5 py-4 shadow-[var(--shadow-card)]">
+    <div className="flex flex-col rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3 shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2.5 text-[13px] text-ink-muted">
         {icon && <IconTile icon={icon} hue={hue} />}
         <span>{label}</span>
         {help && <Help term={help} />}
       </div>
-      <div className={cx("mt-3 truncate text-[26px] font-medium leading-tight tracking-tight", TONE_TEXT[tone ?? "neutral"])}>{value}</div>
+      <div className={cx("mt-2 truncate text-[24px] font-medium leading-tight tracking-tight", TONE_TEXT[tone ?? "neutral"])}>{value}</div>
       {sub && <div className="mt-1 truncate text-xs text-ink-muted">{sub}</div>}
       {trend && <div className="-mx-1 mt-2">{trend}</div>}
     </div>

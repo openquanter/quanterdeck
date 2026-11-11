@@ -124,7 +124,7 @@ function Positions({ s }: { s: TraderStatus }) {
             {s.positions.map((p) => (
               <tr key={p.side}>
                 <td>
-                  <Badge>{p.side === "LONG" ? tr("多", "Long") : p.side === "SHORT" ? tr("空", "Short") : p.side}</Badge>
+                  <Badge tone={p.side === "LONG" ? "long" : p.side === "SHORT" ? "short" : "neutral"}>{p.side === "LONG" ? tr("多", "Long") : p.side === "SHORT" ? tr("空", "Short") : p.side}</Badge>
                 </td>
                 <td className="font-mono">{p.amount.replace("-", "")}</td>
                 <td className="font-mono">{entryOf(p.side)}</td>
@@ -165,7 +165,7 @@ function Positions({ s }: { s: TraderStatus }) {
                 .map((o) => (
                   <tr key={o.client_id}>
                     {/* Neutral: a sell is neither good nor bad (UI-BRIEF §8). */}
-                    <td className="text-ink">{o.side === "BUY" ? tr("买", "Buy") : o.side === "SELL" ? tr("卖", "Sell") : "—"}</td>
+                    <td className={o.side === "BUY" ? "text-long" : o.side === "SELL" ? "text-short" : "text-ink"}>{o.side === "BUY" ? tr("买", "Buy") : o.side === "SELL" ? tr("卖", "Sell") : "—"}</td>
                     <td className="font-mono">{scaled(o.price_ticks, s.price_scale)}</td>
                     <td className="font-mono">{scaled(o.qty_lots, s.qty_scale)}</td>
                     <td>

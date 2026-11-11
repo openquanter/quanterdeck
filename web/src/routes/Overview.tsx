@@ -68,7 +68,7 @@ export function Overview() {
   if (caps.data && !ops) return <NoHost upstream={upstream} />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={tr("总览", "Overview")}
         description={tr("交易主机此刻是否一切正常；任何一项不正常都可以点进去处理。", "Whether everything on the trading host is all right now; click any item that is not to deal with it.")}
@@ -76,7 +76,7 @@ export function Overview() {
       />
       <Banner status={status.data} failed={status.isError} writable={writable} />
       {status.data && <Kpis s={status.data} day={day.data} />}
-      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
           <PriceAndOrders s={status.data} />
         </div>
@@ -84,7 +84,7 @@ export function Overview() {
           <Health s={status.data} failed={status.isError} />
         </div>
       </div>
-      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
           <PnlChart day={day.data} from={day.from} to={day.to} />
         </div>
@@ -92,7 +92,7 @@ export function Overview() {
           <Alerts />
         </div>
       </div>
-      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
           <Resources day={day.data} failed={day.isError} error={day.error} from={day.from} to={day.to} />
         </div>
@@ -100,7 +100,7 @@ export function Overview() {
           <Activity />
         </div>
       </div>
-      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
           <UpstreamCard available={upstream} />
         </div>
@@ -117,7 +117,7 @@ function Banner({ status: s, failed, writable }: { status: TraderStatus | undefi
   return (
     <div
       className={cx(
-        "relative flex flex-wrap items-center gap-5 overflow-hidden rounded-[var(--radius-card)] border px-6 py-5 shadow-[var(--shadow-card)]",
+        "relative flex flex-wrap items-center gap-5 overflow-hidden rounded-[var(--radius-card)] border px-5 py-4 shadow-[var(--shadow-card)]",
         tone === "bad" ? "border-bad/30 bg-bad/6" : "border-line bg-surface",
       )}
     >
@@ -272,14 +272,14 @@ export function Kpis({ s, day }: { s: TraderStatus; day?: BlackboxWindow }) {
           ) : (
             <span className="flex items-baseline gap-3">
               {long.length > 0 && (
-                <span className="inline-flex items-baseline gap-1">
-                  <ArrowUpRight className="h-4 w-4 self-center text-ink-faint" />
+                <span className="inline-flex items-baseline gap-1 text-long">
+                  <ArrowUpRight className="h-4 w-4 self-center text-long" />
                   {long.map((p) => p.amount).join(" ")}
                 </span>
               )}
               {short.length > 0 && (
-                <span className="inline-flex items-baseline gap-1">
-                  <ArrowDownRight className="h-4 w-4 self-center text-ink-faint" />
+                <span className="inline-flex items-baseline gap-1 text-short">
+                  <ArrowDownRight className="h-4 w-4 self-center text-short" />
                   {short.map((p) => p.amount.replace("-", "")).join(" ")}
                 </span>
               )}
@@ -328,7 +328,7 @@ function PositionBar({ s }: { s: TraderStatus }) {
         <div key={l.side} className="flex items-center gap-2 text-[11px] text-ink-faint">
           <span className="w-6">{l.side === "LONG" ? tr("多", "L") : l.side === "SHORT" ? tr("空", "S") : l.side}</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-raised">
-            <div className="h-full rounded-full bg-hue-purple" style={{ width: `${Math.min(100, (l.qty / cap) * 100)}%` }} />
+            <div className={l.side === "LONG" ? "h-full rounded-full bg-long" : "h-full rounded-full bg-short"} style={{ width: `${Math.min(100, (l.qty / cap) * 100)}%` }} />
           </div>
           <span className="w-10 text-right">{Math.round((l.qty / cap) * 100)}%</span>
         </div>
@@ -377,7 +377,7 @@ export function PriceAndOrders({ s }: { s: TraderStatus | undefined }) {
         chartFallback(280)
       ) : (
         <Suspense fallback={chartFallback(280)}>
-          <TimeSeries height={280} decimals={ps} step series={[{ name: tr("最新价", "Last price"), points, area: true }]} levels={near} />
+          <TimeSeries height={240} decimals={ps} step series={[{ name: tr("最新价", "Last price"), points, area: true }]} levels={near} />
         </Suspense>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
@@ -562,7 +562,7 @@ export function PnlChart({ day, from, to }: { day?: BlackboxWindow; from: number
         <p className="py-16 text-center text-sm text-ink-faint">{tr("黑匣子里还没有这次运行的盈亏记录。", "The black box has no P&L for this run yet.")}</p>
       ) : (
         <Suspense fallback={chartFallback(260)}>
-          <TimeSeries height={260} from={start && start > from ? start : from} to={to} decimals={4} series={[{ name: tr("本次运行盈亏", "Run P&L"), points: net, area: true }]} levels={[{ value: 0 }]} />
+          <TimeSeries height={220} from={start && start > from ? start : from} to={to} decimals={4} series={[{ name: tr("本次运行盈亏", "Run P&L"), points: net, area: true }]} levels={[{ value: 0 }]} />
         </Suspense>
       )}
       <p className="mt-2 text-xs text-ink-faint">{tr("每 30 秒一个点，来自黑匣子；交易进程重启后从 0 重新计算。", "One point every 30 seconds from the black box; it restarts from 0 when the trader restarts.")}</p>
@@ -748,7 +748,7 @@ function Resources({ day, failed, error, from, to }: { day?: BlackboxWindow; fai
         <Suspense fallback={chartFallback(190)}>
           <div className="mb-1 text-xs text-ink-muted">{tr("各服务内存（MiB，最近 24 小时）", "Memory per service (MiB, last 24 h)")}</div>
           <TimeSeries
-            height={190}
+            height={165}
             from={start}
             to={to}
             decimals={1}

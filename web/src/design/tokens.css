@@ -28,6 +28,12 @@
   --color-warn: #e37400;
   --color-bad: #d93025;
 
+  /* Direction, not a verdict: the US market convention — long and buy
+     green, short and sell red. Kept apart from good/bad so a losing long
+     is still green and a profitable short is still red. */
+  --color-long: #188038;
+  --color-short: #d93025;
+
   --color-hue-blue: #1a73e8;
   --color-hue-green: #1e8e3e;
   --color-hue-yellow: #f9ab00;
@@ -68,6 +74,8 @@
   --color-good: #34c47c;
   --color-warn: #e8a83e;
   --color-bad: #ef5a5f;
+  --color-long: #34c47c;
+  --color-short: #ef5a5f;
 
   --color-hue-blue: #6ea8ff;
   --color-hue-green: #34c47c;
