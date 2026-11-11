@@ -286,21 +286,33 @@ pub enum CannotTell {
 pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliation, String> {
     let path = resolve(dir, id).ok_or_else(|| format!("no journal named {id}"))?;
     let belief = read_belief(&path)?;
-    let venue =
+    let mut venue =
         Record::parse(venue_record).map_err(|e| format!("the venue record will not parse: {e}"))?;
 
     // Rendered at the venue record's own timestamp. The comparison is
     // between two accounts, not two clocks, and giving the belief a
     // different read time would put a spurious line in the output.
     let believed = belief.to_record(venue.read_at_ms);
-    // One unit of the journal's own price grid (0.01 where prices carry
-    // two decimals). An entry the venue reports with more decimals than
-    // that — 76512.4375 against 76512.43 — is the same price, and a real
-    // disagreement is at least one order-grid tick, far above this.
-    let entry_tol = belief
-        .instrument
-        .map_or(0.0, |i| 10f64.powi(-i32::from(i.price_scale)));
-    let differences = believed.differences_tolerant(&venue, entry_tol);
+    // The record expresses an entry in the instrument's own unit —
+    // `price * price_tick`, as `Belief::to_record` writes it — while the
+    // venue record is the raw price. Convert before comparing, and allow
+    // one unit of slack: the venue's average carries more decimals than
+    // the grid its orders sit on, and one tick is the smallest real
+    // disagreement there can be.
+    let mut believed = believed;
+    if let Some(instrument) = belief.instrument {
+        let factor = instrument.price_tick as f64;
+        // One tick is the smallest real disagreement there can be, and
+        // the venue's average carries more decimals than that: round
+        // both sides to the tick grid before asking.
+        for leg in &mut venue.legs {
+            leg.2 = (leg.2 * factor).round();
+        }
+        for leg in &mut believed.legs {
+            leg.2 = leg.2.round();
+        }
+    }
+    let differences = believed.differences(&venue);
 
     // The belief is the journal's *final* state with a time stamped on it
     // — `to_record` does not rewind — so a reading taken before this run
