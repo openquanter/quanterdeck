@@ -293,7 +293,14 @@ pub fn reconcile(dir: &Path, id: &str, venue_record: &str) -> Result<Reconciliat
     // between two accounts, not two clocks, and giving the belief a
     // different read time would put a spurious line in the output.
     let believed = belief.to_record(venue.read_at_ms);
-    let differences = believed.differences(&venue);
+    // One unit of the journal's own price grid (0.01 where prices carry
+    // two decimals). An entry the venue reports with more decimals than
+    // that — 76512.4375 against 76512.43 — is the same price, and a real
+    // disagreement is at least one order-grid tick, far above this.
+    let entry_tol = belief
+        .instrument
+        .map_or(0.0, |i| 10f64.powi(-i32::from(i.price_scale)));
+    let differences = believed.differences_tolerant(&venue, entry_tol);
 
     // The belief is the journal's *final* state with a time stamped on it
     // — `to_record` does not rewind — so a reading taken before this run
