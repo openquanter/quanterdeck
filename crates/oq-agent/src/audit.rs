@@ -109,6 +109,31 @@ pub fn verify(text: &str) -> Result<(u64, String), String> {
 /// Every entry is posted off this host with its number and the first
 /// twelve characters of its hash — that print is the anchor, and this is
 /// the reader for it.
+/// The audit trail's newest entry: its number and the first twelve
+/// characters of its hash, the same print an entry is posted under.
+///
+/// Reads the file rather than an `Audit`: the hourly mirror runs on its own
+/// thread, and taking the append lock for a read it does not need would let
+/// a slow channel stall the trail itself.
+#[must_use]
+pub fn head(dir: &Path) -> Option<(u64, String)> {
+    let text = std::fs::read_to_string(dir.join("audit.log")).ok()?;
+    for line in text.lines().rev() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(seq) = v.get("seq").and_then(Value::as_u64) else {
+            continue;
+        };
+        let hash = v.get("hash").and_then(Value::as_str).unwrap_or("");
+        if hash.len() < 12 {
+            continue;
+        }
+        return Some((seq, hash[..12].to_string()));
+    }
+    None
+}
+
 #[must_use]
 pub fn anchored_in(bodies: &[String]) -> Option<(u64, String)> {
     let mut newest: Option<(u64, String)> = None;
@@ -248,6 +273,43 @@ impl Audit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_head_is_the_newest_entry_even_after_a_reopen() {
+        let dir = tempfile::tempdir().expect("dir");
+        assert_eq!(head(dir.path()), None, "no trail yet, nothing to name");
+
+        let mut a = Audit::open(dir.path()).expect("open");
+        let first = a
+            .append(
+                1,
+                "deck:x",
+                "halt",
+                &Said::same("why"),
+                &Said::new("已停机", "halted"),
+            )
+            .expect("one");
+        let second = a
+            .append(
+                2,
+                "deck:x",
+                "resume",
+                &Said::same("why"),
+                &Said::new("已解除", "resumed"),
+            )
+            .expect("two");
+
+        // What is posted has to be readable back by `anchored_in`, or the
+        // mirror posts rows the check cannot use.
+        let want = second["hash"].as_str().expect("hash")[..12].to_string();
+        let got = head(dir.path()).expect("a head");
+        assert_eq!(got.0, 2);
+        assert_eq!(got.1, want);
+        assert_ne!(got.1, first["hash"].as_str().expect("hash")[..12]);
+
+        let bodies = vec![format!("审计 #{} {}", got.0, got.1)];
+        assert_eq!(anchored_in(&bodies), Some(got));
+    }
 
     #[test]
     fn the_chain_continues_across_opens_and_catches_an_edit() {
