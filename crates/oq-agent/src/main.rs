@@ -144,16 +144,41 @@ fn main() {
                         });
                     }
                 },
-                // Said out loud rather than passed over: a check that
-                // found nothing to compare against and a check that
-                // agreed are not the same answer, and silence reads as
-                // the second.
-                None => println!(
-                    "oq-agent: nothing in the channel's last 50 messages names an audit entry; \
-                     the trail was not checked against anything"
-                ),
+                // Said out loud, and to a person, not just to a log
+                // nobody reads: a check that found nothing to compare
+                // against and a check that agreed are not the same
+                // answer, and silence reads as the second. On 2026-11-22
+                // this had been failing for 51 days and only the journal
+                // said so.
+                None => {
+                    let why = Said::new(
+                        "告警频道最近 50 条消息里没有审计锚点，审计链未被校验。",
+                        "nothing in the channel's last 50 messages names an audit entry; \
+                         the trail was not checked against anything",
+                    );
+                    eprintln!("oq-agent: {}", why.en);
+                    let _ = notify.send(notify::Message {
+                        title: "审计链未被校验".to_string(),
+                        body: why.zh.clone(),
+                        color: notify::RED,
+                        quiet: false,
+                    });
+                }
             },
-            Err(e) => eprintln!("oq-agent: the alert channel could not be read back: {e}"),
+            Err(e) => {
+                eprintln!("oq-agent: the alert channel could not be read back: {e}");
+                let why = Said::new(
+                    "告警频道读不回来，审计链与 journal 都无法校验。",
+                    "the alert channel could not be read back; neither the trail nor the \
+                     journal was checked against it",
+                );
+                let _ = notify.send(notify::Message {
+                    title: "告警频道读不回来".to_string(),
+                    body: why.zh.clone(),
+                    color: notify::RED,
+                    quiet: false,
+                });
+            }
         }
     }
     // The journal's anchor, which is its record count.
@@ -604,26 +629,36 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
     }
 }
 
-/// How often the journal's head is mirrored. An hour is often enough to
-/// put a bound on what a deletion could hide, and rare enough that a
-/// monitoring channel does not become a log file.
+/// How often the heads are mirrored. An hour is often enough to put a
+/// bound on what a deletion could hide, and rare enough that a monitoring
+/// channel does not become a log file.
 const ANCHOR_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
 
-/// Mirror the trader's journal head off this host, and check the last one
-/// it mirrored.
+/// Mirror both heads off this host, hourly, and check them at startup.
 ///
-/// The head is the newest journal's record count. Posted, it says how
-/// many records existed at that moment; a file that is now shorter has
-/// had some taken off the end of it, which is the one thing a reader of
-/// that journal cannot see for itself.
+/// Two records are mirrored, for the same reason and with the same limit:
 ///
-/// What it cannot see is the same bound the audit trail's anchor has:
-/// whoever can write the journal can also post to the channel.
+/// - the trader's journal head, which is its record count. Posted, it says
+///   how many records existed at that moment; a file that is now shorter
+///   has had some taken off the end of it.
+/// - the audit trail's head, which is its newest `seq` and hash prefix.
+///
+/// The audit one has to be re-posted even when nothing happened, and that
+/// is not obvious: the anchor used to be written only alongside an
+/// operation, so it appeared only when somebody deployed or halted. The
+/// check reads back the last 50 messages, and a quiet fortnight of hourly
+/// journal heartbeats pushed the last operation out of that window — the
+/// trail then went unchecked, and said so only to a log nobody reads. On
+/// 2026-11-22 the newest audit anchor was 51 days old for exactly this
+/// reason. Re-posting hourly keeps it inside the window by construction.
+///
+/// What neither can see: whoever can write the file can also post to the
+/// channel.
 fn journal_anchor(cfg: &Config, discord: Option<&notify::Discord>) {
-    let mut last: Option<(String, usize)> = None;
+    let mut last_journal: Option<(String, usize)> = None;
     loop {
         if let Some((name, count)) = newest_journal_head(&cfg.journals)
-            && last.as_ref() != Some(&(name.clone(), count))
+            && last_journal.as_ref() != Some(&(name.clone(), count))
         {
             // Posted, not written down here: an anchor on the machine it
             // is meant to be evidence about is not an anchor.
@@ -647,8 +682,31 @@ fn journal_anchor(cfg: &Config, discord: Option<&notify::Discord>) {
             } else {
                 println!("oq-agent: journal anchor {name} {count} (no channel to post it to)");
             }
-            last = Some((name, count));
+            last_journal = Some((name, count));
         }
+
+        // The audit head, re-posted every hour whether or not it moved.
+        // `audit::anchored_in` reads the newest entry in the window, so a
+        // repeat costs one message and buys the check a target that cannot
+        // age out of it.
+        if let Some((seq, short)) = audit::head(&cfg.state_dir)
+            && let Some(d) = discord
+        {
+            let body = format!("审计 #{seq} {short}");
+            match d.send(
+                &Message {
+                    title: "审计链心跳 · 正常".to_string(),
+                    body: body.clone(),
+                    color: BLUE,
+                    quiet: true,
+                },
+                &cfg.host,
+            ) {
+                Ok(()) => println!("oq-agent: audit anchor posted: {body}"),
+                Err(e) => eprintln!("oq-agent: the audit anchor was not posted: {e}"),
+            }
+        }
+
         std::thread::sleep(ANCHOR_EVERY);
     }
 }
