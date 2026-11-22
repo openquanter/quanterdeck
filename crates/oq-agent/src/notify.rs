@@ -20,12 +20,18 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 /// A message waiting to be sent.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Message {
     pub title: String,
     pub body: String,
     /// Red for a problem, green for a recovery, blue for an action.
     pub color: u32,
+    /// Delivered without a push notification.
+    ///
+    /// Set for the journal's hourly anchor: the row still lands in the
+    /// channel, which is what makes it evidence, but nobody's phone
+    /// buzzes for it. Everything that a person needs to act on stays loud.
+    pub quiet: bool,
 }
 
 pub const RED: u32 = 0xe7_4c_3c;
@@ -145,12 +151,7 @@ impl Discord {
     pub fn send(&self, m: &Message, host: &str) -> Result<(), String> {
         let agent = self.agent()?;
         let id = self.channel_id(&agent)?;
-        let body = json!({"embeds": [{
-            "title": truncate(&m.title, 250),
-            "description": truncate(&m.body, 4000),
-            "color": m.color,
-            "footer": {"text": format!("oq-agent · {host}")},
-        }]});
+        let body = discord_payload(m, host);
         let resp = agent
             .post(&format!("{API}/channels/{id}/messages"))
             .header("Authorization", &format!("Bot {}", self.token))
@@ -163,6 +164,25 @@ impl Discord {
             Err(format!("discord answered {}", resp.status()))
         }
     }
+}
+
+/// The JSON body for one Discord embed.
+///
+/// `flags: 4096` is Discord's SUPPRESS_NOTIFICATIONS: a quiet row still
+/// lands in the channel and is still readable back as an anchor, it just
+/// does not ring anyone. Everything a person has to act on stays loud.
+#[must_use]
+pub fn discord_payload(m: &Message, host: &str) -> Value {
+    let mut body = json!({"embeds": [{
+        "title": truncate(&m.title, 250),
+        "description": truncate(&m.body, 4000),
+        "color": m.color,
+        "footer": {"text": format!("oq-agent · {host}")},
+    }]});
+    if m.quiet {
+        body["flags"] = json!(4096);
+    }
+    body
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -385,6 +405,13 @@ impl Sink for Telegram {
         "telegram"
     }
     fn send(&self, m: &Message, host: &str) -> Result<(), String> {
+        // Telegram has no "deliver silently", and it is never read back as
+        // an anchor, so a quiet row has nothing to do here: it exists to
+        // keep the Discord copy's record count current, and Discord is the
+        // only channel that record is recovered from.
+        if m.quiet {
+            return Ok(());
+        }
         Telegram::send(self, m, host)
     }
 }
@@ -436,6 +463,7 @@ mod tests {
             title: title.into(),
             body: body.into(),
             color: RED,
+            quiet: false,
         }
     }
 
@@ -598,5 +626,37 @@ mod tests {
         }
         assert_eq!(*a.lock().unwrap(), vec!["one@h", "two@h"]);
         assert_eq!(*b.lock().unwrap(), vec!["one@h", "two@h"]);
+    }
+
+    #[test]
+    fn a_quiet_message_lands_without_ringing_anyone() {
+        let loud = msg("journal 心跳", "journal x #1");
+        assert!(discord_payload(&loud, "h")["flags"].is_null());
+
+        let quiet = Message {
+            quiet: true,
+            ..msg("journal 心跳", "journal x #2")
+        };
+        let body = discord_payload(&quiet, "h");
+        // 4096 is SUPPRESS_NOTIFICATIONS: delivered, not notifying.
+        assert_eq!(body["flags"], json!(4096));
+        // Still an embed with its description, so it can still be read
+        // back as an anchor -- that is the whole point of posting it.
+        assert_eq!(body["embeds"][0]["description"], "journal x #2");
+    }
+
+    #[test]
+    fn a_quiet_message_is_not_sent_to_telegram_which_cannot_silence() {
+        // Telegram has no quiet delivery and is never read back as an
+        // anchor, so a quiet row must not reach it at all. The quiet
+        // branch returns before any request is built, so a bogus token
+        // and no network are both fine here.
+        let sink = Telegram::new("0:unused".into(), "-1".into(), None);
+        let quiet = Message {
+            quiet: true,
+            ..msg("journal 心跳", "journal x #3")
+        };
+        // Would fail or hang if it tried to reach api.telegram.org.
+        assert!(Sink::send(&sink, &quiet, "h").is_ok());
     }
 }

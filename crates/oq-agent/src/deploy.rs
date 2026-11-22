@@ -435,12 +435,14 @@ pub fn switch(
             // in Chinese; the record keeps both.
             body: outcome.zh,
             color: if ok { GREEN } else { RED },
+            quiet: false,
         });
     };
     let _ = notify.send(Message {
         title: format!("{what} 开始"),
         body: format!("切换到 {target}"),
         color: BLUE,
+        quiet: false,
     });
 
     let before = crate::control::ask(&cfg.control_dir, "status", "oq-agent deploy", "")
