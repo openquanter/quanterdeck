@@ -140,6 +140,7 @@ fn main() {
                             title: "审计链与告警频道不一致".to_string(),
                             body: why.zh.clone(),
                             color: notify::RED,
+                            quiet: false,
                         });
                     }
                 },
@@ -545,6 +546,7 @@ fn act(state: &State, op: &Op, origin: &str, reason: &str) -> Result<serde_json:
                 title: "测试消息".into(),
                 body: format!("来自 deck 的告警渠道测试：{reason}"),
                 color: BLUE,
+                quiet: false,
             });
             Ok(json!({"sent": true}))
         }
@@ -629,9 +631,13 @@ fn journal_anchor(cfg: &Config, discord: Option<&notify::Discord>) {
                 let body = format!("journal {name} #{count}");
                 match d.send(
                     &Message {
-                        title: "journal 头".to_string(),
+                        title: "journal 心跳 · 正常".to_string(),
                         body: body.clone(),
                         color: BLUE,
+                        // Hourly, and nothing to act on: the row is posted
+                        // for the record, not to wake anyone. The alarm is
+                        // `journal_anchor_check`'s "变短了" message.
+                        quiet: true,
                     },
                     &cfg.host,
                 ) {
@@ -682,6 +688,7 @@ fn journal_anchor_check(
             title: "交易进程的 journal 变短了".to_string(),
             body: why,
             color: notify::RED,
+            quiet: false,
         });
     } else {
         println!("oq-agent: journal {name} has {now} records; the channel said {was}");
@@ -758,6 +765,7 @@ fn record(
                 .collect::<String>()
         ),
         color: BLUE,
+        quiet: false,
     });
     Ok(())
 }

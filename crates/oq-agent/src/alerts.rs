@@ -286,6 +286,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
                             title: "已恢复".into(),
                             body: msg.zh,
                             color: GREEN,
+                            quiet: false,
                         });
                     }
                 }
@@ -299,6 +300,7 @@ pub fn watch(cfg: Config, raised: Arc<Mutex<Raised>>, notify: std::sync::mpsc::S
                             title: "告警".into(),
                             body: msg.zh.clone(),
                             color: RED,
+                            quiet: false,
                         });
                     }
                     r.active.insert(key, (now, msg));
